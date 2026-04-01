@@ -57,14 +57,19 @@ export default function App() {
     if (!hid) return;
     const [pR, nR, eR, wR, sR] = await Promise.all([
       supabase.from("plan").select("*").eq("household_id", hid),
-      supabase.from("meal_notes").select("*").eq("household_id", hid),
+      supabase.from("recipe_notes").select("*").eq("household_id", hid), // <-- Changed table
       supabase.from("eaten").select("*").eq("household_id", hid),
       supabase.from("water").select("*").eq("household_id", hid),
       supabase.from("meal_swaps").select("*").eq("household_id", hid),
     ]);
     const p = {}; (pR.data || []).forEach(r => { p[r.day_index] = r.variant_id; }); setPlanState(p);
-    const n = {}; (nR.data || []).forEach(r => { n[`${r.day_index}-${r.slot}-${r.person_key}`] = r.note; }); setNotesState(n);
+
+    // Changed how the note key is generated:
+    const n = {}; (nR.data || []).forEach(r => { n[`${r.meal_name_en}-${r.person_key}`] = r.note; }); setNotesState(n);
+
     const e = {}; (eR.data || []).forEach(r => { if (r.eaten) e[`${r.day_index}-${r.slot}-${r.person_key}`] = true; }); setEatenSt(e);
+
+    // Kept your water and swap logic perfectly intact!
     const w = {}; (wR.data || []).forEach(r => { w[`${r.day_index}-${r.person_key}`] = r.ml; }); setWaterSt(w);
     const sw = {}; (sR.data || []).forEach(r => { sw[`${r.day_index}-${r.slot}-${r.person_key}`] = JSON.parse(r.meal_json); }); setSwapsState(sw);
   }, [hid]);
@@ -87,9 +92,9 @@ export default function App() {
         if (p.eventType === "DELETE") triggerReload();
         else setPlanState(prev => ({ ...prev, [p.new.day_index]: p.new.variant_id }));
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "meal_notes", filter: `household_id=eq.${hid}` }, p => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "recipe_notes", filter: `household_id=eq.${hid}` }, p => {
         if (p.eventType === "DELETE") triggerReload();
-        else if (p.new) setNotesState(prev => ({ ...prev, [`${p.new.day_index}-${p.new.slot}-${p.new.person_key}`]: p.new.note }));
+        else if (p.new) setNotesState(prev => ({ ...prev, [`${p.new.meal_name_en}-${p.new.person_key}`]: p.new.note }));
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "eaten", filter: `household_id=eq.${hid}` }, p => {
         if (p.eventType === "DELETE") triggerReload();
@@ -120,13 +125,13 @@ export default function App() {
     else await supabase.from("plan").upsert({ household_id: hid, day_index: dayIdx, variant_id: variantId, updated_by: uid }, { onConflict: "household_id,day_index" });
   };
 
-  const dbNote = async (actualVariantId, slot, person, val) => {
-    const key = `${actualVariantId}-${slot}-${person}`;
+  const dbNote = async (mealName, person, val) => {
+    const key = `${mealName}-${person}`; // Use Recipe Name as the ID
 
     setNotesState(p => ({ ...p, [key]: val }));
-    await supabase.from("meal_notes").upsert(
-      { household_id: hid, day_index: actualVariantId, slot, person_key: person, note: val, updated_by: uid },
-      { onConflict: "household_id,day_index,slot,person_key" }
+    await supabase.from("recipe_notes").upsert(
+      { household_id: hid, meal_name_en: mealName, person_key: person, note: val, updated_by: uid },
+      { onConflict: "household_id,meal_name_en,person_key" }
     );
   };
 
@@ -365,14 +370,11 @@ export default function App() {
                     const person = "both";
                     const eatKey = `${day}-${slot}-${person}`;
                     const meal = swaps[eatKey] || mR;
-
-                    // Look for the hidden swap ID, otherwise use the base Variant ID
-                    const actualVariantId = meal.variantId || selVariant.id;
-                    const noteKey = `${actualVariantId}-${slot}-${person}`;
+                    const mealId = meal.name.en; // This is the Forever ID
 
                     return <MealCard key={slot} meal={meal} slotLabel={t[slot]} lang={lang} t={t}
                       eaten={!!eatenSt[eatKey]} onToggleEaten={() => dbEaten(day, slot, person)}
-                      note={notes[noteKey]} onNoteChange={v => dbNote(actualVariantId, slot, person, v)}
+                      note={notes[`${mealId}-${person}`]} onNoteChange={v => dbNote(mealId, person, v)}
                       onViewRecipe={setRecipe} onSwap={() => setSwapModal({ slot, person, currentMeal: meal })} />;
                   }
                   return (
@@ -381,14 +383,11 @@ export default function App() {
                       {[["R", mR, P.R], ["I", mI, P.I]].filter(([, m]) => m).map(([person, baseMeal, col]) => {
                         const eatKey = `${day}-${slot}-${person}`;
                         const meal = swaps[eatKey] || baseMeal;
-
-                        // Look for the hidden swap ID, otherwise use the base Variant ID
-                        const actualVariantId = meal.variantId || selVariant.id;
-                        const noteKey = `${actualVariantId}-${slot}-${person}`;
+                        const mealId = meal.name.en; // This is the Forever ID
 
                         return <MealCard key={person} meal={meal} slotLabel={`${t[slot]} — ${t.names[person]}`} lang={lang} t={t}
                           personColor={col} eaten={!!eatenSt[eatKey]} onToggleEaten={() => dbEaten(day, slot, person)}
-                          note={notes[noteKey]} onNoteChange={v => dbNote(actualVariantId, slot, person, v)}
+                          note={notes[`${mealId}-${person}`]} onNoteChange={v => dbNote(mealId, person, v)}
                           onViewRecipe={setRecipe} onSwap={() => setSwapModal({ slot, person, currentMeal: meal })} />;
                       })}
                     </div>
