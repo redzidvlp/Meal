@@ -27,8 +27,10 @@ jobs:
       - name: Install dependencies
         run: npm install
         
-      - name: Build app
-        run: npx vite build
+      - name: Fix Permissions and Build
+        run: |
+          chmod +x node_modules/.bin/vite
+          npx vite build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
