@@ -6,11 +6,13 @@ import { P, S, FONT } from "./theme";
 import { T, VARIANTS, TIPS, SLOTS, getMeal, fmtNum } from "./data";
 import { AuthScreen, RecipeModal, SwapMealModal, VariantPicker, MealCard, WaterTracker } from "./components";
 import chefImage from "./chef-transparent.png";
+import ReloadPrompt from "./ReloadPrompt";
 
 export default function App() {
   const [lang, setLang] = useState("en");
   const [tab, setTab] = useState("plan");
-  const [day, setDay] = useState(0);
+  const todayIdx = (new Date().getDay() + 6) % 7;
+  const [day, setDay] = useState(todayIdx);
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
@@ -72,27 +74,42 @@ export default function App() {
   // ── Real-time ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!hid) return;
+
+    // Smart reloader for when rows are deleted (like during a "New Week" reset)
+    let reloadTimer;
+    const triggerReload = () => {
+      clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => loadAll(), 200);
+    };
+
     const ch = supabase.channel("hh-" + hid)
       .on("postgres_changes", { event: "*", schema: "public", table: "plan", filter: `household_id=eq.${hid}` }, p => {
-        if (p.eventType === "DELETE") setPlanState(prev => { const n = { ...prev }; delete n[p.old.day_index]; return n; });
+        if (p.eventType === "DELETE") triggerReload();
         else setPlanState(prev => ({ ...prev, [p.new.day_index]: p.new.variant_id }));
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "meal_notes", filter: `household_id=eq.${hid}` }, p => {
-        if (p.new) setNotesState(prev => ({ ...prev, [`${p.new.day_index}-${p.new.slot}-${p.new.person_key}`]: p.new.note }));
+        if (p.eventType === "DELETE") triggerReload();
+        else if (p.new) setNotesState(prev => ({ ...prev, [`${p.new.day_index}-${p.new.slot}-${p.new.person_key}`]: p.new.note }));
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "eaten", filter: `household_id=eq.${hid}` }, p => {
-        if (p.new) setEatenSt(prev => ({ ...prev, [`${p.new.day_index}-${p.new.slot}-${p.new.person_key}`]: p.new.eaten }));
+        if (p.eventType === "DELETE") triggerReload();
+        else if (p.new) setEatenSt(prev => ({ ...prev, [`${p.new.day_index}-${p.new.slot}-${p.new.person_key}`]: p.new.eaten }));
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "water", filter: `household_id=eq.${hid}` }, p => {
-        if (p.new) setWaterSt(prev => ({ ...prev, [`${p.new.day_index}-${p.new.person_key}`]: p.new.ml }));
+        if (p.eventType === "DELETE") triggerReload();
+        else if (p.new) setWaterSt(prev => ({ ...prev, [`${p.new.day_index}-${p.new.person_key}`]: p.new.ml }));
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "meal_swaps", filter: `household_id=eq.${hid}` }, p => {
-        if (p.new) setSwapsState(prev => ({ ...prev, [`${p.new.day_index}-${p.new.slot}-${p.new.person_key}`]: JSON.parse(p.new.meal_json) }));
-        if (p.eventType === "DELETE") setSwapsState(prev => { const n = { ...prev }; delete n[`${p.old.day_index}-${p.old.slot}-${p.old.person_key}`]; return n; });
+        if (p.eventType === "DELETE") triggerReload();
+        else if (p.new) setSwapsState(prev => ({ ...prev, [`${p.new.day_index}-${p.new.slot}-${p.new.person_key}`]: JSON.parse(p.new.meal_json) }));
       })
       .subscribe();
-    return () => supabase.removeChannel(ch);
-  }, [hid]);
+
+    return () => {
+      clearTimeout(reloadTimer);
+      supabase.removeChannel(ch);
+    };
+  }, [hid, loadAll]);
 
   // ── Write helpers ─────────────────────────────────────────────────────────
   const uid = session?.user?.id;
@@ -103,13 +120,12 @@ export default function App() {
     else await supabase.from("plan").upsert({ household_id: hid, day_index: dayIdx, variant_id: variantId, updated_by: uid }, { onConflict: "household_id,day_index" });
   };
 
-  const dbNote = async (dayIdx, slot, person, val) => {
-    const variantId = plan[dayIdx];
-    const key = `${variantId}-${slot}-${person}`;
+  const dbNote = async (actualVariantId, slot, person, val) => {
+    const key = `${actualVariantId}-${slot}-${person}`;
 
     setNotesState(p => ({ ...p, [key]: val }));
     await supabase.from("meal_notes").upsert(
-      { household_id: hid, day_index: variantId, slot, person_key: person, note: val, updated_by: uid },
+      { household_id: hid, day_index: actualVariantId, slot, person_key: person, note: val, updated_by: uid },
       { onConflict: "household_id,day_index,slot,person_key" }
     );
   };
@@ -214,6 +230,8 @@ export default function App() {
       <style>{FONT}</style>
       <style>{`*{box-sizing:border-box;}body{margin:0;background:${P.bg};}::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-thumb{background:${P.border};border-radius:2px;}input[type=range]{-webkit-appearance:none;height:6px;border-radius:3px;outline:none;background:${P.border};}input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:${P.R};cursor:pointer;border:2px solid white;box-shadow:0 1px 4px #0002;}`}</style>
 
+      <ReloadPrompt />
+
       {recipe && <RecipeModal meal={recipe} lang={lang} t={t} onClose={() => setRecipe(null)} />}
       {picker && <VariantPicker lang={lang} t={t} selectedId={plan[day]} onSelect={id => dbPlan(day, id || null)} onClose={() => setPicker(false)} />}
       {swapModal && <SwapMealModal {...swapModal} lang={lang} t={t}
@@ -280,14 +298,20 @@ export default function App() {
             <div style={{ display: "flex", gap: 4, justifyContent: "space-between", marginBottom: 14, overflowX: "auto", paddingBottom: 2 }}>
               {t.days.map((d, i) => {
                 const has = !!plan[i];
+                const isToday = i === todayIdx;
+
                 return <button key={d} onClick={() => setDay(i)} style={{
-                  flex: 1, /* This forces them to stretch! */
-                  padding: "5px 0", /* Adjusted padding so they fit nicely */
-                  borderRadius: 9, border: day === i ? `2px solid ${P.accent}` : `1.5px solid ${P.border}`,
-                  background: day === i ? P.accent : has ? P.light : "white", color: day === i ? "white" : P.text,
+                  flex: 1,
+                  padding: "5px 0",
+                  borderRadius: 9,
+                  border: day === i ? `2px solid ${P.accent}` : isToday ? `2px dashed ${P.green}` : `1.5px solid ${P.border}`,
+                  background: day === i ? P.accent : has ? P.light : "white",
+                  color: day === i ? "white" : isToday ? P.green : P.text,
                   fontWeight: 700, fontSize: 11, cursor: "pointer", position: "relative", ...S.sans(11)
                 }}>
-                  {d}{has && day !== i && <span style={{ position: "absolute", top: 2, right: 2, width: 7, height: 7, background: P.green, borderRadius: "50%", border: "1.5px solid white" }} />}
+                  {d}
+                  {/* The Green Dot for variants (kept safely in the absolute top corner!) */}
+                  {has && day !== i && <span style={{ position: "absolute", top: 2, right: 2, width: 7, height: 7, background: P.green, borderRadius: "50%", border: "1.5px solid white" }} />}
                 </button>;
               })}
             </div>
@@ -339,13 +363,16 @@ export default function App() {
                   const mR = getMeal(selVariant, slot, "R"), mI = getMeal(selVariant, slot, "I"), same = mR === mI;
                   if (same && mR) {
                     const person = "both";
-                    const eatKey = `${day}-${slot}-${person}`; // Eaten/Swaps stay on the specific day
-                    const noteKey = `${selVariant.id}-${slot}-${person}`; // Notes follow the specific recipe
+                    const eatKey = `${day}-${slot}-${person}`;
                     const meal = swaps[eatKey] || mR;
+
+                    // Look for the hidden swap ID, otherwise use the base Variant ID
+                    const actualVariantId = meal.variantId || selVariant.id;
+                    const noteKey = `${actualVariantId}-${slot}-${person}`;
 
                     return <MealCard key={slot} meal={meal} slotLabel={t[slot]} lang={lang} t={t}
                       eaten={!!eatenSt[eatKey]} onToggleEaten={() => dbEaten(day, slot, person)}
-                      note={notes[noteKey]} onNoteChange={v => dbNote(day, slot, person, v)}
+                      note={notes[noteKey]} onNoteChange={v => dbNote(actualVariantId, slot, person, v)}
                       onViewRecipe={setRecipe} onSwap={() => setSwapModal({ slot, person, currentMeal: meal })} />;
                   }
                   return (
@@ -353,12 +380,15 @@ export default function App() {
                       {selVariant.diff && <div style={{ ...S.label, color: P.amber, marginBottom: 4, marginTop: 4 }}>{t[slot]} — {t.diffNote}</div>}
                       {[["R", mR, P.R], ["I", mI, P.I]].filter(([, m]) => m).map(([person, baseMeal, col]) => {
                         const eatKey = `${day}-${slot}-${person}`;
-                        const noteKey = `${selVariant.id}-${slot}-${person}`; // Notes follow the specific recipe
                         const meal = swaps[eatKey] || baseMeal;
+
+                        // Look for the hidden swap ID, otherwise use the base Variant ID
+                        const actualVariantId = meal.variantId || selVariant.id;
+                        const noteKey = `${actualVariantId}-${slot}-${person}`;
 
                         return <MealCard key={person} meal={meal} slotLabel={`${t[slot]} — ${t.names[person]}`} lang={lang} t={t}
                           personColor={col} eaten={!!eatenSt[eatKey]} onToggleEaten={() => dbEaten(day, slot, person)}
-                          note={notes[noteKey]} onNoteChange={v => dbNote(day, slot, person, v)}
+                          note={notes[noteKey]} onNoteChange={v => dbNote(actualVariantId, slot, person, v)}
                           onViewRecipe={setRecipe} onSwap={() => setSwapModal({ slot, person, currentMeal: meal })} />;
                       })}
                     </div>

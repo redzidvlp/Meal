@@ -70,6 +70,8 @@ export function AuthScreen({ lang, t }) {
 }
 
 export function RecipeModal({ meal, lang, t, onClose }) {
+    const [scale, setScale] = useState(1); // The servings multiplier!
+
     if (!meal) return null;
     return (
         <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#00000060", zIndex: 600, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -81,21 +83,35 @@ export function RecipeModal({ meal, lang, t, onClose }) {
                     </div>
                     <h2 style={{ ...S.serif(18), margin: "8px 0 10px" }}>{meal.name[lang]}</h2>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        {[["🔥", meal.kcal, t.kcal], ["💪", meal.protein + "g", t.protein], ["🌾", meal.carbs + "g", t.carbs], ["🫒", meal.fat + "g", t.fat]].map(([ic, val, lbl]) => (
+                        {/* We multiply the macros by the scale so you know exactly what you are eating! */}
+                        {[["🔥", meal.kcal, t.kcal], ["💪", meal.protein, t.protein], ["🌾", meal.carbs, t.carbs], ["🫒", meal.fat, t.fat]].map(([ic, val, lbl]) => (
                             <div key={lbl} style={{ background: P.light, borderRadius: 8, padding: "5px 10px", display: "flex", flexDirection: "column", alignItems: "center", minWidth: 56 }}>
                                 <span style={{ fontSize: 11 }}>{ic}</span>
-                                <span style={{ ...S.sans(13), fontWeight: 700 }}>{val}</span>
+                                <span style={{ ...S.sans(13), fontWeight: 700 }}>{Math.round(val * scale)}</span>
                                 <span style={{ ...S.sans(9, P.muted) }}>{lbl}</span>
                             </div>
                         ))}
                     </div>
                 </div>
                 <div style={{ padding: "14px 20px 0" }}>
-                    <div style={{ ...S.serif(14), color: P.accent, marginBottom: 8 }}>{t.ingredientsTitle}</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                        <div style={{ ...S.serif(14), color: P.accent }}>{t.ingredientsTitle}</div>
+
+                        {/* The Servings Multiplier Buttons */}
+                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                            <span style={{ ...S.sans(11, P.muted), marginRight: 4 }}>Porcijos:</span>
+                            {[1, 2, 3, 4].map(n => (
+                                <button key={n} onClick={() => setScale(n)} style={{ width: 26, height: 26, borderRadius: 6, border: scale === n ? `1.5px solid ${P.accent}` : `1px solid ${P.border}`, background: scale === n ? P.accent : "white", color: scale === n ? "white" : P.text, fontWeight: 700, fontSize: 11, cursor: "pointer", padding: 0 }}>{n}</button>
+                            ))}
+                        </div>
+                    </div>
+
                     {meal.ing.map((ing, i) => (
                         <div key={i} style={{ display: "flex", justifyContent: "space-between", ...S.sans(13), padding: "5px 0", borderBottom: `1px dashed ${P.border}` }}>
                             <span>{lang === "lt" ? ing.lt : ing.en}</span>
-                            <span style={{ color: P.amber, fontWeight: 600, marginLeft: 8, flexShrink: 0 }}>{ing.amount} {ing.unit}</span>
+                            <span style={{ color: P.amber, fontWeight: 600, marginLeft: 8, flexShrink: 0 }}>
+                                {Math.round(ing.amount * scale * 10) / 10} {ing.unit}
+                            </span>
                         </div>
                     ))}
                 </div>
@@ -109,13 +125,32 @@ export function RecipeModal({ meal, lang, t, onClose }) {
 }
 
 export function SwapMealModal({ slot, person, currentMeal, lang, t, onSwap, onClose }) {
+    const options = [];
     const seen = new Set();
-    const options = VARIANTS.flatMap(v => {
-        const m = getMeal(v, slot, person);
-        if (!m || seen.has(m.name.en)) return [];
-        seen.add(m.name.en);
-        return [{ variant: v, meal: m, isCurrent: currentMeal && m.name.en === currentMeal.name.en }];
+
+    VARIANTS.forEach(v => {
+        const s = v.meals[slot];
+        if (!s) return;
+
+        const addOption = (mealObj, labelSuffix) => {
+            if (!mealObj) return;
+            const key = mealObj.name.en + labelSuffix; // Keep them separate if they are different for R and I
+            if (seen.has(key)) return;
+            seen.add(key);
+
+            const isCurrent = currentMeal && mealObj.name.en === currentMeal.name.en;
+            options.push({ variant: v, meal: mealObj, isCurrent, labelSuffix });
+        };
+
+        if (s.both) {
+            addOption(s.both, "");
+        } else {
+            // Add both the R and I options to the list so you can steal each other's meals!
+            addOption(s.R, ` (${t.names.R})`);
+            addOption(s.I, ` (${t.names.I})`);
+        }
     });
+
     return (
         <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#00000060", zIndex: 700, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
             <div onClick={e => e.stopPropagation()} style={{ ...S.card, borderRadius: "20px 20px 0 0", width: "100%", maxWidth: 460, maxHeight: "80vh", overflowY: "auto", padding: "20px 16px 32px" }}>
@@ -127,12 +162,13 @@ export function SwapMealModal({ slot, person, currentMeal, lang, t, onSwap, onCl
                     <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: P.muted, fontSize: 18 }}>✕</button>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {options.map(({ variant, meal, isCurrent }) => (
-                        <button key={meal.name.en} onClick={() => { if (!isCurrent) { onSwap(meal); onClose(); } }}
+                    {options.map(({ variant, meal, isCurrent, labelSuffix }) => (
+                        <button key={meal.name.en + labelSuffix} onClick={() => { if (!isCurrent) { onSwap({ ...meal, variantId: variant.id }); onClose(); } }}
                             style={{ background: isCurrent ? P.green + "15" : P.light, border: `1.5px solid ${isCurrent ? P.green : P.border}`, borderRadius: 12, padding: "11px 14px", cursor: isCurrent ? "default" : "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 10 }}>
                             <span style={{ fontSize: 22, flexShrink: 0 }}>{meal.emoji}</span>
                             <div style={{ flex: 1 }}>
-                                <div style={{ ...S.serif(13) }}>{meal.name[lang]}</div>
+                                {/* Shows the name of the meal AND who it originally belonged to */}
+                                <div style={{ ...S.serif(13) }}>{meal.name[lang]} <span style={{ color: P.accent }}>{labelSuffix}</span></div>
                                 <div style={{ ...S.sans(10, P.muted), marginTop: 2 }}>
                                     {variant.label[lang]} · 🔥{meal.kcal} 💪{meal.protein}g 🌾{meal.carbs}g 🫒{meal.fat}g
                                     {isCurrent && <span style={{ color: P.green, marginLeft: 6 }}>← {t.swapSame}</span>}
