@@ -18,7 +18,7 @@
     "gh-pages": "^6.1.1",
     "lodash": "^4.17.21",
     "vite": "^7.3.1",
-    "vite-plugin-pwa": "^0.20.5",
+    "vite-plugin-pwa": "^1.2.0",
     "workbox-build": "^7.1.1"
   },
   "browserslist": {
