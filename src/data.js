@@ -87,17 +87,17 @@ export const fmtNum = n => { const r = Math.round(n * 10) / 10; return Number.is
 
 export const VARIANTS = [
     {
-        id: 1, label: { en: "Variant I", lt: "I variantas" }, kcal: { R: 1503, I: 1488 }, diff: true, meals: {
+        id: 1, label: { en: "Variant I", lt: "I variantas" }, kcal: { R: 1488, I: 1503 }, diff: true, meals: {
             breakfast: {
                 R: {
-                    name: { en: "Buckwheat with boiled eggs & seeds", lt: "Grikiai su kiaušiniais ir sėklomis" }, emoji: "🥣", kcal: 388, protein: 20, carbs: 44, fat: 15,
-                    ing: [mkI("Buckwheat", "Grikiai", 50, "g"), mkI("Eggs", "Kiaušiniai", 2, "vnt"), mkI("Pumpkin seeds", "Moliūgų sėklos", 5, "g"), mkI("Sesame seeds", "Sezamų sėklos", 5, "g"), mkI("Cucumber", "Agurkas", 70, "g"), mkI("Tomato", "Pomidoras", 30, "g"), mkI("Spinach", "Špinatai", 5, "g"), mkI("Parsley", "Petražolės", 5, "g"), mkI("Rocket", "Rukola", 5, "g")],
-                    method: { en: "Cook buckwheat in salted water, top with seeds. Boil eggs to your liking. Serve with fresh cucumber, tomato and greens.", lt: "Grikius išvirti pasūdytame vandenyje, pagardinti sėklomis. Kiaušinius išvirti. Valgyti su šviežia daržove ir žalumynais." }
-                },
-                I: {
                     name: { en: "Avocado toast with boiled eggs", lt: "Avokado ant duonos su kiaušiniais" }, emoji: "🥑", kcal: 374, protein: 19, carbs: 19, fat: 25,
                     ing: [mkI("GF bread", "Duona be glitimo", 40, "g"), mkI("Avocado", "Avokadas", 40, "g"), mkI("Eggs", "Kiaušiniai", 2, "vnt"), mkI("Pumpkin seeds", "Moliūgų sėklos", 5, "g"), mkI("Chia seeds", "Chia sėklos", 5, "g"), mkI("Cucumber", "Agurkas", 50, "g"), mkI("Tomato", "Pomidoras", 50, "g")],
                     method: { en: "Mash avocado with lemon juice, salt & pepper. Spread on toasted bread, scatter seeds. Boil eggs. Serve with fresh cucumber and tomato.", lt: "Avokadą sutrinti su citrina, druska ir pipirais. Užtepti ant duonos, pabarstyti sėklų. Kiaušinius išvirti, valgyti su šviežia daržove." }
+                },
+                I: {
+                    name: { en: "Buckwheat with boiled eggs & seeds", lt: "Grikiai su kiaušiniais ir sėklomis" }, emoji: "🥣", kcal: 388, protein: 20, carbs: 44, fat: 15,
+                    ing: [mkI("Buckwheat", "Grikiai", 50, "g"), mkI("Eggs", "Kiaušiniai", 2, "vnt"), mkI("Pumpkin seeds", "Moliūgų sėklos", 5, "g"), mkI("Sesame seeds", "Sezamų sėklos", 5, "g"), mkI("Cucumber", "Agurkas", 70, "g"), mkI("Tomato", "Pomidoras", 30, "g"), mkI("Spinach", "Špinatai", 5, "g"), mkI("Parsley", "Petražolės", 5, "g"), mkI("Rocket", "Rukola", 5, "g")],
+                    method: { en: "Cook buckwheat in salted water, top with seeds. Boil eggs to your liking. Serve with fresh cucumber, tomato and greens.", lt: "Grikius išvirti pasūdytame vandenyje, pagardinti sėklomis. Kiaušinius išvirti. Valgyti su šviežia daržove ir žalumynais." }
                 }
             },
             lunch: {
@@ -208,9 +208,9 @@ export const VARIANTS = [
             },
             snack: {
                 both: {
-                    name: { en: "Roasted carrot sticks with Tahini yogurt dip", lt: "Keptos morkų lazdelės su Tahini jogurto padažu" }, emoji: "🥕", kcal: 141, protein: 4, carbs: 12, fat: 7,
-                    ing: [mkI("Carrot", "Morka", 150, "g"), mkI("Tahini paste", "Sezamų pasta", 10, "g"), mkI("Lactose-free yogurt 2.5%", "Jogurtas be laktozės 2,5%", 50, "g"), mkI("Lemon juice", "Citrinos sultys", 5, "ml")],
-                    method: { en: "Cut carrots into sticks, season, roast at 200°C for 15 min. Dip: mix tahini + lemon juice + salt + yogurt.", lt: "Morkas supjaustyti lazdelėmis, kepti 200°C 15 min. Padažui: sezamų pastą sumaišyti su citrinos sultimis, druska ir jogurtu." }
+                    name: { en: "Kiwi", lt: "Kivis" }, emoji: "🥝", kcal: 92, protein: 2, carbs: 22, fat: 1,
+                    ing: [mkI("Kiwi", "Kivis", 2, "vnt")],
+                    method: { en: "Peel and eat.", lt: "Nulupti ir valgyti." }
                 }
             },
             dinner: {
@@ -227,14 +227,15 @@ export const VARIANTS = [
         id: 5, label: { en: "Variant V", lt: "V variantas" }, kcal: { R: 1589, I: 1604 }, diff: true, meals: {
             breakfast: {
                 R: {
-                    name: { en: "Overnight oats with berries & nut butter", lt: "Per naktį brinkintos avižos su uogomis ir riešutų sviestu" }, emoji: "🌙", kcal: 421, protein: 14, carbs: 51, fat: 16,
-                    ing: [mkI("GF rolled oats", "Avižiniai dribsniai (be glitimo)", 50, "g"), mkI("Plant milk", "Augalinis pienas", 100, "ml"), mkI("Lactose-free yogurt 2.5%", "Jogurtas be laktozės 2,5%", 100, "g"), mkI("Berries (fresh/frozen)", "Uogos (šviežios/šaldytos)", 150, "g"), mkI("Dark chocolate", "Juodasis šokoladas", 5, "g"), mkI("Nut butter", "Riešutų sviestas", 10, "g")],
-                    method: { en: "Evening: mix oats with yogurt and milk. Refrigerate overnight. Morning: top with berries, nut butter and crushed dark chocolate.", lt: "Vakare sumaišyti dribsnius su jogurtu ir pienu. Laikyti šaldytuve. Ryte pagardinti uogomis, riešutų sviestu ir susmulkintu šokoladu." }
-                },
-                I: {
                     name: { en: "Protein smoothie with banana & berries", lt: "Baltyminis smoothie su bananu ir uogomis" }, emoji: "🥤", kcal: 436, protein: 26, carbs: 45, fat: 17,
                     ing: [mkI("Peanut butter", "Žemės riešutų sviestas", 15, "g"), mkI("Plant protein powder", "Augalinis proteinas", 20, "g"), mkI("Cashews", "Anakardžiai", 20, "g"), mkI("Berries (fresh/frozen)", "Uogos (šviežios/šaldytos)", 150, "g"), mkI("Banana", "Bananas", 120, "g")],
                     method: { en: "Blend all ingredients together. Add water to desired consistency.", lt: "Suplakti visus ingredientus. Pagal norą įpilti vandens." }
+
+                },
+                I: {
+                    name: { en: "Overnight oats with berries & nut butter", lt: "Per naktį brinkintos avižos su uogomis ir riešutų sviestu" }, emoji: "🌙", kcal: 421, protein: 14, carbs: 51, fat: 16,
+                    ing: [mkI("GF rolled oats", "Avižiniai dribsniai (be glitimo)", 50, "g"), mkI("Plant milk", "Augalinis pienas", 100, "ml"), mkI("Lactose-free yogurt 2.5%", "Jogurtas be laktozės 2,5%", 100, "g"), mkI("Berries (fresh/frozen)", "Uogos (šviežios/šaldytos)", 150, "g"), mkI("Dark chocolate", "Juodasis šokoladas", 5, "g"), mkI("Nut butter", "Riešutų sviestas", 10, "g")],
+                    method: { en: "Evening: mix oats with yogurt and milk. Refrigerate overnight. Morning: top with berries, nut butter and crushed dark chocolate.", lt: "Vakare sumaišyti dribsnius su jogurtu ir pienu. Laikyti šaldytuve. Ryte pagardinti uogomis, riešutų sviestu ir susmulkintu šokoladu." }
                 }
             },
             lunch: {
@@ -245,10 +246,15 @@ export const VARIANTS = [
                 }
             },
             snack: {
-                both: {
-                    name: { en: "Corn chips", lt: "Kukurūzų traškučiai" }, emoji: "🌽", kcal: 145, protein: 2, carbs: 19, fat: 6,
+                R: {
+                    name: { en: "Corn chips", lt: "Kukurūzų traškučiai" }, emoji: "🌽", kcal: 145.2, protein: 1.89, carbs: 19.2, fat: 6,
                     ing: [mkI("Corn chips (Santa Maria)", "Kukurūzų traškučiai (Santa Maria)", 30, "g")],
                     method: { en: "Ready to eat.", lt: "Vartoti kaip yra." }
+                },
+                I: {
+                    name: { en: "Banana with peanut butter", lt: "Bananas su riešutų sviestu" }, emoji: "🍌", kcal: 160.8, protein: 4.24, carbs: 26.6, fat: 4.22,
+                    ing: [mkI("Banana", "Bananas", 120, "g"), mkI("Peanut butter", "Riešutų sviestas", 10, "g")],
+                    method: { en: "Eat banana with peanut butter.", lt: "Bananą valgyti su riešutų sviestu." }
                 }
             },
             dinner: {
@@ -331,14 +337,14 @@ export const VARIANTS = [
         id: 8, label: { en: "Variant VIII", lt: "VIII variantas" }, kcal: { R: 1559, I: 1457 }, diff: true, meals: {
             breakfast: {
                 R: {
-                    name: { en: "Quinoa porridge with plant protein, banana & hemp seeds", lt: "Bolivinių balandų košė su proteinu, bananu ir kanapių sėklomis" }, emoji: "🍌", kcal: 441, protein: 29, carbs: 59, fat: 11,
-                    ing: [mkI("Quinoa", "Bolivinė balanda", 50, "g"), mkI("Plant protein powder", "Augalinis proteinas", 20, "g"), mkI("Banana", "Bananas", 120, "g"), mkI("Hemp seeds (shelled)", "Kanapių sėklos (lukštentos)", 15, "g")],
-                    method: { en: "Cook quinoa in slightly salted water. Stir in protein powder while still warm. Add diced banana and hemp seeds. Sprinkle with cinnamon.", lt: "Kruopas išvirti pasūdytame vandenyje. Sudėti proteiną, gerai išmaišyti. Sudėti pjaustytą bananą ir kanapių sėklas. Pabarstyti cinamonu." }
+                    name: { en: "Yogurt with banana", lt: "Jogurtas su bananu ir proteinu" }, emoji: "🍌", kcal: 392, protein: 28, carbs: 35, fat: 15,
+                    ing: [mkI("Lactose-free yogurt 2.5%", "Jogurtas", 200, "g"), mkI("Plant protein powder", "Augalinis proteinas", 20, "g"), mkI("Walnuts", "Graikiniai riešutai", 15, "g"), mkI("Banana", "Bananas", 120, "g")],
+                    method: { en: "Mix yogurt with protein. Add banana.", lt: "Jogurtą sumaišyti su proteinu. Įdėti bananą." }
                 },
                 I: {
-                    name: { en: "Yogurt with banana, walnuts & protein powder", lt: "Jogurtas su bananu, graikiniais riešutais ir proteinu" }, emoji: "🍌", kcal: 392, protein: 28, carbs: 35, fat: 15,
-                    ing: [mkI("Lactose-free yogurt 2.5%", "Jogurtas be laktozės 2,5%", 200, "g"), mkI("Plant protein powder", "Augalinis proteinas", 20, "g"), mkI("Walnuts", "Graikiniai riešutai", 15, "g"), mkI("Banana", "Bananas", 120, "g")],
-                    method: { en: "Mix yogurt with protein powder until smooth. Add sliced banana and crushed walnuts.", lt: "Jogurtą sumaišyti su proteino milteliais. Sudėti pjaustytą bananą ir smulkintus riešutus." }
+                    name: { en: "Quinoa porridge with protein", lt: "Bolivinių balandų košė su proteinu" }, emoji: "🥣", kcal: 441, protein: 29, carbs: 59, fat: 11,
+                    ing: [mkI("Quinoa", "Bolivinė balanda", 50, "g"), mkI("Plant protein powder", "Augalinis proteinas", 20, "g"), mkI("Banana", "Bananas", 120, "g"), mkI("Hemp seeds", "Kanapių sėklos", 15, "g")],
+                    method: { en: "Cook quinoa, stir in protein and banana.", lt: "Kruopas išvirti, įmaišyti proteiną ir bananą." }
                 }
             },
             lunch: {
@@ -388,9 +394,9 @@ export const VARIANTS = [
             },
             snack: {
                 both: {
-                    name: { en: "Soaked nuts", lt: "Mirkyti riešutai" }, emoji: "🥜", kcal: 125, protein: 4, carbs: 2, fat: 11,
-                    ing: [mkI("Nuts (soaked overnight in salted water)", "Riešutai (mirkyti vandenyje su žiupsneliu druskos)", 20, "g")],
-                    method: { en: "Soak nuts overnight in cold water with a pinch of salt. Pat dry before eating.", lt: "Riešutus mirkyti vandenyje per naktį su žiupsneliu druskos. Ryte išdžiovinti." }
+                    name: { en: "Nuts", lt: "Riešutai" }, emoji: "🥜", kcal: 125, protein: 4, carbs: 2, fat: 11,
+                    ing: [mkI("Nuts", "Riešutai", 20, "g")],
+                    method: { en: "Eat nuts.", lt: "Suvalgyti riešutus." }
                 }
             },
             dinner: {
@@ -421,9 +427,9 @@ export const VARIANTS = [
             },
             snack: {
                 both: {
-                    name: { en: "Soaked nuts", lt: "Mirkyti riešutai" }, emoji: "🥜", kcal: 125, protein: 4, carbs: 2, fat: 11,
-                    ing: [mkI("Nuts (soaked overnight in salted water)", "Riešutai (mirkyti vandenyje su žiupsneliu druskos)", 20, "g")],
-                    method: { en: "Soak nuts overnight in cold water with a pinch of salt.", lt: "Riešutus mirkyti vandenyje per naktį su žiupsneliu druskos." }
+                    name: { en: "Nuts", lt: "Riešutai" }, emoji: "🥜", kcal: 125, protein: 4, carbs: 2, fat: 11,
+                    ing: [mkI("Nuts", "Riešutai", 20, "g")],
+                    method: { en: "Eat nuts.", lt: "Suvalgyti riešutus." }
                 }
             },
             dinner: {

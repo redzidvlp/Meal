@@ -103,9 +103,14 @@ export default function App() {
   };
 
   const dbNote = async (dayIdx, slot, person, val) => {
-    const key = `${dayIdx}-${slot}-${person}`;
+    const variantId = plan[dayIdx];
+    const key = `${variantId}-${slot}-${person}`;
+
     setNotesState(p => ({ ...p, [key]: val }));
-    await supabase.from("meal_notes").upsert({ household_id: hid, day_index: dayIdx, slot, person_key: person, note: val, updated_by: uid }, { onConflict: "household_id,day_index,slot,person_key" });
+    await supabase.from("meal_notes").upsert(
+      { household_id: hid, day_index: variantId, slot, person_key: person, note: val, updated_by: uid },
+      { onConflict: "household_id,day_index,slot,person_key" }
+    );
   };
 
   const dbEaten = async (dayIdx, slot, person) => {
@@ -332,22 +337,27 @@ export default function App() {
                 {SLOTS.map(slot => {
                   const mR = getMeal(selVariant, slot, "R"), mI = getMeal(selVariant, slot, "I"), same = mR === mI;
                   if (same && mR) {
-                    const person = "both", key = `${day}-${slot}-${person}`;
-                    const meal = swaps[key] || mR;
+                    const person = "both";
+                    const eatKey = `${day}-${slot}-${person}`; // Eaten/Swaps stay on the specific day
+                    const noteKey = `${selVariant.id}-${slot}-${person}`; // Notes follow the specific recipe
+                    const meal = swaps[eatKey] || mR;
+
                     return <MealCard key={slot} meal={meal} slotLabel={t[slot]} lang={lang} t={t}
-                      eaten={!!eatenSt[key]} onToggleEaten={() => dbEaten(day, slot, person)}
-                      note={notes[key]} onNoteChange={v => dbNote(day, slot, person, v)}
+                      eaten={!!eatenSt[eatKey]} onToggleEaten={() => dbEaten(day, slot, person)}
+                      note={notes[noteKey]} onNoteChange={v => dbNote(day, slot, person, v)}
                       onViewRecipe={setRecipe} onSwap={() => setSwapModal({ slot, person, currentMeal: meal })} />;
                   }
                   return (
                     <div key={slot}>
                       {selVariant.diff && <div style={{ ...S.label, color: P.amber, marginBottom: 4, marginTop: 4 }}>{t[slot]} — {t.diffNote}</div>}
                       {[["R", mR, P.R], ["I", mI, P.I]].filter(([, m]) => m).map(([person, baseMeal, col]) => {
-                        const key = `${day}-${slot}-${person}`;
-                        const meal = swaps[key] || baseMeal;
+                        const eatKey = `${day}-${slot}-${person}`;
+                        const noteKey = `${selVariant.id}-${slot}-${person}`; // Notes follow the specific recipe
+                        const meal = swaps[eatKey] || baseMeal;
+
                         return <MealCard key={person} meal={meal} slotLabel={`${t[slot]} — ${t.names[person]}`} lang={lang} t={t}
-                          personColor={col} eaten={!!eatenSt[key]} onToggleEaten={() => dbEaten(day, slot, person)}
-                          note={notes[key]} onNoteChange={v => dbNote(day, slot, person, v)}
+                          personColor={col} eaten={!!eatenSt[eatKey]} onToggleEaten={() => dbEaten(day, slot, person)}
+                          note={notes[noteKey]} onNoteChange={v => dbNote(day, slot, person, v)}
                           onViewRecipe={setRecipe} onSwap={() => setSwapModal({ slot, person, currentMeal: meal })} />;
                       })}
                     </div>
