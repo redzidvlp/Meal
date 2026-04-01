@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { supabase } from "./supabase";
 import { P, S, FONT } from "./theme";
 import { VARIANTS, getMeal, SLOTS } from "./data";
+import chefImage from './chef-transparent.png';
 
 export function AutoTextarea({ value, onChange, placeholder, style }) {
     const ref = useRef(null);
@@ -43,7 +44,7 @@ export function AuthScreen({ lang, t }) {
             <div style={{ ...S.card, borderRadius: 20, padding: "32px 28px", maxWidth: 360, width: "100%", boxShadow: "0 8px 32px #00000015" }}>
                 <div style={{ textAlign: "center", marginBottom: 24 }}>
                     {/* Baked-in Image Fix! */}
-                    <img src="/chef-transparent.png" alt="chef" style={{ width: 64, height: 64, imageRendering: "pixelated", marginBottom: 8 }} />
+                    <img src={chefImage} alt="chef" style={{ width: 64, height: 64, imageRendering: "pixelated", marginBottom: 8 }} />
                     <div style={{ ...S.serif(22, 300) }}>Our Meal Plan</div>
                     <div style={{ ...S.sans(11, P.muted), marginTop: 2 }}>low-FODMAP · gluten-free</div>
                 </div>
