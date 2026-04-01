@@ -5,6 +5,7 @@ import { supabase } from "./supabase";
 import { P, S, FONT } from "./theme";
 import { T, VARIANTS, TIPS, SLOTS, getMeal, fmtNum } from "./data";
 import { AuthScreen, RecipeModal, SwapMealModal, VariantPicker, MealCard, WaterTracker } from "./components";
+import chefImage from "./chef-transparent.png";
 
 export default function App() {
   const [lang, setLang] = useState("en");
@@ -240,7 +241,7 @@ export default function App() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {/* Baked-in Image Fix! */}
-              <img src="/chef-transparent.png" alt="" style={{ width: 32, height: 32, imageRendering: "pixelated", borderRadius: 6 }} />
+              <img src={chefImage} alt="Chef" style={{ width: 32, height: 32, imageRendering: "pixelated", borderRadius: 6 }} />
               <div>
                 <div style={{ fontFamily: "'Caveat',cursive", fontSize: 11, color: "#C8A882", letterSpacing: 1.5 }}>{t.subtitle}</div>
                 <h1 style={{ margin: 0, ...S.serif(18, 300), color: "#FFF8EC" }}>{t.title}</h1>
@@ -286,7 +287,7 @@ export default function App() {
                   background: day === i ? P.accent : has ? P.light : "white", color: day === i ? "white" : P.text,
                   fontWeight: 700, fontSize: 11, cursor: "pointer", position: "relative", ...S.sans(11)
                 }}>
-                  {d}{has && day !== i && <span style={{ position: "absolute", top: -3, right: -3, width: 7, height: 7, background: P.green, borderRadius: "50%", border: "1.5px solid white" }} />}
+                  {d}{has && day !== i && <span style={{ position: "absolute", top: 2, right: 2, width: 7, height: 7, background: P.green, borderRadius: "50%", border: "1.5px solid white" }} />}
                 </button>;
               })}
             </div>
