@@ -2,6 +2,10 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -13,6 +17,8 @@ jobs:
           node-version: '24' 
           
       - run: npm install
+      
+      - run: npm install vite @vitejs/plugin-react --no-save
       
       - run: npm run build
         env:
