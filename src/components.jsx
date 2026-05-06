@@ -113,13 +113,16 @@ export function RecipeModal({ meal, lang, t, onClose }) {
                         </div>
                     </div>
 
-                    {/* NEW: Clickable, strikethrough ingredients! */}
+                    {/* NEW: Clickable, strikethrough ingredients with Checkboxes! */}
                     {meal.ing.map((ing, i) => {
                         const isChk = checked.has(i);
                         return (
-                            <div key={i} onClick={() => toggleIng(i)} style={{ display: "flex", justifyContent: "space-between", ...S.sans(13), padding: "5px 0", borderBottom: `1px dashed ${P.border}`, cursor: "pointer", opacity: isChk ? 0.4 : 1, transition: "opacity 0.2s" }}>
-                                <span style={{ textDecoration: isChk ? "line-through" : "none" }}>{lang === "lt" ? ing.lt : ing.en}</span>
-                                <span style={{ color: P.amber, fontWeight: 600, marginLeft: 8, flexShrink: 0, textDecoration: isChk ? "line-through" : "none" }}>
+                            <div key={i} onClick={() => toggleIng(i)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", ...S.sans(13), padding: "6px 0", borderBottom: `1px dashed ${P.border}`, cursor: "pointer", opacity: isChk ? 0.4 : 1, transition: "opacity 0.2s" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                    <span style={{ fontSize: 16, color: isChk ? P.green : P.muted }}>{isChk ? "✅" : "⬜"}</span>
+                                    <span style={{ textDecoration: isChk ? "line-through" : "none" }}>{lang === "lt" ? ing.lt : ing.en}</span>
+                                </div>
+                                <span style={{ color: P.amber, fontWeight: 600, flexShrink: 0, textDecoration: isChk ? "line-through" : "none" }}>
                                     {Math.round(ing.amount * scale * 10) / 10} {ing.unit}
                                 </span>
                             </div>
@@ -272,7 +275,7 @@ export function VariantPicker({ lang, t, selectedId, onSelect, onClose }) {
 }
 
 // Note the new "onSplit" at the very end of the props list!
-export function MealCard({ meal, slotLabel, lang, t, personColor, eaten, onToggleEaten, note, onNoteChange, onViewRecipe, onSwap, onSplit }) {
+export function MealCard({ meal, slotLabel, lang, t, personColor, eaten, onToggleEaten, note, onNoteChange, onViewRecipe, onSwap, onSplit, onUndo }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(note || "");
     useEffect(() => { setDraft(note || ""); }, [note]);
@@ -303,6 +306,12 @@ export function MealCard({ meal, slotLabel, lang, t, personColor, eaten, onToggl
                         {onSplit && (
                             <button onClick={onSplit} style={{ background: "transparent", border: `1px dashed ${P.amber}`, borderRadius: 8, padding: "4px 9px", cursor: "pointer", ...S.sans(11, P.amber) }}>
                                 ✂️ {lang === "en" ? "Split" : "Atskirti"}
+                            </button>
+                        )}
+
+                        {onUndo && (
+                            <button onClick={onUndo} style={{ background: "transparent", border: `1px dashed ${P.muted}`, borderRadius: 8, padding: "4px 9px", cursor: "pointer", ...S.sans(11, P.muted) }}>
+                                ↺ {lang === "en" ? "Undo" : "Atšaukti"}
                             </button>
                         )}
                     </div>

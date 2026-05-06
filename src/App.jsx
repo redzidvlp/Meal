@@ -426,9 +426,10 @@ export default function App() {
                   const mR = getMeal(selVariant, slot, "R");
                   const mI = getMeal(selVariant, slot, "I");
 
-                  // NEW: Check if either person has an active swap in the database
-                  const isSplit = swaps[`${day}-${slot}-R`] || swaps[`${day}-${slot}-I`];
-                  const same = (mR === mI) && !isSplit;
+                  // Check if there are explicit swaps active
+                  const isExplicitSplit = swaps[`${day}-${slot}-R`] || swaps[`${day}-${slot}-I`];
+                  const hasAnySwap = isExplicitSplit || swaps[`${day}-${slot}-both`];
+                  const same = (mR === mI) && !isExplicitSplit;
 
                   if (same && mR) {
                     const person = "both";
@@ -440,12 +441,13 @@ export default function App() {
                       eaten={!!eatenSt[eatKey]} onToggleEaten={() => dbEaten(day, slot, person)}
                       note={notes[`${mealId}-${person}`]} onNoteChange={v => dbNote(mealId, person, v)}
                       onViewRecipe={setRecipe} onSwap={() => setSwapModal({ slot, person, currentMeal: meal })}
-                      onSplit={() => dbSplit(slot, meal)} />; // <-- We pass the Split trigger here!
+                      onSplit={() => dbSplit(slot, meal)}
+                      onUndo={hasAnySwap ? () => dbResetSlot(slot) : null} />;
                   }
 
                   return (
                     <div key={slot}>
-                      {selVariant.diff && <div style={{ ...S.label, color: P.amber, marginBottom: 4, marginTop: 4 }}>{t[slot]} — {t.diffNote}</div>}
+                      {selVariant.diff && !isExplicitSplit && <div style={{ ...S.label, color: P.amber, marginBottom: 4, marginTop: 4 }}>{t[slot]} — {t.diffNote}</div>}
                       {[["R", mR, P.R], ["I", mI, P.I]].filter(([, m]) => m).map(([person, baseMeal, col]) => {
                         const eatKey = `${day}-${slot}-${person}`;
                         const meal = swaps[eatKey] || baseMeal;
@@ -454,7 +456,8 @@ export default function App() {
                         return <MealCard key={person} meal={meal} slotLabel={`${t[slot]} — ${t.names[person]}`} lang={lang} t={t}
                           personColor={col} eaten={!!eatenSt[eatKey]} onToggleEaten={() => dbEaten(day, slot, person)}
                           note={notes[`${mealId}-${person}`]} onNoteChange={v => dbNote(mealId, person, v)}
-                          onViewRecipe={setRecipe} onSwap={() => setSwapModal({ slot, person, currentMeal: meal })} />;
+                          onViewRecipe={setRecipe} onSwap={() => setSwapModal({ slot, person, currentMeal: meal })}
+                          onUndo={hasAnySwap ? () => dbResetSlot(slot) : null} />;
                       })}
                     </div>
                   );
