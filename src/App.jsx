@@ -120,37 +120,29 @@ export default function App() {
   const uid = session?.user?.id;
 
   const dbPlan = async (dayIdx, variantId) => {
-    // 1. Update the plan state
     setPlanState(p => { const n = { ...p }; if (!variantId) delete n[dayIdx]; else n[dayIdx] = variantId; return n; });
 
-    // 2. Clear the local "eaten" checkmarks for this specific day instantly
-    setEatenSt(prev => {
-      const next = { ...prev };
-      Object.keys(next).forEach(key => {
-        if (key.startsWith(`${dayIdx}-`)) delete next[key];
-      });
-      return next;
-    });
+    // Clear both eaten checkmarks AND old swaps locally
+    setEatenSt(prev => { const next = { ...prev }; Object.keys(next).forEach(key => { if (key.startsWith(`${dayIdx}-`)) delete next[key]; }); return next; });
+    setSwapsState(prev => { const next = { ...prev }; Object.keys(next).forEach(key => { if (key.startsWith(`${dayIdx}-`)) delete next[key]; }); return next; });
 
-    // 3. Save the new plan variant to Supabase
     if (!variantId) {
       await supabase.from("plan").delete().eq("household_id", hid).eq("day_index", dayIdx);
     } else {
       await supabase.from("plan").upsert({ household_id: hid, day_index: dayIdx, variant_id: variantId, updated_by: uid }, { onConflict: "household_id,day_index" });
     }
 
-    // 4. Wipe the old "eaten" records for this day from Supabase so the new meals start fresh!
-    await supabase.from("eaten").delete().eq("household_id", hid).eq("day_index", dayIdx);
+    // Wipe old records from DB so the new variant is perfectly clean
+    await Promise.all([
+      supabase.from("eaten").delete().eq("household_id", hid).eq("day_index", dayIdx),
+      supabase.from("meal_swaps").delete().eq("household_id", hid).eq("day_index", dayIdx)
+    ]);
   };
 
   const dbNote = async (mealName, person, val) => {
-    const key = `${mealName}-${person}`; // Use Recipe Name as the ID
-
+    const key = `${mealName}-${person}`;
     setNotesState(p => ({ ...p, [key]: val }));
-    await supabase.from("recipe_notes").upsert(
-      { household_id: hid, meal_name_en: mealName, person_key: person, note: val, updated_by: uid },
-      { onConflict: "household_id,meal_name_en,person_key" }
-    );
+    await supabase.from("recipe_notes").upsert({ household_id: hid, meal_name_en: mealName, person_key: person, note: val, updated_by: uid }, { onConflict: "household_id,meal_name_en,person_key" });
   };
 
   const dbEaten = async (dayIdx, slot, person) => {
@@ -164,30 +156,52 @@ export default function App() {
     await supabase.from("water").upsert({ household_id: hid, day_index: dayIdx, person_key: person, ml }, { onConflict: "household_id,day_index,person_key" });
   };
 
+  // SMART SWAP: Passing "null" as the meal now deletes the swap!
   const dbSwap = async (dayIdx, slot, person, meal) => {
     const key = `${dayIdx}-${slot}-${person}`;
-    setSwapsState(p => ({ ...p, [key]: meal }));
-    await supabase.from("meal_swaps").upsert({ household_id: hid, day_index: dayIdx, slot, person_key: person, meal_json: JSON.stringify(meal) }, { onConflict: "household_id,day_index,slot,person_key" });
+    if (!meal) {
+      setSwapsState(p => { const n = { ...p }; delete n[key]; return n; });
+      await supabase.from("meal_swaps").delete().eq("household_id", hid).eq("day_index", dayIdx).eq("slot", slot).eq("person_key", person);
+    } else {
+      setSwapsState(p => ({ ...p, [key]: meal }));
+      await supabase.from("meal_swaps").upsert({ household_id: hid, day_index: dayIdx, slot, person_key: person, meal_json: JSON.stringify(meal) }, { onConflict: "household_id,day_index,slot,person_key" });
+    }
   };
 
   const dbSwapSlots = async (slotA, slotB) => {
-    // 1. Get the currently resolved meals for both slots
     const mealA_R = getResolvedMeal(selVariant, slotA, "R");
     const mealA_I = getResolvedMeal(selVariant, slotA, "I");
+    const sameA = mealA_R && mealA_I && mealA_R.name.en === mealA_I.name.en;
+
     const mealB_R = getResolvedMeal(selVariant, slotB, "R");
     const mealB_I = getResolvedMeal(selVariant, slotB, "I");
+    const sameB = mealB_R && mealB_I && mealB_R.name.en === mealB_I.name.en;
 
-    // 2. Cross-save them into their new reversed slots
-    if (mealB_R) await dbSwap(day, slotA, "R", mealB_R);
-    if (mealB_I) await dbSwap(day, slotA, "I", mealB_I);
-    if (mealA_R) await dbSwap(day, slotB, "R", mealA_R);
-    if (mealA_I) await dbSwap(day, slotB, "I", mealA_I);
+    // Wipe any existing swaps in these slots first so they don't overlap
+    await Promise.all([
+      dbSwap(day, slotA, "R", null), dbSwap(day, slotA, "I", null), dbSwap(day, slotA, "both", null),
+      dbSwap(day, slotB, "R", null), dbSwap(day, slotB, "I", null), dbSwap(day, slotB, "both", null)
+    ]);
+
+    // Cross-save. If they were shared, save them as "both" to prevent accidental splitting!
+    if (sameB && mealB_R) await dbSwap(day, slotA, "both", mealB_R);
+    else { if (mealB_R) await dbSwap(day, slotA, "R", mealB_R); if (mealB_I) await dbSwap(day, slotA, "I", mealB_I); }
+
+    if (sameA && mealA_R) await dbSwap(day, slotB, "both", mealA_R);
+    else { if (mealA_R) await dbSwap(day, slotB, "R", mealA_R); if (mealA_I) await dbSwap(day, slotB, "I", mealA_I); }
   };
 
   const dbSplit = async (slot, meal) => {
-    // Saving explicit individual copies breaks the "shared" link forever!
+    await dbSwap(day, slot, "both", null); // Wipe the shared swap if it existed
     await dbSwap(day, slot, "R", meal);
     await dbSwap(day, slot, "I", meal);
+  };
+
+  // NEW: Instantly revert any splits or swaps for a slot!
+  const dbResetSlot = async (slot) => {
+    await dbSwap(day, slot, "R", null);
+    await dbSwap(day, slot, "I", null);
+    await dbSwap(day, slot, "both", null);
   };
 
   const dbResetWeek = async () => {

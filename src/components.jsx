@@ -119,7 +119,9 @@ export function RecipeModal({ meal, lang, t, onClose }) {
                         return (
                             <div key={i} onClick={() => toggleIng(i)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", ...S.sans(13), padding: "6px 0", borderBottom: `1px dashed ${P.border}`, cursor: "pointer", opacity: isChk ? 0.4 : 1, transition: "opacity 0.2s" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                    <span style={{ fontSize: 16, color: isChk ? P.green : P.muted }}>{isChk ? "✅" : "⬜"}</span>
+                                    <span style={{ fontSize: 16, fontWeight: 800, color: isChk ? P.green : P.muted }}>
+                                        {isChk ? "✓" : "◻"}
+                                    </span>
                                     <span style={{ textDecoration: isChk ? "line-through" : "none" }}>{lang === "lt" ? ing.lt : ing.en}</span>
                                 </div>
                                 <span style={{ color: P.amber, fontWeight: 600, flexShrink: 0, textDecoration: isChk ? "line-through" : "none" }}>
