@@ -120,9 +120,27 @@ export default function App() {
   const uid = session?.user?.id;
 
   const dbPlan = async (dayIdx, variantId) => {
+    // 1. Update the plan state
     setPlanState(p => { const n = { ...p }; if (!variantId) delete n[dayIdx]; else n[dayIdx] = variantId; return n; });
-    if (!variantId) await supabase.from("plan").delete().eq("household_id", hid).eq("day_index", dayIdx);
-    else await supabase.from("plan").upsert({ household_id: hid, day_index: dayIdx, variant_id: variantId, updated_by: uid }, { onConflict: "household_id,day_index" });
+
+    // 2. Clear the local "eaten" checkmarks for this specific day instantly
+    setEatenSt(prev => {
+      const next = { ...prev };
+      Object.keys(next).forEach(key => {
+        if (key.startsWith(`${dayIdx}-`)) delete next[key];
+      });
+      return next;
+    });
+
+    // 3. Save the new plan variant to Supabase
+    if (!variantId) {
+      await supabase.from("plan").delete().eq("household_id", hid).eq("day_index", dayIdx);
+    } else {
+      await supabase.from("plan").upsert({ household_id: hid, day_index: dayIdx, variant_id: variantId, updated_by: uid }, { onConflict: "household_id,day_index" });
+    }
+
+    // 4. Wipe the old "eaten" records for this day from Supabase so the new meals start fresh!
+    await supabase.from("eaten").delete().eq("household_id", hid).eq("day_index", dayIdx);
   };
 
   const dbNote = async (mealName, person, val) => {
@@ -150,6 +168,26 @@ export default function App() {
     const key = `${dayIdx}-${slot}-${person}`;
     setSwapsState(p => ({ ...p, [key]: meal }));
     await supabase.from("meal_swaps").upsert({ household_id: hid, day_index: dayIdx, slot, person_key: person, meal_json: JSON.stringify(meal) }, { onConflict: "household_id,day_index,slot,person_key" });
+  };
+
+  const dbSwapSlots = async (slotA, slotB) => {
+    // 1. Get the currently resolved meals for both slots
+    const mealA_R = getResolvedMeal(selVariant, slotA, "R");
+    const mealA_I = getResolvedMeal(selVariant, slotA, "I");
+    const mealB_R = getResolvedMeal(selVariant, slotB, "R");
+    const mealB_I = getResolvedMeal(selVariant, slotB, "I");
+
+    // 2. Cross-save them into their new reversed slots
+    if (mealB_R) await dbSwap(day, slotA, "R", mealB_R);
+    if (mealB_I) await dbSwap(day, slotA, "I", mealB_I);
+    if (mealA_R) await dbSwap(day, slotB, "R", mealA_R);
+    if (mealA_I) await dbSwap(day, slotB, "I", mealA_I);
+  };
+
+  const dbSplit = async (slot, meal) => {
+    // Saving explicit individual copies breaks the "shared" link forever!
+    await dbSwap(day, slot, "R", meal);
+    await dbSwap(day, slot, "I", meal);
   };
 
   const dbResetWeek = async () => {
@@ -196,15 +234,28 @@ export default function App() {
     Array.from(shopDays).forEach(di => {
       const v = VARIANTS.find(x => x.id === plan[di]); if (!v) return;
       SLOTS.forEach(slot => {
+        // NEW LOGIC: Check if it's a shared meal or separate meals
+        const mR = getMeal(v, slot, "R");
+        const mI = getMeal(v, slot, "I");
+        const isShared = (mR && mI && mR.name.en === mI.name.en);
+
+        // If they are separate meals, each person only needs half the selected household servings
+        const multiplier = isShared ? servings : (servings / 2);
+
         const done = new Set();
         ["R", "I"].forEach(p => {
           const m = getMeal(v, slot, p); if (!m) return;
           if (done.has(m.name.en)) return; done.add(m.name.en);
+
           m.ing.forEach(ing => {
             const key = lang === "lt" ? ing.lt : ing.en;
             if (!map[key]) map[key] = { unit: ing.unit, total: 0, sources: [] };
-            map[key].total += ing.amount * servings;
-            map[key].sources.push({ emoji: m.emoji, mealName: m.name[lang], day: t.days[di], amount: ing.amount * servings });
+
+            // Multiply by our new smart multiplier
+            const finalAmount = ing.amount * multiplier;
+
+            map[key].total += finalAmount;
+            map[key].sources.push({ emoji: m.emoji, mealName: m.name[lang], day: t.days[di], amount: finalAmount });
           });
         });
       });
@@ -327,9 +378,16 @@ export default function App() {
                 <div style={{ fontFamily: "'Caveat',cursive", fontSize: 21, color: P.amber }}>{t.fullDays[day]}</div>
                 {selVariant && <div style={{ ...S.sans(11, P.muted), marginTop: 1 }}>{selVariant.label[lang]}{selVariant.diff && <span style={{ color: P.amber, marginLeft: 5 }}>⚠️</span>}</div>}
               </div>
-              <button onClick={() => setPicker(true)} style={{ ...S.btn(selVariant ? P.light : P.green, selVariant ? P.accent : "white", selVariant ? P.border : P.green) }}>
-                {selVariant ? t.changeVariant : `+ ${t.selectVariant}`}
-              </button>
+              <div style={{ display: "flex", gap: 6 }}>
+                {selVariant && (
+                  <button onClick={() => dbSwapSlots("lunch", "dinner")} style={{ ...S.btn(P.light, P.text, P.border), padding: "6px 10px" }} title="Swap Lunch and Dinner">
+                    ⇆
+                  </button>
+                )}
+                <button onClick={() => setPicker(true)} style={{ ...S.btn(selVariant ? P.light : P.green, selVariant ? P.accent : "white", selVariant ? P.border : P.green) }}>
+                  {selVariant ? t.changeVariant : `+ ${t.selectVariant}`}
+                </button>
+              </div>
             </div>
 
             {!selVariant ? (
@@ -365,25 +423,33 @@ export default function App() {
 
                 {/* Meals */}
                 {SLOTS.map(slot => {
-                  const mR = getMeal(selVariant, slot, "R"), mI = getMeal(selVariant, slot, "I"), same = mR === mI;
+                  const mR = getMeal(selVariant, slot, "R");
+                  const mI = getMeal(selVariant, slot, "I");
+
+                  // NEW: Check if either person has an active swap in the database
+                  const isSplit = swaps[`${day}-${slot}-R`] || swaps[`${day}-${slot}-I`];
+                  const same = (mR === mI) && !isSplit;
+
                   if (same && mR) {
                     const person = "both";
                     const eatKey = `${day}-${slot}-${person}`;
                     const meal = swaps[eatKey] || mR;
-                    const mealId = meal.name.en; // This is the Forever ID
+                    const mealId = meal.name.en;
 
                     return <MealCard key={slot} meal={meal} slotLabel={t[slot]} lang={lang} t={t}
                       eaten={!!eatenSt[eatKey]} onToggleEaten={() => dbEaten(day, slot, person)}
                       note={notes[`${mealId}-${person}`]} onNoteChange={v => dbNote(mealId, person, v)}
-                      onViewRecipe={setRecipe} onSwap={() => setSwapModal({ slot, person, currentMeal: meal })} />;
+                      onViewRecipe={setRecipe} onSwap={() => setSwapModal({ slot, person, currentMeal: meal })}
+                      onSplit={() => dbSplit(slot, meal)} />; // <-- We pass the Split trigger here!
                   }
+
                   return (
                     <div key={slot}>
                       {selVariant.diff && <div style={{ ...S.label, color: P.amber, marginBottom: 4, marginTop: 4 }}>{t[slot]} — {t.diffNote}</div>}
                       {[["R", mR, P.R], ["I", mI, P.I]].filter(([, m]) => m).map(([person, baseMeal, col]) => {
                         const eatKey = `${day}-${slot}-${person}`;
                         const meal = swaps[eatKey] || baseMeal;
-                        const mealId = meal.name.en; // This is the Forever ID
+                        const mealId = meal.name.en;
 
                         return <MealCard key={person} meal={meal} slotLabel={`${t[slot]} — ${t.names[person]}`} lang={lang} t={t}
                           personColor={col} eaten={!!eatenSt[eatKey]} onToggleEaten={() => dbEaten(day, slot, person)}

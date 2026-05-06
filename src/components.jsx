@@ -71,6 +71,15 @@ export function AuthScreen({ lang, t }) {
 
 export function RecipeModal({ meal, lang, t, onClose }) {
     const [scale, setScale] = useState(1); // The servings multiplier!
+    const [checked, setChecked] = useState(new Set()); // <-- NEW: Cooking Mode State
+
+    // Toggle checkmark on click
+    const toggleIng = (idx) => {
+        const next = new Set(checked);
+        if (next.has(idx)) next.delete(idx);
+        else next.add(idx);
+        setChecked(next);
+    };
 
     if (!meal) return null;
     return (
@@ -83,7 +92,6 @@ export function RecipeModal({ meal, lang, t, onClose }) {
                     </div>
                     <h2 style={{ ...S.serif(18), margin: "8px 0 10px" }}>{meal.name[lang]}</h2>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        {/* We multiply the macros by the scale so you know exactly what you are eating! */}
                         {[["🔥", meal.kcal, t.kcal], ["💪", meal.protein, t.protein], ["🌾", meal.carbs, t.carbs], ["🫒", meal.fat, t.fat]].map(([ic, val, lbl]) => (
                             <div key={lbl} style={{ background: P.light, borderRadius: 8, padding: "5px 10px", display: "flex", flexDirection: "column", alignItems: "center", minWidth: 56 }}>
                                 <span style={{ fontSize: 11 }}>{ic}</span>
@@ -97,7 +105,6 @@ export function RecipeModal({ meal, lang, t, onClose }) {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                         <div style={{ ...S.serif(14), color: P.accent }}>{t.ingredientsTitle}</div>
 
-                        {/* The Servings Multiplier Buttons */}
                         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                             <span style={{ ...S.sans(11, P.muted), marginRight: 4 }}>Porcijos:</span>
                             {[1, 2, 3, 4].map(n => (
@@ -106,14 +113,18 @@ export function RecipeModal({ meal, lang, t, onClose }) {
                         </div>
                     </div>
 
-                    {meal.ing.map((ing, i) => (
-                        <div key={i} style={{ display: "flex", justifyContent: "space-between", ...S.sans(13), padding: "5px 0", borderBottom: `1px dashed ${P.border}` }}>
-                            <span>{lang === "lt" ? ing.lt : ing.en}</span>
-                            <span style={{ color: P.amber, fontWeight: 600, marginLeft: 8, flexShrink: 0 }}>
-                                {Math.round(ing.amount * scale * 10) / 10} {ing.unit}
-                            </span>
-                        </div>
-                    ))}
+                    {/* NEW: Clickable, strikethrough ingredients! */}
+                    {meal.ing.map((ing, i) => {
+                        const isChk = checked.has(i);
+                        return (
+                            <div key={i} onClick={() => toggleIng(i)} style={{ display: "flex", justifyContent: "space-between", ...S.sans(13), padding: "5px 0", borderBottom: `1px dashed ${P.border}`, cursor: "pointer", opacity: isChk ? 0.4 : 1, transition: "opacity 0.2s" }}>
+                                <span style={{ textDecoration: isChk ? "line-through" : "none" }}>{lang === "lt" ? ing.lt : ing.en}</span>
+                                <span style={{ color: P.amber, fontWeight: 600, marginLeft: 8, flexShrink: 0, textDecoration: isChk ? "line-through" : "none" }}>
+                                    {Math.round(ing.amount * scale * 10) / 10} {ing.unit}
+                                </span>
+                            </div>
+                        );
+                    })}
                 </div>
                 <div style={{ padding: "14px 20px 20px" }}>
                     <div style={{ ...S.serif(14), color: P.accent, marginBottom: 8 }}>{t.methodTitle}</div>
@@ -260,7 +271,8 @@ export function VariantPicker({ lang, t, selectedId, onSelect, onClose }) {
     );
 }
 
-export function MealCard({ meal, slotLabel, lang, t, personColor, eaten, onToggleEaten, note, onNoteChange, onViewRecipe, onSwap }) {
+// Note the new "onSplit" at the very end of the props list!
+export function MealCard({ meal, slotLabel, lang, t, personColor, eaten, onToggleEaten, note, onNoteChange, onViewRecipe, onSwap, onSplit }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(note || "");
     useEffect(() => { setDraft(note || ""); }, [note]);
@@ -286,6 +298,13 @@ export function MealCard({ meal, slotLabel, lang, t, personColor, eaten, onToggl
                             {eaten ? "✓ " + t.eaten : t.markEaten}
                         </button>
                         <button onClick={onSwap} style={{ background: P.light, border: `1px solid ${P.border}`, borderRadius: 8, padding: "4px 9px", cursor: "pointer", ...S.sans(11, P.water) }}>⇄ {t.swapMeal}</button>
+
+                        {/* NEW: The Split Button appears only if the meal is shared */}
+                        {onSplit && (
+                            <button onClick={onSplit} style={{ background: "transparent", border: `1px dashed ${P.amber}`, borderRadius: 8, padding: "4px 9px", cursor: "pointer", ...S.sans(11, P.amber) }}>
+                                ✂️ {lang === "en" ? "Split" : "Atskirti"}
+                            </button>
+                        )}
                     </div>
                 </div>
                 <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${P.border}` }}>
