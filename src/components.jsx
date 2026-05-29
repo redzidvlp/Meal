@@ -113,15 +113,16 @@ export function RecipeModal({ meal, lang, t, onClose }) {
                         </div>
                     </div>
 
-                    {/* NEW: Clickable, strikethrough ingredients with Checkboxes! */}
+                    {/* NEW: Exact same checkboxes as the Shopping List! */}
                     {meal.ing.map((ing, i) => {
                         const isChk = checked.has(i);
                         return (
-                            <div key={i} onClick={() => toggleIng(i)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", ...S.sans(13), padding: "6px 0", borderBottom: `1px dashed ${P.border}`, cursor: "pointer", opacity: isChk ? 0.4 : 1, transition: "opacity 0.2s" }}>
+                            <div key={i} onClick={() => toggleIng(i)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", ...S.sans(13), padding: "6px 0", borderBottom: `1px dashed ${P.border}`, cursor: "pointer", opacity: isChk ? 0.55 : 1, transition: "opacity 0.2s" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                    <span style={{ fontSize: 16, fontWeight: 800, color: isChk ? P.green : P.muted }}>
-                                        {isChk ? "✓" : "◻"}
-                                    </span>
+                                    {/* The exact Shopping List button style: */}
+                                    <button style={{ width: 22, height: 22, borderRadius: 6, border: isChk ? "none" : `2px solid ${P.border}`, background: isChk ? P.green : "white", color: "white", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                        {isChk ? "✓" : ""}
+                                    </button>
                                     <span style={{ textDecoration: isChk ? "line-through" : "none" }}>{lang === "lt" ? ing.lt : ing.en}</span>
                                 </div>
                                 <span style={{ color: P.amber, fontWeight: 600, flexShrink: 0, textDecoration: isChk ? "line-through" : "none" }}>
