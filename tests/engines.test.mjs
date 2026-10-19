@@ -1,0 +1,354 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import { sanitizeRecipe, sanitizePantryItem, sanitizeInviteCode, isInviteCode, sanitizeNote } from "../src/lib/validate.js";
+import { ingredientKey, findForbiddenIngredients } from "../src/lib/ingredients.js";
+import { buildPlan, mealFactor, eatenTotals } from "../src/engine/plan.js";
+import { buildShoppingList } from "../src/engine/shopping.js";
+import { applyDeltas, consumptionForRecipe, isLow, lowItems, pantryCoverage } from "../src/engine/pantry.js";
+import { suggestRecipes, isVegetarianSafe } from "../src/engine/recommend.js";
+import { PRESET_RECIPES } from "../src/data/presets.js";
+
+const makeRecipe = (overrides = {}) => ({
+  id: "test-a",
+  name: { en: "Test bowl", lt: "Testo dubenėlis" },
+  emoji: "🥗",
+  slot: "lunch",
+  kcal: 500,
+  protein: 25,
+  carbs: 45,
+  fat: 20,
+  ingredients: [
+    { key: "natural-tofu", en: "Natural tofu", lt: "Natūralus tofu", amount: 100, unit: "g" },
+    { key: "tomato", en: "Tomato", lt: "Pomidoras", amount: 100, unit: "g" },
+  ],
+  tags: ["vegetarian", "low-fodmap"],
+  vegetarian: true,
+  prepMinutes: 20,
+  method: { en: "Cook.", lt: "Gaminti." },
+  ...overrides,
+});
+
+const makeRecipeInput = (overrides = {}) => ({
+  name: { en: "Chickpea bowl", lt: "Avinžirnių dubenėlis" },
+  emoji: "🥗",
+  slot: "lunch",
+  kcal: 500,
+  protein: 22,
+  carbs: 50,
+  fat: 18,
+  ingredients: [
+    { en: "Canned chickpeas", lt: "Avinžirniai", amount: 150, unit: "g" },
+    { en: "Tomato", lt: "Pomidoras", amount: 100, unit: "g" },
+  ],
+  method: { en: "Mix.", lt: "Sumaišyti." },
+  tags: ["vegetarian", "high-protein"],
+  prepMinutes: 15,
+  ...overrides,
+});
+
+// ── Validation & vegetarian enforcement ────────────────────────────────────
+
+test("preset library is strictly vegetarian", () => {
+  for (const recipe of PRESET_RECIPES) {
+    assert.equal(recipe.vegetarian, true, recipe.id);
+    assert.ok(recipe.tags.includes("vegetarian"), recipe.id);
+    assert.equal(isVegetarianSafe(recipe), true, recipe.id);
+    for (const ingredient of recipe.ingredients) {
+      assert.deepEqual(
+        findForbiddenIngredients(`${ingredient.en} ${ingredient.lt}`),
+        [],
+        `${recipe.id}: ${ingredient.en}`,
+      );
+    }
+  }
+});
+
+test("sanitizeRecipe accepts an ovo-lacto vegetarian recipe", () => {
+  const { ok, errors, recipe } = sanitizeRecipe(makeRecipeInput({
+    ingredients: [
+      { en: "Eggs", lt: "Kiaušiniai", amount: 2, unit: "vnt" },
+      { en: "Halloumi cheese", lt: "Halloumi sūris", amount: 80, unit: "g" },
+    ],
+  }), { existingId: "my-recipe" });
+  assert.equal(ok, true, JSON.stringify(errors));
+  assert.equal(recipe.id, "my-recipe");
+  assert.equal(recipe.vegetarian, true);
+  assert.equal(recipe.tags[0], "vegetarian");
+  assert.equal(recipe.ingredients[0].key, "eggs");
+});
+
+test("sanitizeRecipe rejects meat and fish in both languages", () => {
+  for (const name of ["Chicken breast", "Salmon fillet", "Vištiena", "Lašiša", "Beef mince", "Kumpis"]) {
+    const { ok, errors } = sanitizeRecipe(makeRecipeInput({
+      ingredients: [{ en: name, lt: name, amount: 100, unit: "g" }],
+    }));
+    assert.equal(ok, false, name);
+    assert.equal(errors.vegetarian, "nonVegetarian", name);
+  }
+});
+
+test("sanitizeRecipe rejects missing names, empty ingredient lists and zero nutrition", () => {
+  assert.equal(sanitizeRecipe(makeRecipeInput({ name: { en: "" } })).errors.nameEn, "nameRequired");
+  assert.equal(sanitizeRecipe(makeRecipeInput({ ingredients: [] })).errors.ingredients, "ingredientsRequired");
+  assert.equal(sanitizeRecipe(makeRecipeInput({ kcal: 0, protein: 0, carbs: 0, fat: 0 })).errors.kcal, "invalidNumber");
+});
+
+test("sanitizeRecipe clamps nutrition, units and unknown tags", () => {
+  const { recipe } = sanitizeRecipe(makeRecipeInput({
+    kcal: 99999,
+    protein: -5,
+    tags: ["vegetarian", "hacker", "quick", "quick"],
+    ingredients: [{ en: "Olive oil", lt: "Aliejus", amount: 999999, unit: "buckets" }],
+  }));
+  assert.equal(recipe.kcal, 5000);
+  assert.equal(recipe.protein, 0);
+  assert.equal(recipe.ingredients[0].amount, 5000);
+  assert.equal(recipe.ingredients[0].unit, "g");
+  assert.ok(recipe.tags.includes("quick"));
+  assert.ok(!recipe.tags.includes("hacker"));
+  assert.equal(recipe.tags.filter(tag => tag === "quick").length, 1);
+});
+
+test("ingredient keys normalise synonyms and punctuation", () => {
+  assert.equal(ingredientKey("Egg"), "eggs");
+  assert.equal(ingredientKey("Eggs"), "eggs");
+  assert.equal(ingredientKey("Tofu"), "natural-tofu");
+  assert.equal(ingredientKey("Lactose-free yogurt 2.5%"), "lactose-free-yogurt-2-5");
+  assert.equal(ingredientKey("Avocado (¼)"), "avocado");
+});
+
+test("invite codes are normalised and validated", () => {
+  assert.equal(sanitizeInviteCode(" ab-c12 3 "), "ABC123");
+  assert.equal(isInviteCode("ABC123"), true);
+  assert.equal(isInviteCode("ABC12"), false);
+  assert.equal(isInviteCode("../../x"), false);
+});
+
+test("notes are bounded", () => {
+  assert.equal(sanitizeNote("  hello   world  "), "hello world");
+  assert.equal(sanitizeNote("x".repeat(1000)).length, 500);
+});
+
+test("pantry items get a safe key, unit and bounds", () => {
+  const { ok, item } = sanitizePantryItem({ nameEn: "Olive oil", unit: "ml", quantity: -10, lowThreshold: 999999 });
+  assert.equal(ok, true);
+  assert.equal(item.key, "olive-oil");
+  assert.equal(item.quantity, 0);
+  assert.equal(item.lowThreshold, 100000);
+  assert.equal(sanitizePantryItem({ nameEn: "" }).ok, false);
+});
+
+// ── Plan resolution ───────────────────────────────────────────────────────
+
+test("shared and split assignments resolve correctly", () => {
+  const tofu = makeRecipe({ id: "tofu", name: { en: "Tofu", lt: "Tofu" } });
+  const soup = makeRecipe({ id: "soup", name: { en: "Soup", lt: "Sriuba" } });
+  const map = new Map([[tofu.id, tofu], [soup.id, soup]]);
+  const plan = buildPlan([
+    { day: 0, slot: "lunch", personKey: "both", recipeId: "tofu" },
+    { day: 0, slot: "dinner", personKey: "R", recipeId: "tofu" },
+    { day: 0, slot: "dinner", personKey: "I", recipeId: "soup" },
+  ], map);
+  assert.equal(plan[0].lunch.mode, "both");
+  assert.equal(plan[0].lunch.recipes.R.id, "tofu");
+  assert.equal(plan[0].lunch.recipes.I.id, "tofu");
+  assert.equal(plan[0].dinner.mode, "split");
+  assert.equal(plan[0].dinner.recipes.R.id, "tofu");
+  assert.equal(plan[0].dinner.recipes.I.id, "soup");
+  assert.equal(plan[1].lunch.mode, "empty");
+});
+
+test("meal factors include extra portions per slot", () => {
+  const tofu = makeRecipe();
+  const map = new Map([[tofu.id, tofu]]);
+  const plan = buildPlan([
+    { day: 0, slot: "lunch", personKey: "both", recipeId: "test-a" },
+    { day: 0, slot: "dinner", personKey: "R", recipeId: "test-a" },
+    { day: 0, slot: "breakfast", personKey: "R", recipeId: "test-a" },
+    { day: 0, slot: "breakfast", personKey: "I", recipeId: "test-a" },
+  ], map);
+  assert.equal(mealFactor(plan[0], "lunch", 0), 2);
+  assert.equal(mealFactor(plan[0], "lunch", 2), 4);
+  assert.equal(mealFactor(plan[0], "dinner", 2), 3);
+  assert.equal(mealFactor(plan[0], "breakfast", 2), 4);
+  assert.equal(mealFactor(plan[0], "snack", 2), 0);
+});
+
+test("eaten totals count shared and split meals separately", () => {
+  const tofu = makeRecipe({ kcal: 500, protein: 25 });
+  const map = new Map([[tofu.id, tofu]]);
+  const plan = buildPlan([
+    { day: 0, slot: "lunch", personKey: "both", recipeId: "test-a" },
+    { day: 0, slot: "dinner", personKey: "R", recipeId: "test-a" },
+    { day: 0, slot: "dinner", personKey: "I", recipeId: "test-a" },
+  ], map);
+  const eaten = new Set(["lunch:both", "dinner:R"]);
+  const r = eatenTotals(plan[0], "R", eaten);
+  const i = eatenTotals(plan[0], "I", eaten);
+  assert.equal(r.eatenMeals, 2);
+  assert.equal(r.totals.kcal, 1000);
+  assert.equal(i.eatenMeals, 1);
+  assert.equal(i.totals.kcal, 500);
+});
+
+// ── Shopping list ─────────────────────────────────────────────────────────
+
+test("shopping list doubles shared meals and follows split meals", () => {
+  const tofu = makeRecipe({ ingredients: [{ key: "natural-tofu", en: "Natural tofu", lt: "Tofu", amount: 100, unit: "g" }] });
+  const soup = makeRecipe({
+    id: "soup",
+    ingredients: [
+      { key: "tomato", en: "Tomato", lt: "Pomidoras", amount: 150, unit: "g" },
+      { key: "natural-tofu", en: "Natural tofu", lt: "Tofu", amount: 50, unit: "g" },
+    ],
+  });
+  const map = new Map([[tofu.id, tofu], [soup.id, soup]]);
+  const plan = buildPlan([
+    { day: 0, slot: "lunch", personKey: "both", recipeId: "test-a" },
+    { day: 0, slot: "dinner", personKey: "R", recipeId: "test-a" },
+    { day: 0, slot: "dinner", personKey: "I", recipeId: "soup" },
+  ], map);
+  const list = buildShoppingList({ plan, days: [0], lang: "en" });
+  const tofuRow = list.find(row => row.ingredientKey === "natural-tofu");
+  const tomatoRow = list.find(row => row.ingredientKey === "tomato");
+  assert.equal(tofuRow.total, 350); // 2× shared + 1× R + 1× I
+  assert.equal(tofuRow.sources.length, 3);
+  assert.equal(tomatoRow.total, 150);
+});
+
+test("shopping list changes when the meal changes (the old bug)", () => {
+  const tofu = makeRecipe({ id: "tofu" });
+  const soup = makeRecipe({ id: "soup", ingredients: [{ key: "tomato", en: "Tomato", lt: "Pomidoras", amount: 200, unit: "g" }] });
+  const map = new Map([[tofu.id, tofu], [soup.id, soup]]);
+  const before = buildShoppingList({
+    plan: buildPlan([{ day: 1, slot: "lunch", personKey: "both", recipeId: "tofu" }], map),
+    days: [1],
+    lang: "en",
+  });
+  assert.ok(before.some(row => row.ingredientKey === "natural-tofu"));
+  const after = buildShoppingList({
+    plan: buildPlan([{ day: 1, slot: "lunch", personKey: "both", recipeId: "soup" }], map),
+    days: [1],
+    lang: "en",
+  });
+  assert.ok(!after.some(row => row.ingredientKey === "natural-tofu"));
+  assert.equal(after.find(row => row.ingredientKey === "tomato").total, 400);
+});
+
+test("shopping list handles extra portions, selected days and pantry stock", () => {
+  const tofu = makeRecipe({ ingredients: [{ key: "natural-tofu", en: "Natural tofu", lt: "Tofu", amount: 100, unit: "g" }] });
+  const map = new Map([[tofu.id, tofu]]);
+  const plan = buildPlan([
+    { day: 0, slot: "lunch", personKey: "both", recipeId: "test-a" },
+    { day: 3, slot: "lunch", personKey: "both", recipeId: "test-a" },
+  ], map);
+  const list = buildShoppingList({ plan, days: [0], extraPortions: 2, lang: "en", pantry: [{ key: "natural-tofu", unit: "g", quantity: 300 }] });
+  const row = list.find(item => item.ingredientKey === "natural-tofu");
+  assert.equal(row.total, 400);
+  assert.equal(row.inPantry, 300);
+});
+
+// ── Pantry ────────────────────────────────────────────────────────────────
+
+test("eating a meal subtracts ingredients and never goes negative", () => {
+  const recipe = makeRecipe({ ingredients: [
+    { key: "natural-tofu", en: "Natural tofu", lt: "Tofu", amount: 100, unit: "g" },
+    { key: "eggs", en: "Eggs", lt: "Kiaušiniai", amount: 2, unit: "vnt" },
+  ] });
+  const deltas = consumptionForRecipe(recipe, 2);
+  assert.deepEqual(deltas, [
+    { itemKey: "natural-tofu|g", delta: -200 },
+    { itemKey: "eggs|vnt", delta: -4 },
+  ]);
+  const pantry = [
+    { key: "natural-tofu", unit: "g", quantity: 150, lowThreshold: 100 },
+    { key: "eggs", unit: "vnt", quantity: 3, lowThreshold: 2 },
+  ];
+  const next = applyDeltas(pantry, deltas);
+  assert.equal(next[0].quantity, 0);
+  assert.equal(next[1].quantity, 0);
+  assert.equal(isLow(next[0]), true);
+  assert.equal(lowItems(next).length, 2);
+});
+
+test("pantry coverage estimates portions from the plan", () => {
+  const recipe = makeRecipe({ ingredients: [{ key: "natural-tofu", en: "Natural tofu", lt: "Tofu", amount: 100, unit: "g" }] });
+  const map = new Map([[recipe.id, recipe]]);
+  const plan = buildPlan([{ day: 0, slot: "lunch", personKey: "both", recipeId: recipe.id }], map);
+  const coverage = pantryCoverage({ key: "natural-tofu", unit: "g", quantity: 400 }, plan, [0]);
+  assert.equal(coverage.uses, 1);
+  assert.equal(coverage.plannedAmount, 200);
+  assert.equal(coverage.portionsLeft, 4);
+});
+
+// ── Sous-chef ─────────────────────────────────────────────────────────────
+
+test("suggestions never include meat, even if a row was tampered with", () => {
+  const safe = makeRecipe({ id: "safe" });
+  const tampered = makeRecipe({
+    id: "meat",
+    name: { en: "Chicken bowl", lt: "Vištienos dubenėlis" },
+    ingredients: [{ key: "chicken", en: "Chicken", lt: "Vištiena", amount: 100, unit: "g" }],
+  });
+  const safeB = makeRecipe({ id: "safe-b", kcal: 480 });
+  const results = suggestRecipes({
+    recipes: [safe, tampered, safeB],
+    target: { kcal: 500, protein: 25, carbs: 45, fat: 20 },
+    slot: "lunch",
+    limit: 10,
+  });
+  assert.ok(results.length > 0);
+  assert.ok(results.every(result => result.recipe.id !== "meat"));
+});
+
+test("suggestion score rewards similarity, pantry and shared ingredients", () => {
+  const reference = makeRecipe({ id: "reference", kcal: 500, protein: 25, ingredients: [{ key: "natural-tofu", en: "Natural tofu", lt: "Tofu", amount: 100, unit: "g" }] });
+  const close = makeRecipe({
+    id: "close",
+    kcal: 505,
+    protein: 24,
+    carbs: 44,
+    fat: 21,
+    ingredients: [
+      { key: "natural-tofu", en: "Natural tofu", lt: "Tofu", amount: 100, unit: "g" },
+      { key: "tomato", en: "Tomato", lt: "Pomidoras", amount: 80, unit: "g" },
+      { key: "cucumber", en: "Cucumber", lt: "Agurkas", amount: 50, unit: "g" },
+    ],
+  });
+  const far = makeRecipe({ id: "far", kcal: 800, protein: 8, carbs: 120, fat: 30, ingredients: [{ key: "rice", en: "Rice", lt: "Ryžiai", amount: 100, unit: "g" }] });
+  const results = suggestRecipes({
+    recipes: [close, far],
+    reference,
+    target: { kcal: 500, protein: 25, carbs: 45, fat: 20 },
+    slot: "lunch",
+    pantry: [
+      { key: "natural-tofu", unit: "g", quantity: 300 },
+      { key: "tomato", unit: "g", quantity: 100 },
+    ],
+    limit: 5,
+  });
+  assert.equal(results[0].recipe.id, "close");
+  assert.ok(results[0].score > results[1].score);
+  assert.ok(results[0].reasons.length > 0);
+  assert.ok(results[0].score <= 99);
+});
+
+test("suggestion rules filter high protein, quick and recent meals", () => {
+  const quickHigh = makeRecipe({ id: "quick-high", protein: 30, prepMinutes: 10 });
+  const slowLow = makeRecipe({ id: "slow-low", protein: 10, prepMinutes: 60 });
+  const recent = makeRecipe({ id: "recent", protein: 40, prepMinutes: 10 });
+  const target = { kcal: 500, protein: 25, carbs: 45, fat: 20 };
+  const highProtein = suggestRecipes({ recipes: [quickHigh, slowLow, recent], target, slot: "lunch", recentIds: ["recent"], filters: { highProtein: true, excludeRecent: true } });
+  assert.deepEqual(highProtein.map(result => result.recipe.id), ["quick-high"]);
+  const quick = suggestRecipes({ recipes: [quickHigh, slowLow], target, slot: "lunch", filters: { quick: true } });
+  assert.ok(quick.every(result => result.recipe.id === "quick-high"));
+});
+
+test("suggestion target drives the match percentage", () => {
+  const recipe = makeRecipe({ id: "target-test", kcal: 500, protein: 25, carbs: 45, fat: 20 });
+  const exact = suggestRecipes({ recipes: [recipe], target: { kcal: 500, protein: 25, carbs: 45, fat: 20 }, slot: "lunch" })[0];
+  const off = suggestRecipes({ recipes: [recipe], target: { kcal: 750, protein: 25, carbs: 45, fat: 20 }, slot: "lunch" })[0];
+  assert.ok(exact.nutritionPct > off.nutritionPct);
+  assert.ok(exact.score > off.score);
+});
