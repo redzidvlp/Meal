@@ -165,12 +165,12 @@ export default function MenuEditor({ open, menu, recipes, lang, t, onClose, onSa
         {error && <div className="field-error" style={{ marginTop: 10 }} role="alert">{error}</div>}
 
         <div className="row" style={{ gap: 8, marginTop: 18 }}>
-          {menu && (
+          {menu && !form.presetKey && (
             <button type="button" className="btn btn-sm btn-danger" onClick={() => setConfirmDelete(true)}>
               {t.deleteRecipe}
             </button>
           )}
-          {form.presetKey && (
+          {form.presetKey && menu?.overridden && (
             <button type="button" className="btn btn-sm btn-soft" onClick={() => { onReset(form.presetKey); onClose(); }}>
               ↺ {t.menuReset}
             </button>
