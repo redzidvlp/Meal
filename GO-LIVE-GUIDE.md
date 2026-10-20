@@ -30,23 +30,26 @@ Two ideas that make everything below make sense:
 
 ## What is still missing — the short list
 
-The code is finished. What the app cannot do by itself is know where your database is.
-These are the only open items, and each one is a phase below:
+The code, the site and the connection are already live. Only one thing is left before you
+can plan meals for real:
 
-| # | Missing | Where it goes | Phase |
+| # | Missing | Where it goes | State |
 |---|---|---|---|
-| 1 | The old project has not been upgraded yet | Supabase SQL editor, one paste | 2 |
-| 2 | The website does not know your project URL | GitHub → **Secrets** → `VITE_SUPABASE_URL` | 4a |
-| 3 | The website does not know your public database key | GitHub → **Secrets** → `VITE_SUPABASE_ANON_KEY` | 4a |
-| 4 | The build is not told to use the real database (it falls back to the demo kitchen) | GitHub → **Variables** → `USE_SUPABASE=true` | 4b |
-| 5 | The site has not been rebuilt since those values were added | GitHub → Actions → re-run the workflow | 4c |
-| 6 | *(optional)* No AI provider key, so recipes and photo reading use the offline engine | Supabase → **Edge Functions → Secrets** → `AI_API_KEY` | 7 |
-| 7 | The new build is not on the phone yet | Open the link → **Update now** | 8 |
+| 1 | **The database has not been upgraded yet** — the site will sign you in and then say a table is missing | Supabase SQL editor, one paste | **Do Phase 2 now** |
+| 2 | The site's Supabase URL | GitHub → **Secrets** → `VITE_SUPABASE_URL` | already set |
+| 3 | The public database key | GitHub → **Secrets** → `VITE_SUPABASE_ANON_KEY` | already set |
+| 4 | The “use the real database” switch | GitHub → **Variables** → `USE_SUPABASE=true` | already set |
+| 5 | A build that contains 2–4 | GitHub → Actions | done |
+| 6 | *(optional)* AI provider key, for better recipes and photo reading | Supabase → **Edge Functions → Secrets** → `AI_API_KEY` | optional |
+| 7 | The new build on each phone | Open the link → **Update now** | after Phase 2 |
+
+How to tell 2–5 are really done: open **https://redzidvlp.github.io/Meal/** — it shows the
+**Sign in / Create account** card and the line *“Your data lives in your private Supabase
+household”*. In demo mode it would instead show a kitchen straight away with a yellow
+**Local demo** banner. You are therefore not in demo mode.
 
 Nothing else is required. In particular you do **not** need a new Supabase project, a new
 database password, a new link, or a new account.
-
----
 
 ---
 
