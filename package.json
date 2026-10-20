@@ -16,6 +16,7 @@
     "@electric-sql/pglite": "^0.5.10",
     "@vitejs/plugin-react": "^4.7.0",
     "jsdom": "^30.1.3",
+    "marked": "^18.1.1",
     "vite": "^7.3.1",
     "vite-node": "^6.0.0",
     "vite-plugin-pwa": "^1.2.0"
@@ -31,7 +32,8 @@
     "test:ui": "vite-node scripts/smoke.mjs",
     "test:connection": "vite-node scripts/smoke-connection.mjs",
     "build:sql": "node scripts/build-sql.mjs",
-    "test:db": "vite-node scripts/test-db.mjs"
+    "test:db": "vite-node scripts/test-db.mjs",
+    "build:guide": "node scripts/build-guide.mjs"
   },
   "browserslist": {
     "production": [

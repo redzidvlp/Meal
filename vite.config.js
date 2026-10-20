@@ -75,7 +75,11 @@ export default defineConfig(({ mode }) => {
           globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest,woff,woff2}"],
           // The Supabase client is a lazy chunk. A demo build never executes it,
           // so do not spend a phone's data on precaching 190 kB it cannot use.
-          globIgnores: cloudConfigured ? [] : ["**/supabase-*.js", "**/supabaseBackend-*.js"],
+          globIgnores: [
+            // The setup guide is a page you open once, not part of the app shell.
+            "**/guide.html",
+            ...(cloudConfigured ? [] : ["**/supabase-*.js", "**/supabaseBackend-*.js"]),
+          ],
           navigateFallback: `${base}index.html`,
           cleanupOutdatedCaches: true,
         },
