@@ -1,16 +1,55 @@
-export const FONT = `@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,500;0,700;1,400&family=DM+Sans:wght@300;400;500;600&family=Caveat:wght@500;700&display=swap');`;
-
-export const P = {
-    bg: "#F3EDE3", card: "#FDFAF3", border: "#E0D6C0",
-    accent: "#7A6E5F", green: "#4F7A52", amber: "#B07A3A",
-    text: "#261E13", muted: "#6A5D4A", light: "#EBE4D4",
-    R: "#A85848", I: "#4878A8", water: "#4A7FA8",
+// Design tokens shared by inline styles. Layout styles live in styles.css.
+export const C = {
+  bg: "var(--bg)",
+  surface: "var(--surface)",
+  soft: "var(--surface-soft)",
+  ink: "var(--ink)",
+  inkSoft: "var(--ink-soft)",
+  muted: "var(--muted)",
+  line: "var(--line)",
+  forest: "var(--forest)",
+  forestDeep: "var(--forest-deep)",
+  leaf: "var(--leaf)",
+  sage: "var(--sage)",
+  coral: "var(--coral)",
+  amber: "var(--amber)",
+  sky: "var(--sky)",
+  danger: "var(--danger)",
+  R: "var(--person-r)",
+  I: "var(--person-i)",
 };
 
-export const S = {
-    card: { background: P.card, border: `1.5px solid ${P.border}`, borderRadius: 14 },
-    btn: (bg, color, border) => ({ background: bg, color, border: `1.5px solid ${border || bg}`, borderRadius: 10, padding: "6px 14px", cursor: "pointer", fontFamily: "'DM Sans'", fontWeight: 700, fontSize: 12 }),
-    label: { fontFamily: "'DM Sans'", fontSize: 10, fontWeight: 700, color: P.muted, textTransform: "uppercase", letterSpacing: .8 },
-    serif: (size, weight = 700) => ({ fontFamily: "'DM Sans', sans-serif", fontSize: size, fontWeight: weight, color: P.text }),
-    sans: (size, color = P.text) => ({ fontFamily: "'DM Sans'", fontSize: size, color }),
+export const SLOT_META = {
+  breakfast: { icon: "☀️", en: "Breakfast", lt: "Pusryčiai" },
+  lunch: { icon: "🥗", en: "Lunch", lt: "Pietūs" },
+  snack: { icon: "🍎", en: "Snack", lt: "Užkandis" },
+  dinner: { icon: "🌙", en: "Dinner", lt: "Vakarienė" },
 };
+
+export const SLOTS = ["breakfast", "lunch", "snack", "dinner"];
+export const UNITS = ["g", "ml", "vnt"];
+
+export const TAG_LABELS = {
+  en: {
+    vegetarian: "Vegetarian",
+    vegan: "Vegan",
+    "dairy-free": "Dairy-free",
+    "low-fodmap": "Low-FODMAP",
+    "gluten-free": "Gluten-free",
+    "high-protein": "High protein",
+    quick: "Quick",
+    "meal-prep": "Meal prep",
+  },
+  lt: {
+    vegetarian: "Vegetariška",
+    vegan: "Veganiška",
+    "dairy-free": "Be pieno",
+    "low-fodmap": "Mažai FODMAP",
+    "gluten-free": "Be glitimo",
+    "high-protein": "Daug baltymų",
+    quick: "Greita",
+    "meal-prep": "Ruošti iš anksto",
+  },
+};
+
+export const ALL_TAGS = ["vegetarian", "vegan", "dairy-free", "low-fodmap", "gluten-free", "high-protein", "quick", "meal-prep"];

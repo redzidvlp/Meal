@@ -1,0 +1,1281 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Our Table — Supabase schema (v2)
+-- Run this file once in the Supabase SQL editor, then run seed.sql.
+--
+-- Security model
+--   • The browser only ever holds the public anon key.
+--   • Every table has row-level security scoped to the caller's household.
+--   • Plan / eaten writes go through validated SECURITY DEFINER RPCs, so a
+--     client cannot write arbitrary pantry deltas or mix shared/split rows.
+--   • Preset recipes (household_id IS NULL) are read-only for everyone.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- gen_random_uuid() is built in on Postgres 13+; pgcrypto is kept for older
+-- projects. On a project that cannot install it, this line is a harmless no-op.
+create extension if not exists pgcrypto;
+
+-- ── Helpers ────────────────────────────────────────────────────────────────
+
+-- ── Tables ─────────────────────────────────────────────────────────────────
+
+create table if not exists public.households (
+  id uuid primary key default gen_random_uuid(),
+  name text not null default 'Our kitchen' check (char_length(name) between 1 and 80),
+  invite_code text not null unique check (invite_code ~ '^[A-Z0-9]{6}$'),
+  extra_portions smallint not null default 0 check (extra_portions between 0 and 8),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  household_id uuid not null references public.households(id) on delete cascade,
+  person_key text not null check (person_key in ('R', 'I')),
+  display_name text not null check (char_length(display_name) between 1 and 40),
+  created_at timestamptz not null default now(),
+  unique (household_id, person_key)
+);
+
+create table if not exists public.recipes (
+  id text primary key check (id ~ '^[a-z0-9][a-z0-9-]{0,79}$'),
+  household_id uuid references public.households(id) on delete cascade,
+  name_en text not null check (char_length(name_en) between 2 and 120),
+  name_lt text check (char_length(name_lt) between 2 and 120),
+  emoji text not null default '🍽️' check (char_length(emoji) <= 12),
+  slot text not null check (slot in ('breakfast', 'lunch', 'snack', 'dinner')),
+  kcal integer not null check (kcal between 0 and 5000),
+  protein numeric(6, 1) not null default 0 check (protein between 0 and 500),
+  carbs numeric(6, 1) not null default 0 check (carbs between 0 and 800),
+  fat numeric(6, 1) not null default 0 check (fat between 0 and 500),
+  ingredients jsonb not null check (
+    jsonb_typeof(ingredients) = 'array'
+    and jsonb_array_length(ingredients) between 1 and 40
+    and length(ingredients::text) <= 20000
+  ),
+  method_en text not null default '' check (char_length(method_en) <= 4000),
+  method_lt text not null default '' check (char_length(method_lt) <= 4000),
+  tags text[] not null default array['vegetarian']::text[] check (array_length(tags, 1) between 1 and 9),
+  vegetarian boolean not null default true check (vegetarian = true),
+  prep_minutes smallint not null default 15 check (prep_minutes between 0 and 600),
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists recipes_household_idx on public.recipes (household_id);
+
+create table if not exists public.meal_assignments (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households(id) on delete cascade,
+  day_index smallint not null check (day_index between 0 and 6),
+  slot text not null check (slot in ('breakfast', 'lunch', 'snack', 'dinner')),
+  person_key text not null check (person_key in ('R', 'I', 'both')),
+  recipe_id text not null references public.recipes(id) on delete cascade,
+  updated_by uuid references auth.users(id) on delete set null,
+  updated_at timestamptz not null default now(),
+  unique (household_id, day_index, slot, person_key)
+);
+
+create index if not exists meal_assignments_household_idx on public.meal_assignments (household_id);
+
+create table if not exists public.eaten (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households(id) on delete cascade,
+  day_index smallint not null check (day_index between 0 and 6),
+  slot text not null check (slot in ('breakfast', 'lunch', 'snack', 'dinner')),
+  person_key text not null check (person_key in ('R', 'I', 'both')),
+  eaten boolean not null default false,
+  recipe_id text references public.recipes(id) on delete set null,
+  applied jsonb not null default '[]'::jsonb check (
+    jsonb_typeof(applied) = 'array' and length(applied::text) <= 20000
+  ),
+  updated_by uuid references auth.users(id) on delete set null,
+  updated_at timestamptz not null default now(),
+  unique (household_id, day_index, slot, person_key)
+);
+
+create index if not exists eaten_household_idx on public.eaten (household_id);
+
+create table if not exists public.water (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households(id) on delete cascade,
+  day_index smallint not null check (day_index between 0 and 6),
+  person_key text not null check (person_key in ('R', 'I')),
+  ml integer not null default 0 check (ml between 0 and 5000),
+  updated_by uuid references auth.users(id) on delete set null,
+  updated_at timestamptz not null default now(),
+  unique (household_id, day_index, person_key)
+);
+
+create index if not exists water_household_idx on public.water (household_id);
+
+create table if not exists public.recipe_notes (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households(id) on delete cascade,
+  recipe_id text not null references public.recipes(id) on delete cascade,
+  person_key text not null check (person_key in ('R', 'I', 'both')),
+  note text not null default '' check (char_length(note) <= 500),
+  updated_by uuid references auth.users(id) on delete set null,
+  updated_at timestamptz not null default now(),
+  unique (household_id, recipe_id, person_key)
+);
+
+create index if not exists recipe_notes_household_idx on public.recipe_notes (household_id);
+
+create table if not exists public.shopping_checks (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households(id) on delete cascade,
+  week_start date not null,
+  item_key text not null check (item_key ~ '^[a-z0-9-]{1,80}\|(g|ml|vnt)$'),
+  checked boolean not null default true,
+  updated_at timestamptz not null default now(),
+  unique (household_id, week_start, item_key)
+);
+
+create index if not exists shopping_checks_household_idx on public.shopping_checks (household_id, week_start);
+
+create table if not exists public.menus (
+  id text primary key check (id ~ '^[a-z0-9][a-z0-9-]{0,79}$'),
+  household_id uuid references public.households(id) on delete cascade,
+  preset_key text check (preset_key is null or preset_key ~ '^[a-z0-9][a-z0-9-]{0,79}$'),
+  name_en text not null check (char_length(name_en) between 1 and 120),
+  name_lt text check (char_length(name_lt) <= 120),
+  emoji text not null default '🍱' check (char_length(emoji) <= 12),
+  items jsonb not null check (
+    jsonb_typeof(items) = 'object'
+    and length(items::text) <= 6000
+  ),
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Library menus are shared (household_id null); a household can only override one
+-- version of each library menu, and own unlimited custom menus.
+create unique index if not exists menus_override_unique
+  on public.menus (household_id, preset_key) where preset_key is not null;
+create index if not exists menus_household_idx on public.menus (household_id);
+
+-- Household-defined recipe labels such as "made in 10 min". Recipes reference
+-- them as tags with an "x-" prefix, so the label text stays editable.
+create table if not exists public.labels (
+  household_id uuid not null references public.households(id) on delete cascade,
+  key text not null check (key ~ '^[a-z0-9][a-z0-9-]{0,31}$'),
+  label text not null check (char_length(label) between 1 and 24),
+  created_at timestamptz not null default now(),
+  primary key (household_id, key)
+);
+
+-- Sections a household removed from a given day (e.g. no snack on Sunday).
+create table if not exists public.day_sections (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households(id) on delete cascade,
+  day_index integer not null check (day_index between 0 and 6),
+  slot text not null check (slot in ('breakfast', 'lunch', 'snack', 'dinner')),
+  updated_at timestamptz not null default now(),
+  unique (household_id, day_index, slot)
+);
+
+create index if not exists day_sections_household_idx on public.day_sections (household_id);
+
+create table if not exists public.pantry (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households(id) on delete cascade,
+  item_key text not null check (item_key ~ '^[a-z0-9-]{1,80}\|(g|ml|vnt)$'),
+  ingredient_key text not null check (ingredient_key ~ '^[a-z0-9-]{1,80}$'),
+  name_en text not null check (char_length(name_en) between 1 and 80),
+  name_lt text check (char_length(name_lt) between 1 and 80),
+  unit text not null check (unit in ('g', 'ml', 'vnt')),
+  quantity numeric(10, 1) not null default 0 check (quantity between 0 and 100000),
+  low_threshold numeric(10, 1) not null default 0 check (low_threshold between 0 and 100000),
+  updated_by uuid references auth.users(id) on delete set null,
+  updated_at timestamptz not null default now(),
+  unique (household_id, item_key)
+);
+
+create index if not exists pantry_household_idx on public.pantry (household_id);
+
+-- The household helper must be created after public.profiles exists: Postgres
+-- validates SQL function bodies at creation time, so on a fresh project this
+-- block cannot live at the top of the file.
+create or replace function public.my_household_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select household_id from public.profiles where id = auth.uid();
+$$;
+
+revoke all on function public.my_household_id() from public, anon;
+grant execute on function public.my_household_id() to authenticated;
+
+-- ── updated_at trigger ─────────────────────────────────────────────────────
+
+create or replace function public.touch_updated_at()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists households_touch on public.households;
+create trigger households_touch before update on public.households
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists recipes_touch on public.recipes;
+create trigger recipes_touch before update on public.recipes
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists menus_touch on public.menus;
+create trigger menus_touch before update on public.menus
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists pantry_touch on public.pantry;
+create trigger pantry_touch before update on public.pantry
+  for each row execute function public.touch_updated_at();
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Household RPCs
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create or replace function public.create_household(
+  p_name text,
+  p_person_name text,
+  p_person_key text
+)
+returns table (household_id uuid, invite_code text)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_code text;
+  v_hid uuid;
+  v_try integer := 0;
+  v_alphabet constant text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  i integer;
+begin
+  if auth.uid() is null then
+    raise exception 'not_authenticated';
+  end if;
+  if exists (select 1 from public.profiles p where p.id = auth.uid()) then
+    raise exception 'already_linked';
+  end if;
+  if p_person_key is null or p_person_key not in ('R', 'I') then
+    raise exception 'invalid_person';
+  end if;
+
+  loop
+    v_try := v_try + 1;
+    v_code := '';
+    for i in 1..6 loop
+      v_code := v_code || substr(v_alphabet, floor(random() * length(v_alphabet))::integer + 1, 1);
+    end loop;
+    exit when not exists (select 1 from public.households h where h.invite_code = v_code);
+    if v_try > 25 then
+      raise exception 'code_generation_failed';
+    end if;
+  end loop;
+
+  insert into public.households (name, invite_code)
+  values (
+    left(coalesce(nullif(btrim(p_name), ''), 'Our kitchen'), 80),
+    v_code
+  )
+  returning id into v_hid;
+
+  insert into public.profiles (id, household_id, person_key, display_name)
+  values (
+    auth.uid(),
+    v_hid,
+    p_person_key,
+    left(coalesce(nullif(btrim(p_person_name), ''), 'Me'), 40)
+  );
+
+  return query select v_hid, v_code;
+end;
+$$;
+
+revoke all on function public.create_household(text, text, text) from public, anon;
+grant execute on function public.create_household(text, text, text) to authenticated;
+
+create or replace function public.join_household(
+  p_code text,
+  p_person_name text,
+  p_person_key text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_hid uuid;
+  v_code text := upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
+begin
+  if auth.uid() is null then
+    raise exception 'not_authenticated';
+  end if;
+  if exists (select 1 from public.profiles p where p.id = auth.uid()) then
+    raise exception 'already_linked';
+  end if;
+  if p_person_key is null or p_person_key not in ('R', 'I') then
+    raise exception 'invalid_person';
+  end if;
+  if v_code !~ '^[A-Z0-9]{6}$' then
+    raise exception 'invalid_code';
+  end if;
+
+  select h.id into v_hid from public.households h where h.invite_code = v_code;
+  if v_hid is null then
+    raise exception 'invalid_code';
+  end if;
+
+  begin
+    insert into public.profiles (id, household_id, person_key, display_name)
+    values (
+      auth.uid(),
+      v_hid,
+      p_person_key,
+      left(coalesce(nullif(btrim(p_person_name), ''), 'Me'), 40)
+    );
+  exception when unique_violation then
+    raise exception 'person_taken';
+  end;
+
+  return v_hid;
+end;
+$$;
+
+revoke all on function public.join_household(text, text, text) from public, anon;
+grant execute on function public.join_household(text, text, text) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Pantry helpers (internal)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- Applies deltas and returns the amount that actually landed, so undo can restore
+-- exactly what was used even when stock ran out mid-meal.
+create or replace function public._apply_pantry_deltas_tracked(p_household_id uuid, p_items jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_item jsonb;
+  v_key text;
+  v_delta numeric;
+  v_before numeric;
+  v_after numeric;
+  v_applied jsonb := '[]'::jsonb;
+begin
+  if p_items is null or jsonb_typeof(p_items) <> 'array' then
+    raise exception 'invalid_items';
+  end if;
+  if jsonb_array_length(p_items) > 200 then
+    raise exception 'too_many_items';
+  end if;
+
+  for v_item in select elem from jsonb_array_elements(p_items) as t(elem) loop
+    v_key := v_item->>'itemKey';
+    if v_key is null or v_key !~ '^[a-z0-9-]{1,80}\|(g|ml|vnt)$' then
+      continue;
+    end if;
+    begin
+      v_delta := (v_item->>'delta')::numeric;
+    exception when others then
+      continue;
+    end;
+    if v_delta is null or v_delta < -100000 or v_delta > 100000 then
+      continue;
+    end if;
+
+    select quantity into v_before
+      from public.pantry
+     where household_id = p_household_id and item_key = v_key;
+
+    if not found then
+      continue;
+    end if;
+
+    v_after := greatest(0, round(v_before + v_delta, 1));
+
+    update public.pantry
+       set quantity = v_after,
+           updated_at = now()
+     where household_id = p_household_id
+       and item_key = v_key;
+
+    if v_after <> v_before then
+      v_applied := v_applied || jsonb_build_object('itemKey', v_key, 'delta', v_after - v_before);
+    end if;
+  end loop;
+
+  return v_applied;
+end;
+$$;
+
+revoke all on function public._apply_pantry_deltas_tracked(uuid, jsonb) from public, anon, authenticated;
+
+create or replace function public._apply_pantry_deltas(p_household_id uuid, p_items jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  perform public._apply_pantry_deltas_tracked(p_household_id, p_items);
+end;
+$$;
+
+revoke all on function public._apply_pantry_deltas(uuid, jsonb) from public, anon, authenticated;
+
+create or replace function public._restore_slot_consumption(
+  p_household_id uuid,
+  p_day integer,
+  p_slot text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_restore jsonb;
+begin
+  select jsonb_agg(
+           jsonb_build_object(
+             'itemKey', e->>'itemKey',
+             'delta', -((e->>'delta')::numeric)
+           )
+         )
+    into v_restore
+    from public.eaten x
+    cross join lateral jsonb_array_elements(coalesce(x.applied, '[]'::jsonb)) e
+   where x.household_id = p_household_id
+     and x.day_index = p_day
+     and x.slot = p_slot
+     and x.eaten = true
+     and jsonb_array_length(coalesce(x.applied, '[]'::jsonb)) > 0;
+
+  if v_restore is not null then
+    perform public._apply_pantry_deltas(p_household_id, v_restore);
+  end if;
+end;
+$$;
+
+revoke all on function public._restore_slot_consumption(uuid, integer, text) from public, anon, authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Plan RPCs
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create or replace function public._set_slot_internal(
+  p_household_id uuid,
+  p_day integer,
+  p_slot text,
+  p_assignments jsonb
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_row jsonb;
+  v_person text;
+  v_recipe text;
+  v_len integer;
+begin
+  if p_day is null or p_day < 0 or p_day > 6 then
+    raise exception 'invalid_day';
+  end if;
+  if p_slot is null or p_slot not in ('breakfast', 'lunch', 'snack', 'dinner') then
+    raise exception 'invalid_slot';
+  end if;
+  if p_assignments is null or jsonb_typeof(p_assignments) <> 'array' then
+    raise exception 'invalid_assignments';
+  end if;
+
+  v_len := jsonb_array_length(p_assignments);
+  if v_len > 2 then
+    raise exception 'too_many_assignments';
+  end if;
+
+  for v_row in select elem from jsonb_array_elements(p_assignments) as t(elem) loop
+    v_person := v_row->>'person_key';
+    v_recipe := v_row->>'recipe_id';
+    if v_person is null or v_person not in ('R', 'I', 'both') then
+      raise exception 'invalid_person';
+    end if;
+    if v_person = 'both' and v_len <> 1 then
+      raise exception 'invalid_assignment_mix';
+    end if;
+    if v_recipe is null or not exists (
+      select 1 from public.recipes r
+       where r.id = v_recipe
+         and (r.household_id is null or r.household_id = p_household_id)
+    ) then
+      raise exception 'invalid_recipe';
+    end if;
+  end loop;
+
+  perform public._restore_slot_consumption(p_household_id, p_day, p_slot);
+
+  delete from public.eaten
+   where household_id = p_household_id and day_index = p_day and slot = p_slot;
+
+  delete from public.meal_assignments
+   where household_id = p_household_id and day_index = p_day and slot = p_slot;
+
+  for v_row in select elem from jsonb_array_elements(p_assignments) as t(elem) loop
+    insert into public.meal_assignments (household_id, day_index, slot, person_key, recipe_id, updated_by)
+    values (
+      p_household_id,
+      p_day,
+      p_slot,
+      v_row->>'person_key',
+      v_row->>'recipe_id',
+      auth.uid()
+    );
+  end loop;
+end;
+$$;
+
+revoke all on function public._set_slot_internal(uuid, integer, text, jsonb) from public, anon, authenticated;
+
+create or replace function public.set_slot(p_day integer, p_slot text, p_assignments jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_hid uuid := public.my_household_id();
+begin
+  if v_hid is null then
+    raise exception 'not_linked';
+  end if;
+  perform public._set_slot_internal(v_hid, p_day, p_slot, p_assignments);
+end;
+$$;
+
+revoke all on function public.set_slot(integer, text, jsonb) from public, anon;
+grant execute on function public.set_slot(integer, text, jsonb) to authenticated;
+
+-- Swaps two slots of the same day, so a drag only needs one round trip.
+create or replace function public.move_slot(p_day integer, p_from text, p_to text)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_hid uuid := public.my_household_id();
+  v_from jsonb;
+  v_to jsonb;
+begin
+  if v_hid is null then
+    raise exception 'not_linked';
+  end if;
+  if p_day is null or p_day < 0 or p_day > 6 then
+    raise exception 'invalid_day';
+  end if;
+  if p_from is null or p_to is null
+     or p_from not in ('breakfast', 'lunch', 'snack', 'dinner')
+     or p_to not in ('breakfast', 'lunch', 'snack', 'dinner')
+     or p_from = p_to then
+    raise exception 'invalid_slot';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object('person_key', person_key, 'recipe_id', recipe_id)), '[]'::jsonb)
+    into v_from
+    from public.meal_assignments
+   where household_id = v_hid and day_index = p_day and slot = p_from;
+
+  select coalesce(jsonb_agg(jsonb_build_object('person_key', person_key, 'recipe_id', recipe_id)), '[]'::jsonb)
+    into v_to
+    from public.meal_assignments
+   where household_id = v_hid and day_index = p_day and slot = p_to;
+
+  perform public._set_slot_internal(v_hid, p_day, p_from, v_to);
+  perform public._set_slot_internal(v_hid, p_day, p_to, v_from);
+
+  -- A slot that receives a meal is no longer hidden.
+  delete from public.day_sections
+   where household_id = v_hid
+     and day_index = p_day
+     and slot in (p_from, p_to);
+end;
+$$;
+
+revoke all on function public.move_slot(integer, text, text) from public, anon;
+grant execute on function public.move_slot(integer, text, text) to authenticated;
+
+-- Hides or restores a meal section for one day. Hiding clears that slot.
+create or replace function public.set_section_hidden(p_day integer, p_slot text, p_hidden boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_hid uuid := public.my_household_id();
+begin
+  if v_hid is null then
+    raise exception 'not_linked';
+  end if;
+  if p_day is null or p_day < 0 or p_day > 6 then
+    raise exception 'invalid_day';
+  end if;
+  if p_slot is null or p_slot not in ('breakfast', 'lunch', 'snack', 'dinner') then
+    raise exception 'invalid_slot';
+  end if;
+
+  if coalesce(p_hidden, false) then
+    perform public._set_slot_internal(v_hid, p_day, p_slot, '[]'::jsonb);
+    insert into public.day_sections (household_id, day_index, slot)
+    values (v_hid, p_day, p_slot)
+    on conflict (household_id, day_index, slot) do nothing;
+  else
+    delete from public.day_sections
+     where household_id = v_hid and day_index = p_day and slot = p_slot;
+  end if;
+end;
+$$;
+
+revoke all on function public.set_section_hidden(integer, text, boolean) from public, anon;
+grant execute on function public.set_section_hidden(integer, text, boolean) to authenticated;
+
+create or replace function public.apply_day_menu(p_day integer, p_items jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_hid uuid := public.my_household_id();
+  v_slot text;
+  v_key text;
+begin
+  if v_hid is null then
+    raise exception 'not_linked';
+  end if;
+  if p_items is null or jsonb_typeof(p_items) <> 'object' then
+    raise exception 'invalid_menu';
+  end if;
+
+  for v_key in select jsonb_object_keys(p_items) loop
+    if v_key not in ('breakfast', 'lunch', 'snack', 'dinner') then
+      raise exception 'invalid_slot';
+    end if;
+  end loop;
+
+  foreach v_slot in array array['breakfast', 'lunch', 'snack', 'dinner'] loop
+    perform public._set_slot_internal(
+      v_hid,
+      p_day,
+      v_slot,
+      coalesce(p_items->v_slot, '[]'::jsonb)
+    );
+  end loop;
+
+  -- Applying a menu brings back the sections it fills.
+  delete from public.day_sections
+   where household_id = v_hid
+     and day_index = p_day
+     and slot in (select jsonb_object_keys(p_items));
+end;
+$$;
+
+revoke all on function public.apply_day_menu(integer, jsonb) from public, anon;
+grant execute on function public.apply_day_menu(integer, jsonb) to authenticated;
+
+create or replace function public.toggle_eaten(
+  p_day integer,
+  p_slot text,
+  p_person_key text,
+  p_factor numeric,
+  p_recipe_id text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_hid uuid := public.my_household_id();
+  v_row public.eaten%rowtype;
+  v_recipe public.recipes%rowtype;
+  v_factor numeric := coalesce(p_factor, 1);
+  v_applied jsonb;
+  v_restore jsonb;
+begin
+  if v_hid is null then
+    raise exception 'not_linked';
+  end if;
+  if p_day is null or p_day < 0 or p_day > 6 then
+    raise exception 'invalid_day';
+  end if;
+  if p_slot is null or p_slot not in ('breakfast', 'lunch', 'snack', 'dinner') then
+    raise exception 'invalid_slot';
+  end if;
+  if p_person_key is null or p_person_key not in ('R', 'I', 'both') then
+    raise exception 'invalid_person';
+  end if;
+  if v_factor < 0.5 or v_factor > 4 then
+    raise exception 'invalid_factor';
+  end if;
+
+  select * into v_row
+    from public.eaten
+   where household_id = v_hid
+     and day_index = p_day
+     and slot = p_slot
+     and person_key = p_person_key
+   for update;
+
+  if found and v_row.eaten then
+    select jsonb_agg(
+             jsonb_build_object(
+               'itemKey', e->>'itemKey',
+               'delta', -((e->>'delta')::numeric)
+             )
+           )
+      into v_restore
+      from jsonb_array_elements(coalesce(v_row.applied, '[]'::jsonb)) e;
+
+    if v_restore is not null then
+      perform public._apply_pantry_deltas(v_hid, v_restore);
+    end if;
+
+    update public.eaten
+       set eaten = false,
+           applied = '[]'::jsonb,
+           updated_by = auth.uid(),
+           updated_at = now()
+     where id = v_row.id;
+    return false;
+  end if;
+
+  select * into v_recipe
+    from public.recipes r
+   where r.id = p_recipe_id
+     and (r.household_id is null or r.household_id = v_hid);
+
+  if not found then
+    raise exception 'invalid_recipe';
+  end if;
+
+  -- The meal must actually be planned in this slot for this person.
+  if not exists (
+    select 1 from public.meal_assignments a
+     where a.household_id = v_hid
+       and a.day_index = p_day
+       and a.slot = p_slot
+       and a.person_key = p_person_key
+       and a.recipe_id = p_recipe_id
+  ) then
+    raise exception 'assignment_mismatch';
+  end if;
+
+  select coalesce(
+           jsonb_agg(
+             jsonb_build_object(
+               'itemKey', (i->>'key') || '|' || (i->>'unit'),
+               'delta', -round(((i->>'amount')::numeric * v_factor), 1)
+             )
+           ),
+           '[]'::jsonb
+         )
+    into v_applied
+    from jsonb_array_elements(v_recipe.ingredients) i
+   where (i->>'key') ~ '^[a-z0-9-]{1,80}$'
+     and (i->>'unit') in ('g', 'ml', 'vnt')
+     and (i->>'amount') ~ '^[0-9]+(\.[0-9]+)?$';
+
+  if jsonb_array_length(v_applied) > 0 then
+    v_applied := public._apply_pantry_deltas_tracked(v_hid, v_applied);
+  end if;
+
+  insert into public.eaten (
+    household_id, day_index, slot, person_key, eaten, recipe_id, applied, updated_by
+  ) values (
+    v_hid, p_day, p_slot, p_person_key, true, p_recipe_id, v_applied, auth.uid()
+  )
+  on conflict (household_id, day_index, slot, person_key)
+  do update set
+    eaten = true,
+    recipe_id = excluded.recipe_id,
+    applied = excluded.applied,
+    updated_by = excluded.updated_by,
+    updated_at = now();
+
+  return true;
+end;
+$$;
+
+revoke all on function public.toggle_eaten(integer, text, text, numeric, text) from public, anon;
+grant execute on function public.toggle_eaten(integer, text, text, numeric, text) to authenticated;
+
+create or replace function public.reset_week()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_hid uuid := public.my_household_id();
+  v_restore jsonb;
+begin
+  if v_hid is null then
+    raise exception 'not_linked';
+  end if;
+
+  -- Put everything that was consumed back into the pantry before clearing.
+  select jsonb_agg(
+           jsonb_build_object(
+             'itemKey', e->>'itemKey',
+             'delta', -((e->>'delta')::numeric)
+           )
+         )
+    into v_restore
+    from public.eaten x
+    cross join lateral jsonb_array_elements(coalesce(x.applied, '[]'::jsonb)) e
+   where x.household_id = v_hid and x.eaten = true;
+
+  if v_restore is not null then
+    perform public._apply_pantry_deltas(v_hid, v_restore);
+  end if;
+
+  delete from public.meal_assignments where household_id = v_hid;
+  delete from public.eaten where household_id = v_hid;
+  delete from public.water where household_id = v_hid;
+  delete from public.shopping_checks where household_id = v_hid;
+  delete from public.day_sections where household_id = v_hid;
+end;
+$$;
+
+revoke all on function public.reset_week() from public, anon;
+grant execute on function public.reset_week() to authenticated;
+
+create or replace function public.save_menu(
+  p_id text,
+  p_preset_key text,
+  p_name_en text,
+  p_name_lt text,
+  p_emoji text,
+  p_items jsonb
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_hid uuid := public.my_household_id();
+  v_id text;
+  v_slot text;
+  v_entry jsonb;
+  v_recipe text;
+  v_name_en text := left(btrim(coalesce(p_name_en, '')), 120);
+  v_name_lt text := left(btrim(coalesce(p_name_lt, v_name_en)), 120);
+  v_emoji text := left(btrim(coalesce(p_emoji, '🍱')), 12);
+begin
+  if v_hid is null then
+    raise exception 'not_linked';
+  end if;
+  if char_length(v_name_en) < 1 then
+    raise exception 'invalid_name';
+  end if;
+  if p_items is null or jsonb_typeof(p_items) <> 'object' or length(p_items::text) > 6000 then
+    raise exception 'invalid_items';
+  end if;
+  if p_preset_key is not null then
+    if p_preset_key !~ '^[a-z0-9][a-z0-9-]{0,79}$' then
+      raise exception 'invalid_menu';
+    end if;
+    if not exists (select 1 from public.menus where id = p_preset_key and household_id is null) then
+      raise exception 'unknown_menu';
+    end if;
+    v_id := 'ovr-' || p_preset_key;
+    delete from public.menus where household_id = v_hid and preset_key = p_preset_key;
+  else
+    v_id := p_id;
+    if v_id is null or v_id !~ '^[a-z0-9][a-z0-9-]{0,79}$' or v_id like 'ovr-%' then
+      raise exception 'invalid_menu_id';
+    end if;
+    if exists (select 1 from public.menus where id = v_id and household_id is distinct from v_hid) then
+      raise exception 'not_editable';
+    end if;
+    delete from public.menus where id = v_id and household_id = v_hid;
+  end if;
+
+  -- Every referenced recipe must be readable by this household (library or own).
+  for v_slot in select jsonb_object_keys(p_items) loop
+    if v_slot not in ('breakfast', 'lunch', 'snack', 'dinner') then
+      raise exception 'invalid_slot';
+    end if;
+    v_entry := p_items -> v_slot;
+    if jsonb_typeof(v_entry) <> 'object' then
+      raise exception 'invalid_items';
+    end if;
+    for v_recipe in
+      select value from jsonb_each_text(v_entry) where key in ('both', 'R', 'I')
+    loop
+      if not exists (
+        select 1 from public.recipes
+        where id = v_recipe and (household_id is null or household_id = v_hid)
+      ) then
+        raise exception 'unknown_recipe';
+      end if;
+    end loop;
+    if v_entry ? 'both' and (v_entry ? 'R' or v_entry ? 'I') then
+      raise exception 'invalid_items';
+    end if;
+  end loop;
+
+  insert into public.menus (id, household_id, preset_key, name_en, name_lt, emoji, items, created_by)
+  values (v_id, v_hid, p_preset_key, v_name_en, v_name_lt, v_emoji, p_items, auth.uid());
+end;
+$$;
+
+revoke all on function public.save_menu(text, text, text, text, text, jsonb) from public, anon;
+grant execute on function public.save_menu(text, text, text, text, text, jsonb) to authenticated;
+
+create or replace function public.add_pantry_stock(p_items jsonb)
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_hid uuid := public.my_household_id();
+  v_item jsonb;
+  v_key text;
+  v_unit text;
+  v_name_en text;
+  v_name_lt text;
+  v_qty numeric;
+  v_threshold numeric;
+  v_added integer := 0;
+begin
+  if v_hid is null then
+    raise exception 'not_linked';
+  end if;
+  if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) > 100 then
+    raise exception 'invalid_items';
+  end if;
+
+  for v_item in select elem from jsonb_array_elements(p_items) as t(elem) loop
+    v_key := v_item->>'key';
+    v_unit := v_item->>'unit';
+    v_name_en := left(btrim(coalesce(v_item->>'name_en', '')), 80);
+    v_name_lt := left(btrim(coalesce(v_item->>'name_lt', v_name_en)), 80);
+    begin
+      v_qty := greatest(0, least(100000, coalesce((v_item->>'quantity')::numeric, 0)));
+      v_threshold := greatest(0, least(100000, coalesce((v_item->>'low_threshold')::numeric, 0)));
+    exception when others then
+      continue;
+    end;
+    if v_key is null or v_key !~ '^[a-z0-9-]{1,80}$' then
+      continue;
+    end if;
+    if v_unit is null or v_unit not in ('g', 'ml', 'vnt') then
+      continue;
+    end if;
+    if char_length(v_name_en) < 1 then
+      continue;
+    end if;
+    if v_qty <= 0 then
+      continue;
+    end if;
+
+    insert into public.pantry (
+      household_id, item_key, ingredient_key, name_en, name_lt, unit, quantity, low_threshold, updated_by
+    ) values (
+      v_hid, v_key || '|' || v_unit, v_key, v_name_en, v_name_lt, v_unit, v_qty, v_threshold, auth.uid()
+    )
+    on conflict (household_id, item_key) do update
+      set quantity = least(100000, pantry.quantity + excluded.quantity),
+          name_en = excluded.name_en,
+          name_lt = excluded.name_lt,
+          low_threshold = excluded.low_threshold,
+          updated_by = excluded.updated_by,
+          updated_at = now();
+    v_added := v_added + 1;
+  end loop;
+
+  return v_added;
+end;
+$$;
+
+revoke all on function public.add_pantry_stock(jsonb) from public, anon;
+grant execute on function public.add_pantry_stock(jsonb) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Row-level security
+-- ═══════════════════════════════════════════════════════════════════════════
+
+alter table public.households enable row level security;
+alter table public.profiles enable row level security;
+alter table public.recipes enable row level security;
+alter table public.meal_assignments enable row level security;
+alter table public.eaten enable row level security;
+alter table public.water enable row level security;
+alter table public.recipe_notes enable row level security;
+alter table public.shopping_checks enable row level security;
+alter table public.menus enable row level security;
+alter table public.pantry enable row level security;
+
+-- households: members read; members may rename / change extra portions only.
+drop policy if exists households_select on public.households;
+create policy households_select on public.households
+  for select to authenticated
+  using (id = public.my_household_id());
+
+drop policy if exists households_update on public.households;
+create policy households_update on public.households
+  for update to authenticated
+  using (id = public.my_household_id())
+  with check (id = public.my_household_id());
+
+revoke insert, delete, update on public.households from anon, authenticated;
+grant select on public.households to authenticated;
+grant update (name, extra_portions) on public.households to authenticated;
+
+-- profiles: household members see each other; a user may only rename themselves.
+drop policy if exists profiles_select on public.profiles;
+create policy profiles_select on public.profiles
+  for select to authenticated
+  using (id = auth.uid() or household_id = public.my_household_id());
+
+drop policy if exists profiles_update on public.profiles;
+create policy profiles_update on public.profiles
+  for update to authenticated
+  using (id = auth.uid())
+  with check (id = auth.uid());
+
+revoke insert, delete, update on public.profiles from anon, authenticated;
+grant select on public.profiles to authenticated;
+grant update (display_name) on public.profiles to authenticated;
+
+-- recipes: shared presets + own household recipes.
+drop policy if exists recipes_select on public.recipes;
+create policy recipes_select on public.recipes
+  for select to authenticated
+  using (household_id is null or household_id = public.my_household_id());
+
+drop policy if exists recipes_insert on public.recipes;
+create policy recipes_insert on public.recipes
+  for insert to authenticated
+  with check (household_id = public.my_household_id() and created_by = auth.uid());
+
+drop policy if exists recipes_update on public.recipes;
+create policy recipes_update on public.recipes
+  for update to authenticated
+  using (household_id = public.my_household_id())
+  with check (household_id = public.my_household_id());
+
+drop policy if exists recipes_delete on public.recipes;
+create policy recipes_delete on public.recipes
+  for delete to authenticated
+  using (household_id = public.my_household_id());
+
+revoke all on public.recipes from anon;
+grant select, insert, update, delete on public.recipes to authenticated;
+
+-- meal assignments: readable, written only through RPCs.
+drop policy if exists meal_assignments_select on public.meal_assignments;
+create policy meal_assignments_select on public.meal_assignments
+  for select to authenticated
+  using (household_id = public.my_household_id());
+
+revoke all on public.meal_assignments from anon, authenticated;
+grant select on public.meal_assignments to authenticated;
+
+-- eaten: readable, written only through the toggle_eaten RPC.
+drop policy if exists eaten_select on public.eaten;
+create policy eaten_select on public.eaten
+  for select to authenticated
+  using (household_id = public.my_household_id());
+
+revoke all on public.eaten from anon, authenticated;
+grant select on public.eaten to authenticated;
+
+-- water
+drop policy if exists water_select on public.water;
+create policy water_select on public.water
+  for select to authenticated
+  using (household_id = public.my_household_id());
+
+drop policy if exists water_insert on public.water;
+create policy water_insert on public.water
+  for insert to authenticated
+  with check (household_id = public.my_household_id());
+
+drop policy if exists water_update on public.water;
+create policy water_update on public.water
+  for update to authenticated
+  using (household_id = public.my_household_id())
+  with check (household_id = public.my_household_id());
+
+drop policy if exists water_delete on public.water;
+create policy water_delete on public.water
+  for delete to authenticated
+  using (household_id = public.my_household_id());
+
+revoke all on public.water from anon;
+grant select, insert, update, delete on public.water to authenticated;
+
+-- recipe notes
+drop policy if exists recipe_notes_select on public.recipe_notes;
+create policy recipe_notes_select on public.recipe_notes
+  for select to authenticated
+  using (household_id = public.my_household_id());
+
+drop policy if exists recipe_notes_insert on public.recipe_notes;
+create policy recipe_notes_insert on public.recipe_notes
+  for insert to authenticated
+  with check (household_id = public.my_household_id());
+
+drop policy if exists recipe_notes_update on public.recipe_notes;
+create policy recipe_notes_update on public.recipe_notes
+  for update to authenticated
+  using (household_id = public.my_household_id())
+  with check (household_id = public.my_household_id());
+
+drop policy if exists recipe_notes_delete on public.recipe_notes;
+create policy recipe_notes_delete on public.recipe_notes
+  for delete to authenticated
+  using (household_id = public.my_household_id());
+
+revoke all on public.recipe_notes from anon;
+grant select, insert, update, delete on public.recipe_notes to authenticated;
+
+-- shopping checks
+drop policy if exists shopping_checks_select on public.shopping_checks;
+create policy shopping_checks_select on public.shopping_checks
+  for select to authenticated
+  using (household_id = public.my_household_id());
+
+drop policy if exists shopping_checks_insert on public.shopping_checks;
+create policy shopping_checks_insert on public.shopping_checks
+  for insert to authenticated
+  with check (household_id = public.my_household_id());
+
+drop policy if exists shopping_checks_update on public.shopping_checks;
+create policy shopping_checks_update on public.shopping_checks
+  for update to authenticated
+  using (household_id = public.my_household_id())
+  with check (household_id = public.my_household_id());
+
+drop policy if exists shopping_checks_delete on public.shopping_checks;
+create policy shopping_checks_delete on public.shopping_checks
+  for delete to authenticated
+  using (household_id = public.my_household_id());
+
+revoke all on public.shopping_checks from anon;
+grant select, insert, update, delete on public.shopping_checks to authenticated;
+
+-- menus: read library + own household rows, write only household rows through a validated RPC
+drop policy if exists menus_select on public.menus;
+create policy menus_select on public.menus
+  for select to authenticated
+  using (household_id is null or household_id = public.my_household_id());
+
+drop policy if exists menus_delete on public.menus;
+create policy menus_delete on public.menus
+  for delete to authenticated
+  using (household_id = public.my_household_id());
+
+revoke all on public.menus from anon;
+grant select, delete on public.menus to authenticated;
+
+-- labels
+drop policy if exists labels_select on public.labels;
+create policy labels_select on public.labels
+  for select to authenticated
+  using (household_id = public.my_household_id());
+
+drop policy if exists labels_insert on public.labels;
+create policy labels_insert on public.labels
+  for insert to authenticated
+  with check (household_id = public.my_household_id());
+
+drop policy if exists labels_update on public.labels;
+create policy labels_update on public.labels
+  for update to authenticated
+  using (household_id = public.my_household_id())
+  with check (household_id = public.my_household_id());
+
+drop policy if exists labels_delete on public.labels;
+create policy labels_delete on public.labels
+  for delete to authenticated
+  using (household_id = public.my_household_id());
+
+revoke all on public.labels from anon;
+grant select, insert, update, delete on public.labels to authenticated;
+
+-- day sections
+drop policy if exists day_sections_select on public.day_sections;
+create policy day_sections_select on public.day_sections
+  for select to authenticated
+  using (household_id = public.my_household_id());
+
+revoke all on public.day_sections from anon;
+grant select on public.day_sections to authenticated;
+
+-- pantry
+drop policy if exists pantry_select on public.pantry;
+create policy pantry_select on public.pantry
+  for select to authenticated
+  using (household_id = public.my_household_id());
+
+drop policy if exists pantry_insert on public.pantry;
+create policy pantry_insert on public.pantry
+  for insert to authenticated
+  with check (household_id = public.my_household_id());
+
+drop policy if exists pantry_update on public.pantry;
+create policy pantry_update on public.pantry
+  for update to authenticated
+  using (household_id = public.my_household_id())
+  with check (household_id = public.my_household_id());
+
+drop policy if exists pantry_delete on public.pantry;
+create policy pantry_delete on public.pantry
+  for delete to authenticated
+  using (household_id = public.my_household_id());
+
+revoke all on public.pantry from anon;
+grant select, insert, update, delete on public.pantry to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Realtime (safe to re-run)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+do $$
+declare
+  t text;
+begin
+  foreach t in array array[
+    'recipes', 'meal_assignments', 'eaten', 'water',
+    'recipe_notes', 'shopping_checks', 'pantry', 'menus', 'households', 'profiles',
+    'day_sections', 'labels'
+  ] loop
+    begin
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    exception
+      when duplicate_object then null;
+      when undefined_object then null;
+    end;
+  end loop;
+end $$;
