@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { C, TAG_LABELS } from "../theme.js";
+import { C } from "../theme.js";
+import { tagLabel } from "../lib/labels.js";
 import { AutoTextarea, MacroPills } from "./ui.jsx";
 import { sanitizeNote } from "../lib/validate.js";
 
@@ -11,6 +12,7 @@ export default function MealCard({
   personColor = null,
   eaten = false,
   note = "",
+  labels = [],
   lang,
   t,
   onToggleEaten,
@@ -18,7 +20,9 @@ export default function MealCard({
   onChange,
   onSplit,
   onMerge,
+  onMove,
   onRemove,
+  onDragStart,
   onNoteChange,
 }) {
   const [editingNote, setEditingNote] = useState(false);
@@ -32,11 +36,13 @@ export default function MealCard({
     setEditingNote(false);
   };
 
+  const tags = (meal.tags || []).filter(tag => tag !== "vegetarian");
+
   return (
     <article className={`meal-card ${eaten ? "eaten" : ""}`} style={{ "--person-color": personColor || C.leaf, marginBottom: 8 }}>
-      <div className="row" style={{ alignItems: "flex-start", gap: 11 }}>
+      <div className="meal-card-head">
         <div className="meal-emoji" aria-hidden="true">{meal.emoji}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="meal-main">
           <div className="row" style={{ gap: 6 }}>
             <span className="slot-label">{slotLabel}</span>
             {personName && (
@@ -46,43 +52,70 @@ export default function MealCard({
               </span>
             )}
           </div>
-          <div className="meal-name">{meal.name?.[lang] || meal.name?.en}</div>
+          <button
+            type="button"
+            className="meal-name-btn"
+            onClick={onOpenRecipe}
+            title={t.viewRecipe}
+            aria-label={`${meal.name?.[lang] || meal.name?.en} — ${t.viewRecipe}`}
+          >
+            {meal.name?.[lang] || meal.name?.en}
+          </button>
           <div style={{ marginTop: 5 }}><MacroPills recipe={meal} t={t} compact /></div>
           <div className="row" style={{ gap: 4, marginTop: 6, flexWrap: "wrap" }}>
-            {(meal.tags || []).filter(tag => tag !== "vegetarian").slice(0, 2).map(tag => (
-              <span key={tag} className="stock-badge">{TAG_LABELS[lang]?.[tag] || tag}</span>
+            {tags.slice(0, 3).map(tag => (
+              <span key={tag} className="stock-badge">{tagLabel(tag, lang, labels)}</span>
             ))}
             {meal.prepMinutes > 0 && <span className="stock-badge">⏱ {meal.prepMinutes} {t.minutes}</span>}
           </div>
         </div>
-        <button type="button" className="icon-btn" onClick={onOpenRecipe} aria-label={t.viewRecipe} title={t.viewRecipe}>👁</button>
+        <div className="meal-card-icons">
+          <button
+            type="button"
+            className="icon-btn meal-grip"
+            onPointerDown={onDragStart}
+            aria-label={t.dragHandle}
+            title={t.dragHint}
+          >
+            ⠿
+          </button>
+          <button
+            type="button"
+            className="icon-btn meal-delete"
+            onClick={onRemove}
+            aria-label={t.removeMeal}
+            title={t.removeMeal}
+          >
+            🗑
+          </button>
+        </div>
       </div>
 
       <div className="meal-actions">
         <button
           type="button"
-          className={`btn btn-sm ${eaten ? "btn-primary" : "btn-soft"}`}
+          className={`btn btn-sm btn-soft meal-action ${eaten ? "is-eaten" : ""}`}
           onClick={onToggleEaten}
           aria-pressed={eaten}
-          style={eaten ? { background: C.leaf, borderColor: C.leaf } : undefined}
         >
           {eaten ? `✓ ${t.eaten}` : `🍴 ${t.markEaten}`}
         </button>
-        <button type="button" className="btn btn-sm btn-soft" onClick={onOpenRecipe}>{t.viewRecipe}</button>
-        <button type="button" className="btn btn-sm btn-ghost" onClick={onChange}>{t.changeMeal}</button>
+        <button type="button" className="btn btn-sm btn-soft meal-action" onClick={onChange}>{t.changeMeal}</button>
         {onSplit && (
-          <button type="button" className="btn btn-sm btn-ghost" onClick={onSplit} title={t.splitHint} style={{ color: C.amber }}>
-            ✂️ {t.makeDifferent}
+          <button type="button" className="btn btn-sm btn-soft meal-action" onClick={onSplit} title={t.splitHint}>
+            ✂️ {t.splitShort}
           </button>
         )}
         {onMerge && (
-          <button type="button" className="btn btn-sm btn-ghost" onClick={onMerge} title={t.mergeHint} style={{ color: C.amber }}>
-            ⇄ {t.makeSame}
+          <button type="button" className="btn btn-sm btn-soft meal-action" onClick={onMerge} title={t.mergeHint}>
+            ⇄ {t.mergeShort}
           </button>
         )}
-        <button type="button" className="btn btn-sm btn-ghost" onClick={onRemove} aria-label={t.removeMeal} title={t.removeMeal} style={{ color: C.muted }}>
-          ✕
-        </button>
+        {onMove && (
+          <button type="button" className="btn btn-sm btn-soft meal-action" onClick={onMove} title={t.moveMeal}>
+            ↔ {t.moveMeal}
+          </button>
+        )}
       </div>
 
       <div className="meal-note" onClick={() => { if (!editingNote) setEditingNote(true); }} role="button" tabIndex={0}
@@ -94,7 +127,7 @@ export default function MealCard({
               onChange={setDraft}
               placeholder={t.notePlaceholder}
               maxLength={500}
-              style={{ width: "100%", border: `1.5px solid ${C.line}`, borderRadius: 9, padding: "7px 9px", fontSize: 12, background: "#fff", outline: "none" }}
+              style={{ width: "100%", border: `1.5px solid ${C.line}`, borderRadius: 9, padding: "7px 9px", fontSize: 12, background: "var(--surface)", outline: "none" }}
             />
             <div className="row" style={{ gap: 6, marginTop: 6 }}>
               <button type="button" className="btn btn-xs btn-primary" onClick={save}>{t.save}</button>

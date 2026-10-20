@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { T } from "./data/translations.js";
 import { interpolate, todayIndex } from "./lib/format.js";
 import { useAppData } from "./hooks/useAppData.js";
+import { usePwaUpdate } from "./hooks/usePwaUpdate.js";
 import AuthScreen from "./components/AuthScreen.jsx";
 import SetupScreen from "./components/SetupScreen.jsx";
 import PlanTab from "./components/PlanTab.jsx";
@@ -27,11 +28,28 @@ const TABS = [
   { id: "tips", icon: "🌿" },
 ];
 
-function LoadingScreen({ t }) {
+function LoadingScreen({ t, label }) {
   return (
-    <div className="loading-screen">
+    <div className="loading-screen" role="status" aria-live="polite">
+      <div className="loading-mark" aria-hidden="true">🌿</div>
       <div className="spinner" aria-hidden="true" />
-      <div>{t.loading}</div>
+      <div>{label || t.loading}</div>
+    </div>
+  );
+}
+
+function UpdateBanner({ t, onUpdate, onDismiss }) {
+  return (
+    <div className="update-banner" role="status" aria-live="polite">
+      <span className="update-icon" aria-hidden="true">✨</span>
+      <div className="update-copy">
+        <b>{t.updateTitle}</b>
+        <span>{t.updateBody}</span>
+      </div>
+      <div className="update-actions">
+        <button type="button" className="btn btn-xs btn-primary" onClick={onUpdate}>{t.updateNow}</button>
+        <button type="button" className="btn btn-xs btn-ghost" onClick={onDismiss}>{t.updateLater}</button>
+      </div>
     </div>
   );
 }
@@ -40,6 +58,7 @@ export default function App() {
   const [lang, setLang] = useState("en");
   const t = T[lang];
   const app = useAppData(t);
+  const pwa = usePwaUpdate();
   const todayIdx = todayIndex();
   const [tab, setTab] = useState("plan");
   const [day, setDay] = useState(todayIdx);
@@ -184,7 +203,9 @@ export default function App() {
   // ── Gates ─────────────────────────────────────────────────────────────────
   if (app.authLoading) return <LoadingScreen t={t} />;
   if (!app.session) return <AuthScreen lang={lang} setLang={setLang} onSignIn={app.signIn} onSignUp={app.signUp} />;
-  if (app.profileLoading) return <LoadingScreen t={t} />;
+  // Keep the loading screen up until the profile lookup has actually resolved,
+  // so "connect household" never flashes for an account that already has one.
+  if (app.profileLoading || !app.profileChecked) return <LoadingScreen t={t} />;
   if (!app.profile) {
     return (
       <SetupScreen
@@ -197,7 +218,7 @@ export default function App() {
       />
     );
   }
-  if (app.dataLoading && !app.household) return <LoadingScreen t={t} />;
+  if (!app.dataReady) return <LoadingScreen t={t} label={t.loadingKitchen} />;
   if (app.loadError && !app.household) {
     return (
       <div className="auth-screen">
@@ -267,6 +288,7 @@ export default function App() {
               t={t}
               onOpenRecipe={recipe => openViewer(recipe)}
               onCreateRecipe={() => openNewRecipe(null)}
+              onReviewIdea={draft => setEditor({ open: true, recipe: draft, slot: draft.slot, context: null })}
             />
           )}
 
@@ -305,6 +327,7 @@ export default function App() {
       <RecipeModal
         recipe={viewer ? (app.recipesById.get(viewer.id) || viewer) : null}
         lang={lang}
+        labels={app.labels}
         t={t}
         onClose={() => { setViewer(null); setViewerContext(null); }}
         onEdit={recipe => { setViewer(null); setEditor({ open: true, recipe, slot: recipe.slot, context: viewerContext }); }}
@@ -333,6 +356,7 @@ export default function App() {
         currentRecipe={pickerCurrent}
         recipes={app.recipes}
         recipesById={app.recipesById}
+        labels={app.labels}
         lang={lang}
         t={t}
         people={app.people}
@@ -375,6 +399,8 @@ export default function App() {
         initialMode="meal"
         onApply={handleScanResult}
       />
+
+      {pwa.needRefresh && <UpdateBanner t={t} onUpdate={pwa.updateNow} onDismiss={pwa.dismiss} />}
 
       <Toast toast={app.toast} />
     </>

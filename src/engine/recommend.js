@@ -52,6 +52,7 @@ export function suggestRecipes({
   recentIds = [],
   filters = {},
   excludeId = null,
+  excludeIds = [],
   limit = 6,
 } = {}) {
   const goal = target || targetFromRecipe(reference);
@@ -66,7 +67,8 @@ export function suggestRecipes({
   const plannedThisWeek = new Set(allPlannedRecipes(plan).map(item => item.recipe.id));
 
   const safe = recipes.filter(isVegetarianSafe);
-  let pool = safe.filter(recipe => recipe.id !== excludeId && recipe.id !== reference?.id);
+  const skip = new Set([excludeId, reference?.id, ...(excludeIds || [])].filter(Boolean));
+  let pool = safe.filter(recipe => !skip.has(recipe.id));
 
   if (filters.excludeRecent) pool = pool.filter(recipe => !recentIds.includes(recipe.id));
   if (filters.highProtein) pool = pool.filter(recipe => Number(recipe.protein) >= 25);

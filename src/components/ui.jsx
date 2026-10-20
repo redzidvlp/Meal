@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { C, TAG_LABELS } from "../theme.js";
+import { tagLabel } from "../lib/labels.js";
 import { fmtNum } from "../lib/format.js";
 
 export function Sheet({ open, onClose, title, subtitle, children, footer, labelledBy = "sheet-title" }) {
@@ -123,12 +124,12 @@ export function Chip({ active, children, onClick, tone = "", title, as = "button
   );
 }
 
-export function TagChips({ tags = [], lang, limit = 3 }) {
+export function TagChips({ tags = [], lang, labels = [], limit = 3 }) {
   return (
     <>
       {tags.slice(0, limit).map(tag => (
         <Chip as="span" key={tag} tone={tag === "vegetarian" ? "sage" : tag === "high-protein" ? "sky" : ""}>
-          {TAG_LABELS[lang]?.[tag] || tag}
+          {tag.startsWith("x-") ? "🏷 " : ""}{tagLabel(tag, lang, labels)}
         </Chip>
       ))}
     </>

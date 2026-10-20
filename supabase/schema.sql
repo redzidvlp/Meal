@@ -167,6 +167,28 @@ create unique index if not exists menus_override_unique
   on public.menus (household_id, preset_key) where preset_key is not null;
 create index if not exists menus_household_idx on public.menus (household_id);
 
+-- Household-defined recipe labels such as "made in 10 min". Recipes reference
+-- them as tags with an "x-" prefix, so the label text stays editable.
+create table if not exists public.labels (
+  household_id uuid not null references public.households(id) on delete cascade,
+  key text not null check (key ~ '^[a-z0-9][a-z0-9-]{0,31}$'),
+  label text not null check (char_length(label) between 1 and 24),
+  created_at timestamptz not null default now(),
+  primary key (household_id, key)
+);
+
+-- Sections a household removed from a given day (e.g. no snack on Sunday).
+create table if not exists public.day_sections (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households(id) on delete cascade,
+  day_index integer not null check (day_index between 0 and 6),
+  slot text not null check (slot in ('breakfast', 'lunch', 'snack', 'dinner')),
+  updated_at timestamptz not null default now(),
+  unique (household_id, day_index, slot)
+);
+
+create index if not exists day_sections_household_idx on public.day_sections (household_id);
+
 create table if not exists public.pantry (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references public.households(id) on delete cascade,
@@ -543,6 +565,90 @@ $$;
 revoke all on function public.set_slot(integer, text, jsonb) from public, anon;
 grant execute on function public.set_slot(integer, text, jsonb) to authenticated;
 
+-- Swaps two slots of the same day, so a drag only needs one round trip.
+create or replace function public.move_slot(p_day integer, p_from text, p_to text)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_hid uuid := public.my_household_id();
+  v_from jsonb;
+  v_to jsonb;
+begin
+  if v_hid is null then
+    raise exception 'not_linked';
+  end if;
+  if p_day is null or p_day < 0 or p_day > 6 then
+    raise exception 'invalid_day';
+  end if;
+  if p_from is null or p_to is null
+     or p_from not in ('breakfast', 'lunch', 'snack', 'dinner')
+     or p_to not in ('breakfast', 'lunch', 'snack', 'dinner')
+     or p_from = p_to then
+    raise exception 'invalid_slot';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object('person_key', person_key, 'recipe_id', recipe_id)), '[]'::jsonb)
+    into v_from
+    from public.meal_assignments
+   where household_id = v_hid and day_index = p_day and slot = p_from;
+
+  select coalesce(jsonb_agg(jsonb_build_object('person_key', person_key, 'recipe_id', recipe_id)), '[]'::jsonb)
+    into v_to
+    from public.meal_assignments
+   where household_id = v_hid and day_index = p_day and slot = p_to;
+
+  perform public._set_slot_internal(v_hid, p_day, p_from, v_to);
+  perform public._set_slot_internal(v_hid, p_day, p_to, v_from);
+
+  -- A slot that receives a meal is no longer hidden.
+  delete from public.day_sections
+   where household_id = v_hid
+     and day_index = p_day
+     and slot in (p_from, p_to);
+end;
+$$;
+
+revoke all on function public.move_slot(integer, text, text) from public, anon;
+grant execute on function public.move_slot(integer, text, text) to authenticated;
+
+-- Hides or restores a meal section for one day. Hiding clears that slot.
+create or replace function public.set_section_hidden(p_day integer, p_slot text, p_hidden boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_hid uuid := public.my_household_id();
+begin
+  if v_hid is null then
+    raise exception 'not_linked';
+  end if;
+  if p_day is null or p_day < 0 or p_day > 6 then
+    raise exception 'invalid_day';
+  end if;
+  if p_slot is null or p_slot not in ('breakfast', 'lunch', 'snack', 'dinner') then
+    raise exception 'invalid_slot';
+  end if;
+
+  if coalesce(p_hidden, false) then
+    perform public._set_slot_internal(v_hid, p_day, p_slot, '[]'::jsonb);
+    insert into public.day_sections (household_id, day_index, slot)
+    values (v_hid, p_day, p_slot)
+    on conflict (household_id, day_index, slot) do nothing;
+  else
+    delete from public.day_sections
+     where household_id = v_hid and day_index = p_day and slot = p_slot;
+  end if;
+end;
+$$;
+
+revoke all on function public.set_section_hidden(integer, text, boolean) from public, anon;
+grant execute on function public.set_section_hidden(integer, text, boolean) to authenticated;
+
 create or replace function public.apply_day_menu(p_day integer, p_items jsonb)
 returns void
 language plpgsql
@@ -575,6 +681,12 @@ begin
       coalesce(p_items->v_slot, '[]'::jsonb)
     );
   end loop;
+
+  -- Applying a menu brings back the sections it fills.
+  delete from public.day_sections
+   where household_id = v_hid
+     and day_index = p_day
+     and slot in (select jsonb_object_keys(p_items));
 end;
 $$;
 
@@ -742,6 +854,7 @@ begin
   delete from public.eaten where household_id = v_hid;
   delete from public.water where household_id = v_hid;
   delete from public.shopping_checks where household_id = v_hid;
+  delete from public.day_sections where household_id = v_hid;
 end;
 $$;
 
@@ -1081,6 +1194,40 @@ create policy menus_delete on public.menus
 revoke all on public.menus from anon;
 grant select, delete on public.menus to authenticated;
 
+-- labels
+drop policy if exists labels_select on public.labels;
+create policy labels_select on public.labels
+  for select to authenticated
+  using (household_id = public.my_household_id());
+
+drop policy if exists labels_insert on public.labels;
+create policy labels_insert on public.labels
+  for insert to authenticated
+  with check (household_id = public.my_household_id());
+
+drop policy if exists labels_update on public.labels;
+create policy labels_update on public.labels
+  for update to authenticated
+  using (household_id = public.my_household_id())
+  with check (household_id = public.my_household_id());
+
+drop policy if exists labels_delete on public.labels;
+create policy labels_delete on public.labels
+  for delete to authenticated
+  using (household_id = public.my_household_id());
+
+revoke all on public.labels from anon;
+grant select, insert, update, delete on public.labels to authenticated;
+
+-- day sections
+drop policy if exists day_sections_select on public.day_sections;
+create policy day_sections_select on public.day_sections
+  for select to authenticated
+  using (household_id = public.my_household_id());
+
+revoke all on public.day_sections from anon;
+grant select on public.day_sections to authenticated;
+
 -- pantry
 drop policy if exists pantry_select on public.pantry;
 create policy pantry_select on public.pantry
@@ -1116,7 +1263,8 @@ declare
 begin
   foreach t in array array[
     'recipes', 'meal_assignments', 'eaten', 'water',
-    'recipe_notes', 'shopping_checks', 'pantry', 'menus', 'households', 'profiles'
+    'recipe_notes', 'shopping_checks', 'pantry', 'menus', 'households', 'profiles',
+    'day_sections', 'labels'
   ] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);

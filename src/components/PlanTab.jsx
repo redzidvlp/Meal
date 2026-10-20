@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { C, SLOT_META, SLOTS } from "../theme.js";
 import { dayNumber, dayDate, fmtNum, interpolate } from "../lib/format.js";
 import { eatenTotals, fullDayTotals } from "../engine/plan.js";
@@ -8,6 +8,26 @@ import { ConfirmDialog, Modal } from "./ui.jsx";
 
 function SlotLabel({ slot, lang }) {
   return <span className="slot-label">{SLOT_META[slot].icon} {SLOT_META[slot][lang]}</span>;
+}
+
+function SlotHead({ slot, lang, t, extra, onHide }) {
+  return (
+    <div className="slot-head">
+      <SlotLabel slot={slot} lang={lang} />
+      <div className="slot-head-actions">
+        {extra}
+        <button
+          type="button"
+          className="slot-remove"
+          onClick={onHide}
+          aria-label={t.hideSection}
+          title={t.hideSection}
+        >
+          ⊖
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function PersonTotals({ personKey, name, full, eaten, meals, eatenMeals, t }) {
@@ -41,6 +61,11 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
   const dayPlan = app.plan[day];
   const [remove, setRemove] = useState(null);
   const [merge, setMerge] = useState(null);
+  const [move, setMove] = useState(null);
+  const [hide, setHide] = useState(null);
+  const [sectionsOpen, setSectionsOpen] = useState(false);
+  const [drag, setDrag] = useState(null);
+  const dragRef = useRef(null);
 
   const peopleNames = useMemo(() => ({
     R: app.people.R || t.personFallback.R,
@@ -54,6 +79,7 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
     const full = fullDayTotals(dayPlan, person);
     const set = new Set();
     for (const slot of SLOTS) {
+      if (app.sectionHidden(day, slot)) continue;
       const entry = dayPlan[slot];
       if (!entry || entry.mode === "empty") continue;
       const personKey = entry.mode === "both" ? "both" : person;
@@ -64,7 +90,10 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
 
   const r = totalsFor("R");
   const i = totalsFor("I");
-  const hasAnyMeal = SLOTS.some(slot => dayPlan[slot].mode !== "empty");
+
+  const visibleSlots = SLOTS.filter(slot => !app.sectionHidden(day, slot));
+  const hiddenSlots = SLOTS.filter(slot => app.sectionHidden(day, slot));
+  const hasAnyMeal = visibleSlots.some(slot => dayPlan[slot].mode !== "empty");
 
   const mealNote = (recipeId, personKey) => app.notesMap[`${recipeId}:${personKey}`] || "";
   const saveNote = (recipeId, personKey) => value => app.saveNote(recipeId, personKey, value);
@@ -97,13 +126,133 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
     }
   };
 
+  const performMove = async (fromSlot, toSlot) => {
+    if (!fromSlot || !toSlot || fromSlot === toSlot) return;
+    const wasOccupied = dayPlan[toSlot]?.mode !== "empty";
+    try {
+      await app.moveSlot(day, fromSlot, toSlot);
+      app.notify(interpolate(wasOccupied ? t.swappedWith : t.movedTo, { slot: SLOT_META[toSlot][lang] }));
+    } catch {
+      // handled by the hook
+    }
+  };
+
+  const startDrag = (event, slot) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.preventDefault();
+    const start = { x: event.clientX, y: event.clientY };
+    dragRef.current = { slot, start, active: false, hover: null, x: start.x, y: start.y };
+    setDrag({ slot, active: false, hover: null, x: start.x, y: start.y });
+  };
+
+  const openMove = slot => setMove({ slot });
+
+  useEffect(() => {
+    if (!drag) return undefined;
+    const slotAt = event => {
+      const element = document.elementFromPoint?.(event.clientX, event.clientY);
+      return element?.closest?.("[data-drop-slot]")?.getAttribute("data-drop-slot") || null;
+    };
+
+    const onMove = event => {
+      const state = dragRef.current;
+      if (!state) return;
+      const distance = Math.hypot(event.clientX - state.start.x, event.clientY - state.start.y);
+      if (!state.active && distance < 8) return;
+      state.active = true;
+      const hover = slotAt(event);
+      state.hover = hover;
+      setDrag(previous => (previous ? { ...previous, active: true, hover, x: event.clientX, y: event.clientY } : previous));
+    };
+
+    const onUp = event => {
+      const state = dragRef.current;
+      dragRef.current = null;
+      setDrag(null);
+      if (!state) return;
+      if (!state.active) {
+        openMove(state.slot);
+        return;
+      }
+      const target = state.hover || slotAt(event);
+      if (target && target !== state.slot) performMove(state.slot, target);
+    };
+
+    const onCancel = () => {
+      dragRef.current = null;
+      setDrag(null);
+    };
+
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+    // The listeners only need to follow the slot being dragged.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drag?.slot]);
+
+  const confirmHide = async () => {
+    if (!hide) return;
+    const slot = hide;
+    setHide(null);
+    try {
+      await app.hideSection(day, slot);
+      app.notify(t.hiddenSection);
+    } catch {
+      // handled by the hook
+    }
+  };
+
+  const restoreSection = async slot => {
+    try {
+      await app.showSection(day, slot);
+      app.notify(interpolate(t.sectionRestored, { slot: SLOT_META[slot][lang] }));
+      if (hiddenSlots.length <= 1) setSectionsOpen(false);
+    } catch {
+      // handled by the hook
+    }
+  };
+
   const dateLabel = (() => {
     const date = dayDate(app.weekStart, day);
     return date.toLocaleDateString(lang === "lt" ? "lt-LT" : "en-GB", { day: "numeric", month: "long", timeZone: "UTC" });
   })();
 
+  // `person` is null for a shared meal, "R"/"I" for one half of a split slot.
+  const cardProps = (slot, person = null) => {
+    const entry = dayPlan[slot];
+    const recipe = person ? entry.recipes[person] : entry.recipes.R;
+    const color = person ? (person === "R" ? C.R : C.I) : C.leaf;
+    const key = person || "both";
+    return {
+      meal: recipe,
+      slotLabel: SLOT_META[slot][lang],
+      personKey: key,
+      personName: person ? peopleNames[person] : null,
+      personColor: person ? color : null,
+      labels: app.labels,
+      lang,
+      t,
+      eaten: !!app.eatenMap[`${day}:${slot}:${key}`],
+      note: mealNote(recipe.id, key),
+      onToggleEaten: () => app.toggleEaten(day, slot, key, recipe),
+      onOpenRecipe: () => onOpenRecipe(recipe, { day, slot, mode: person ? "split" : "both", person }),
+      onChange: () => onPick({ day, slot, mode: person ? "split" : "both", person }),
+      onSplit: person ? undefined : () => app.setSplit(day, slot, recipe),
+      onMerge: person ? () => requestMerge(slot) : undefined,
+      onMove: () => openMove(slot),
+      onDragStart: event => startDrag(event, slot),
+      onRemove: () => setRemove({ slot, personKey: key }),
+      onNoteChange: saveNote(recipe.id, key),
+    };
+  };
+
   return (
-    <div className="fade-in">
+    <div className={`fade-in ${drag?.active ? "is-dragging" : ""}`}>
       <div className="row-between" style={{ marginBottom: 12 }}>
         <div>
           <div className="eyebrow">{t.planTitle}</div>
@@ -121,7 +270,7 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
 
       <div className="day-strip" role="tablist" aria-label={t.planTitle}>
         {t.dayNames.map((name, index) => {
-          const filled = SLOTS.some(slot => app.plan[index]?.[slot]?.mode !== "empty");
+          const filled = SLOTS.some(slot => !app.sectionHidden(index, slot) && app.plan[index]?.[slot]?.mode !== "empty");
           const isToday = index === todayIdx;
           return (
             <button
@@ -156,14 +305,14 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
       />
 
       {!hasAnyMeal && (
-        <div className="card card-pad" style={{ marginBottom: 14, background: "linear-gradient(150deg,#f7f3e7,#eef3e7)" }}>
+        <div className="card card-pad" style={{ marginBottom: 14, background: "linear-gradient(150deg, var(--surface-soft), var(--sage-soft))" }}>
           <div className="row" style={{ alignItems: "flex-start", gap: 12 }}>
             <span style={{ fontSize: 26 }} aria-hidden="true">🍽️</span>
             <div style={{ flex: 1 }}>
               <div style={{ fontFamily: "var(--display)", fontSize: 16 }}>{t.emptyDayTitle}</div>
               <p className="caption" style={{ margin: "4px 0 10px" }}>{t.emptyDayBody}</p>
               <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-                <button type="button" className="btn btn-sm btn-primary" onClick={() => onPick({ day, slot: "breakfast", mode: "empty", person: null })}>
+                <button type="button" className="btn btn-sm btn-primary" onClick={() => onPick({ day, slot: visibleSlots[0] || "breakfast", mode: "empty", person: null })}>
                   + {t.chooseRecipe}
                 </button>
                 <button type="button" className="btn btn-sm btn-soft" onClick={() => onOpenMenu(day)}>🍱 {t.menuTitle}</button>
@@ -173,14 +322,19 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
         </div>
       )}
 
-      {SLOTS.map(slot => {
+      {visibleSlots.map(slot => {
         const entry = dayPlan[slot];
-        const slotLabel = SLOT_META[slot][lang];
+        const dropClass = `${drag ? "drop-target" : ""} ${drag?.hover === slot && drag.slot !== slot ? "drop-hover" : ""}`;
 
         if (entry.mode === "empty") {
           return (
-            <div key={slot} style={{ marginBottom: 9 }}>
-              <div style={{ marginBottom: 5 }}><SlotLabel slot={slot} lang={lang} /></div>
+            <div
+              key={slot}
+              data-drop-slot={slot}
+              className={`slot-zone ${dropClass}`}
+              style={{ marginBottom: 9 }}
+            >
+              <SlotHead slot={slot} lang={lang} t={t} onHide={() => setHide(slot)} />
               <button
                 type="button"
                 className="empty-slot"
@@ -196,38 +350,32 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
         if (entry.mode === "both") {
           const recipe = entry.recipes.R;
           return (
-            <div key={slot} style={{ marginBottom: 9 }}>
-              <div className="row-between" style={{ marginBottom: 5 }}>
-                <SlotLabel slot={slot} lang={lang} />
-                <span className="tiny">{t.sameForBoth}</span>
-              </div>
-              <MealCard
-                meal={recipe}
-                slotLabel={slotLabel}
-                personKey="both"
+            <div key={slot} data-drop-slot={slot} className={`slot-zone ${dropClass}`} style={{ marginBottom: 9 }}>
+              <SlotHead
+                slot={slot}
                 lang={lang}
                 t={t}
-                eaten={!!app.eatenMap[`${day}:${slot}:both`]}
-                note={mealNote(recipe.id, "both")}
-                onToggleEaten={() => app.toggleEaten(day, slot, "both", recipe)}
-                onOpenRecipe={() => onOpenRecipe(recipe, { day, slot, mode: "both", person: null })}
-                onChange={() => onPick({ day, slot, mode: "both", person: null })}
-                onSplit={() => app.setSplit(day, slot, recipe)}
-                onRemove={() => setRemove({ slot, personKey: "both" })}
-                onNoteChange={saveNote(recipe.id, "both")}
+                onHide={() => setHide(slot)}
+                extra={<span className="tiny">{t.sameForBoth}</span>}
               />
+              <MealCard {...cardProps(slot)} />
             </div>
           );
         }
 
         return (
-          <div key={slot} style={{ marginBottom: 9 }}>
-            <div className="row-between" style={{ marginBottom: 5 }}>
-              <SlotLabel slot={slot} lang={lang} />
-              <button type="button" className="btn btn-xs btn-ghost" onClick={() => requestMerge(slot)} style={{ color: C.amber }}>
-                ⇄ {t.sameForBoth}
-              </button>
-            </div>
+          <div key={slot} data-drop-slot={slot} className={`slot-zone ${dropClass}`} style={{ marginBottom: 9 }}>
+            <SlotHead
+              slot={slot}
+              lang={lang}
+              t={t}
+              onHide={() => setHide(slot)}
+              extra={(
+                <button type="button" className="btn btn-xs btn-ghost" onClick={() => requestMerge(slot)} style={{ color: C.amber }}>
+                  ⇄ {t.mergeShort}
+                </button>
+              )}
+            />
             {["R", "I"].map(person => {
               const recipe = entry.recipes[person];
               const color = person === "R" ? C.R : C.I;
@@ -245,30 +393,17 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
                   </button>
                 );
               }
-              return (
-                <MealCard
-                  key={person}
-                  meal={recipe}
-                  slotLabel={slotLabel}
-                  personKey={person}
-                  personName={peopleNames[person]}
-                  personColor={color}
-                  lang={lang}
-                  t={t}
-                  eaten={!!app.eatenMap[`${day}:${slot}:${person}`]}
-                  note={mealNote(recipe.id, person)}
-                  onToggleEaten={() => app.toggleEaten(day, slot, person, recipe)}
-                  onOpenRecipe={() => onOpenRecipe(recipe, { day, slot, mode: "split", person })}
-                  onChange={() => onPick({ day, slot, mode: "split", person })}
-                  onMerge={() => requestMerge(slot)}
-                  onRemove={() => setRemove({ slot, personKey: person })}
-                  onNoteChange={saveNote(recipe.id, person)}
-                />
-              );
+              return <MealCard key={person} {...cardProps(slot, person)} />;
             })}
           </div>
         );
       })}
+
+      {hiddenSlots.length > 0 && (
+        <button type="button" className="add-section" onClick={() => setSectionsOpen(true)}>
+          <span aria-hidden="true">＋</span> {t.addSection}
+        </button>
+      )}
 
       <div style={{ height: 10 }} />
 
@@ -280,6 +415,16 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
         cancelLabel={t.cancel}
         onClose={() => setRemove(null)}
         onConfirm={confirmRemove}
+      />
+
+      <ConfirmDialog
+        open={!!hide}
+        title={t.hideSection}
+        body={t.hideSectionConfirm}
+        confirmLabel={t.hideSection}
+        cancelLabel={t.cancel}
+        onClose={() => setHide(null)}
+        onConfirm={confirmHide}
       />
 
       <Modal
@@ -317,6 +462,74 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
           </div>
         )}
       </Modal>
+
+      <Modal
+        open={!!move}
+        onClose={() => setMove(null)}
+        title={t.moveTitle}
+        subtitle={t.moveHint}
+        footer={<button type="button" className="btn btn-soft btn-block" onClick={() => setMove(null)}>{t.cancel}</button>}
+      >
+        {move && (
+          <div className="stack">
+            {visibleSlots.filter(slot => slot !== move.slot).map(slot => {
+              const entry = dayPlan[slot];
+              const meal = entry.mode === "both" ? entry.recipes.R : (entry.recipes.R || entry.recipes.I);
+              return (
+                <button
+                  key={slot}
+                  type="button"
+                  className="recipe-option"
+                  onClick={() => { performMove(move.slot, slot); setMove(null); }}
+                >
+                  <span className="opt-emoji">{meal?.emoji || SLOT_META[slot].icon}</span>
+                  <span style={{ flex: 1 }}>
+                    <span className="opt-name">{SLOT_META[slot][lang]}</span>
+                    <span className="opt-meta">
+                      {entry.mode === "empty" ? <span>{t.dropHere}</span> : <span>{meal?.name?.[lang] || meal?.name?.en}</span>}
+                    </span>
+                  </span>
+                  <span style={{ color: C.muted }}>›</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={sectionsOpen}
+        onClose={() => setSectionsOpen(false)}
+        title={t.addSectionTitle}
+        subtitle={t.addSectionBody}
+        footer={<button type="button" className="btn btn-soft btn-block" onClick={() => setSectionsOpen(false)}>{t.close}</button>}
+      >
+        {hiddenSlots.length ? (
+          <div className="stack">
+            {hiddenSlots.map(slot => (
+              <button key={slot} type="button" className="recipe-option" onClick={() => restoreSection(slot)}>
+                <span className="opt-emoji">{SLOT_META[slot].icon}</span>
+                <span style={{ flex: 1 }}>
+                  <span className="opt-name">{SLOT_META[slot][lang]}</span>
+                </span>
+                <span className="tiny" style={{ color: C.leaf, fontWeight: 700 }}>＋ {t.restoreSection}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="caption">{t.allSectionsVisible}</p>
+        )}
+      </Modal>
+
+      {drag?.active && (
+        <div
+          className="drag-ghost"
+          style={{ left: drag.x, top: drag.y }}
+          aria-hidden="true"
+        >
+          ✥ {drag.hover ? `${t.moveTo}: ${SLOT_META[drag.hover][lang]}` : t.moveMeal}
+        </div>
+      )}
 
       <p className="tiny" style={{ textAlign: "center", marginTop: 14 }}>
         {interpolate(t.dayProgress, { done: r.eatenMeals + i.eatenMeals, total: r.meals + i.meals })}

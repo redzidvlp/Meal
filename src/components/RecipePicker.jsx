@@ -2,31 +2,41 @@ import { useEffect, useMemo, useState } from "react";
 import { C, SLOT_META, SLOTS } from "../theme.js";
 import { fmtNum, interpolate } from "../lib/format.js";
 import { menuTotals } from "../lib/menus.js";
+import { customTag, tagLabel, tagsInUse } from "../lib/labels.js";
 import { sanitizeSearch } from "../lib/validate.js";
 import { Chip, EmptyState, Segmented, Sheet } from "./ui.jsx";
 
 export default function RecipePicker({
-  open, onClose, day, slot, mode, person, currentRecipe, recipes, recipesById, menus = [], lang, t, people = {}, initialTab = "recipes",
+  open, onClose, day, slot, mode, person, currentRecipe, recipes, recipesById, menus = [], labels = [], lang, t, people = {}, initialTab = "recipes",
   onSelect, onApplyMenu, onCreateNew, onCreateMenu, onEditMenu, onResetMenu,
 }) {
   const [tab, setTab] = useState(initialTab);
   const [applyDay, setApplyDay] = useState(day ?? 0);
   const [query, setQuery] = useState("");
   const [filterSlot, setFilterSlot] = useState("all");
+  const [filterLabel, setFilterLabel] = useState("all");
 
   useEffect(() => {
     if (!open) return;
     setTab(initialTab || "recipes");
     setQuery("");
     setFilterSlot("all");
+    setFilterLabel("all");
     setApplyDay(day ?? 0);
   }, [open, initialTab, day]);
 
   const search = sanitizeSearch(query);
 
+  const labelInfo = useMemo(() => tagsInUse(recipes, labels), [recipes, labels]);
+  const labelChips = useMemo(() => [
+    ...labelInfo.builtIn.map(tag => ({ value: tag, text: tagLabel(tag, lang, labels) })),
+    ...labelInfo.custom.map(label => ({ value: customTag(label.key), text: label.label })),
+  ], [labelInfo, lang, labels]);
+
   const list = useMemo(() => {
     const filtered = recipes
       .filter(recipe => filterSlot === "all" || recipe.slot === filterSlot)
+      .filter(recipe => filterLabel === "all" || (recipe.tags || []).includes(filterLabel))
       .filter(recipe => {
         if (!search) return true;
         const haystack = `${recipe.name?.en || ""} ${recipe.name?.lt || ""} ${(recipe.ingredients || []).map(i => `${i.en} ${i.lt}`).join(" ")}`.toLocaleLowerCase();
@@ -38,7 +48,7 @@ export default function RecipePicker({
       if (aSlot !== bSlot) return aSlot - bSlot;
       return (a.name?.[lang] || a.name?.en || "").localeCompare(b.name?.[lang] || b.name?.en || "", lang === "lt" ? "lt" : "en");
     });
-  }, [recipes, filterSlot, search, slot, lang]);
+  }, [recipes, filterSlot, filterLabel, search, slot, lang]);
 
   const subtitle = slot
     ? interpolate(t.pickRecipeSub, { slot: SLOT_META[slot]?.[lang], day: t.fullDays[day] })
@@ -90,7 +100,7 @@ export default function RecipePicker({
               style={{ flex: 1 }}
             />
           </div>
-          <div className="row" style={{ gap: 5, overflowX: "auto", paddingBottom: 4, marginBottom: 10 }}>
+          <div className="row" style={{ gap: 5, overflowX: "auto", paddingBottom: 4, marginBottom: 8 }}>
             <Chip active={filterSlot === "all"} onClick={() => setFilterSlot("all")}>{t.filterAll}</Chip>
             {SLOTS.map(slotKey => (
               <Chip key={slotKey} active={filterSlot === slotKey} onClick={() => setFilterSlot(slotKey)}>
@@ -98,6 +108,17 @@ export default function RecipePicker({
               </Chip>
             ))}
           </div>
+
+          {labelChips.length > 0 && (
+            <div className="row" style={{ gap: 5, overflowX: "auto", paddingBottom: 4, marginBottom: 10 }}>
+              <Chip active={filterLabel === "all"} onClick={() => setFilterLabel("all")}>🏷 {t.filterAll}</Chip>
+              {labelChips.map(item => (
+                <Chip key={item.value} active={filterLabel === item.value} onClick={() => setFilterLabel(item.value)}>
+                  {item.text}
+                </Chip>
+              ))}
+            </div>
+          )}
 
           {list.length === 0 ? (
             <EmptyState icon="🔍" title={t.noRecipesMatch} body={t.noSuggestionsHint} />
@@ -121,6 +142,9 @@ export default function RecipePicker({
                         <span>{SLOT_META[recipe.slot]?.[lang]}</span>
                         <span>🔥 {fmtNum(recipe.kcal)}</span>
                         <span>💪 {fmtNum(recipe.protein)}g</span>
+                        {(recipe.tags || []).filter(tag => tag.startsWith("x-")).slice(0, 1).map(tag => (
+                          <span key={tag}>🏷 {tagLabel(tag, lang, labels)}</span>
+                        ))}
                         {recipe.isPreset && <span>📚</span>}
                       </span>
                     </span>

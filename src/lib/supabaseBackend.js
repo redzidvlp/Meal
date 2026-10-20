@@ -1,5 +1,5 @@
 import { mondayISO, createId } from "./format.js";
-import { sanitizePantryItem, sanitizeRecipe, sanitizeNote, sanitizeWater, sanitizeMenu, sanitizePhotoPayload } from "./validate.js";
+import { sanitizePantryItem, sanitizeRecipe, sanitizeNote, sanitizeWater, sanitizeMenu, sanitizePhotoPayload, sanitizeLabel } from "./validate.js";
 
 const mapProfile = row => row && ({
   id: row.id,
@@ -178,9 +178,15 @@ export function createSupabaseBackend(client) {
         client.from("shopping_checks").select("*").eq("household_id", hid).eq("week_start", mondayISO()),
         client.from("pantry").select("*").eq("household_id", hid),
         client.from("menus").select("*").eq("household_id", hid),
+        client.from("day_sections").select("*").eq("household_id", hid),
+        client.from("labels").select("*").eq("household_id", hid),
       ]);
-      results.forEach(({ error }) => raise(error));
-      const [household, profiles, recipes, assignments, eaten, water, notes, checks, pantry, menus] = results;
+      // The last two tables arrive with the v4 schema. Ignore their errors so a
+      // project that has not re-run schema.sql still opens instead of dead-ending.
+      results.slice(0, 10).forEach(({ error }) => raise(error));
+      const [household, profiles, recipes, assignments, eaten, water, notes, checks, pantry, menus, sections, labelRows] = results;
+      if (sections?.error) console.warn("day_sections unavailable — re-run supabase/schema.sql", sections.error.message);
+      if (labelRows?.error) console.warn("labels unavailable — re-run supabase/schema.sql", labelRows.error.message);
 
       return {
         household: mapHousehold(household.data),
@@ -200,6 +206,8 @@ export function createSupabaseBackend(client) {
         shoppingChecks: (checks.data || []).map(row => ({ weekStart: row.week_start, itemKey: row.item_key, checked: row.checked })),
         pantry: (pantry.data || []).map(mapPantry),
         menus: (menus.data || []).map(mapMenuRow),
+        hiddenSections: (sections.data || []).map(row => ({ day: row.day_index, slot: row.slot })),
+        labels: (labelRows.data || []).map(row => ({ key: row.key, label: row.label })),
       };
     },
 
@@ -212,7 +220,7 @@ export function createSupabaseBackend(client) {
         timer = setTimeout(callback, 220);
       };
       const channel = client.channel(`household-${hid}`);
-      const tables = ["meal_assignments", "eaten", "water", "recipe_notes", "shopping_checks", "pantry", "recipes", "menus"];
+      const tables = ["meal_assignments", "eaten", "water", "recipe_notes", "shopping_checks", "pantry", "recipes", "menus", "day_sections", "labels"];
       for (const table of tables) {
         channel.on("postgres_changes", { event: "*", schema: "public", table, filter: `household_id=eq.${hid}` }, trigger);
       }
@@ -273,6 +281,26 @@ export function createSupabaseBackend(client) {
         else items[slot] = ["R", "I"].filter(p => entry[p]).map(p => ({ person_key: p, recipe_id: entry[p] }));
       }
       const { error } = await client.rpc("apply_day_menu", { p_day: day, p_items: items });
+      raise(error);
+      return true;
+    },
+
+    async moveSlot(day, fromSlot, toSlot) {
+      const { error } = await client.rpc("move_slot", {
+        p_day: day,
+        p_from: fromSlot,
+        p_to: toSlot,
+      });
+      raise(error);
+      return true;
+    },
+
+    async setSectionHidden(day, slot, hidden) {
+      const { error } = await client.rpc("set_section_hidden", {
+        p_day: day,
+        p_slot: slot,
+        p_hidden: !!hidden,
+      });
       raise(error);
       return true;
     },
@@ -435,6 +463,34 @@ export function createSupabaseBackend(client) {
         .eq("household_id", ctx.householdId).eq("preset_key", presetKey);
       raise(error);
       return true;
+    },
+
+    async saveLabel(input) {
+      const { ok, errors, label } = sanitizeLabel(input);
+      if (!ok) throw Object.assign(new Error("Invalid label"), { errors });
+      const { error } = await client.from("labels").upsert({
+        household_id: ctx.householdId,
+        key: label.key,
+        label: label.label,
+      }, { onConflict: "household_id,key" });
+      raise(error);
+      return label;
+    },
+
+    async deleteLabel(key) {
+      const { error } = await client.from("labels").delete()
+        .eq("household_id", ctx.householdId).eq("key", key);
+      raise(error);
+      return true;
+    },
+
+    async generateRecipe(payload) {
+      const { data, error } = await client.functions.invoke("recipe-ai", { body: payload });
+      raise(error);
+      if (!data || data.available !== true || !data.recipe) {
+        return { available: false, reason: data?.reason || "ai_offline" };
+      }
+      return { available: true, recipe: data.recipe };
     },
 
     async analyzePhoto(input) {

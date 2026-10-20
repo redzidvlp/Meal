@@ -118,7 +118,7 @@ export default function ShoppingTab({ app, lang, t, onGoPantry }) {
           </div>
           <div className="stepper">
             <button type="button" onClick={() => changePortions(portionDraft - 1)} aria-label="Decrease">−</button>
-            <span className="qty-value" style={{ minWidth: 26 }}>{portionDraft}</span>
+            <span className="qty-value">{portionDraft}</span>
             <button type="button" onClick={() => changePortions(portionDraft + 1)} aria-label="Increase">+</button>
           </div>
         </div>

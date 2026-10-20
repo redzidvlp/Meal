@@ -6,6 +6,7 @@ import { lowItems } from "../engine/pantry.js";
 import { mergeMenus } from "../lib/menus.js";
 import { PRESET_MENUS } from "../data/presets.js";
 import { mondayISO, debounce } from "../lib/format.js";
+import { requestRecipeIdea } from "../lib/ideas.js";
 
 const EMPTY = {
   household: null,
@@ -18,6 +19,8 @@ const EMPTY = {
   shoppingChecks: [],
   menus: [],
   pantry: [],
+  labels: [],
+  hiddenSections: [],
 };
 
 export function useAppData(t = {}) {
@@ -26,7 +29,9 @@ export function useAppData(t = {}) {
   const [data, setData] = useState(EMPTY);
   const [authLoading, setAuthLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [profileChecked, setProfileChecked] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
+  const [dataReady, setDataReady] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
@@ -70,29 +75,39 @@ export function useAppData(t = {}) {
     };
   }, []);
 
+  const userId = session?.user?.id || null;
+
   useEffect(() => {
     let active = true;
-    if (!session?.user) {
+    if (!userId) {
       applyProfile(null);
       setData(EMPTY);
+      setProfileChecked(true);
+      setDataReady(false);
       return () => { active = false; };
     }
-    api.setContext?.({ userId: session.user.id });
+    api.setContext?.({ userId });
     setProfileLoading(true);
+    setProfileChecked(false);
+    setDataReady(false);
     api.getProfile()
       .then(nextProfile => {
         if (!active) return;
         applyProfile(nextProfile);
         setProfileLoading(false);
+        setProfileChecked(true);
       })
       .catch(error => {
         if (!active) return;
         console.error(error);
         setProfileLoading(false);
+        setProfileChecked(true);
         notify(t.loadingError || "Could not load your profile.", "error");
       });
     return () => { active = false; };
-  }, [session, applyProfile, notify]);
+    // Depend on the user id, not the session object: token refreshes must not
+    // send the app back through the loading gate.
+  }, [userId, applyProfile, notify]);
 
   const loadAll = useCallback(async ({ silent = false } = {}) => {
     if (!profileRef.current?.householdId) return;
@@ -109,11 +124,13 @@ export function useAppData(t = {}) {
       if (!silent) notify(t.loadingError || "Could not load your kitchen.", "error");
     } finally {
       setDataLoading(false);
+      setDataReady(true);
     }
   }, [notify, t.loadingError]);
 
   useEffect(() => {
     if (!profile?.householdId) return undefined;
+    setDataReady(false);
     loadAll();
     return undefined;
   }, [profile?.householdId, loadAll]);
@@ -222,6 +239,14 @@ export function useAppData(t = {}) {
 
   const menus = useMemo(() => mergeMenus(PRESET_MENUS, data.menus), [data.menus]);
 
+  const hiddenMap = useMemo(() => {
+    const map = {};
+    for (const row of data.hiddenSections) map[`${row.day}:${row.slot}`] = true;
+    return map;
+  }, [data.hiddenSections]);
+
+  const sectionHidden = useCallback((day, slot) => !!hiddenMap[`${day}:${slot}`], [hiddenMap]);
+
   // ── Actions ───────────────────────────────────────────────────────────────
   const guarded = useCallback(async (fn, successMessage = null) => {
     try {
@@ -266,6 +291,24 @@ export function useAppData(t = {}) {
   const clearSlot = useCallback(async (day, slot) => {
     await setSlot(day, slot, []);
   }, [setSlot]);
+
+  const moveSlot = useCallback(async (day, fromSlot, toSlot) => {
+    await guarded(() => api.moveSlot(day, fromSlot, toSlot));
+  }, [guarded]);
+
+  const hideSection = useCallback(async (day, slot) => {
+    await guarded(() => api.setSectionHidden(day, slot, true));
+  }, [guarded]);
+
+  const showSection = useCallback(async (day, slot) => {
+    await guarded(() => api.setSectionHidden(day, slot, false));
+  }, [guarded]);
+
+  const generateIdea = useCallback(input => requestRecipeIdea({
+    api,
+    ...input,
+    pantry: input?.pantry || data.pantry,
+  }), [data.pantry]);
 
   const applyMenu = useCallback(async (day, menu) => {
     await guarded(() => api.applyMenu(day, menu));
@@ -361,6 +404,16 @@ export function useAppData(t = {}) {
     await guarded(() => api.clearShoppingChecks(weekStart));
   }, [guarded, weekStart]);
 
+  const saveLabel = useCallback(async input => {
+    const saved = await api.saveLabel(input);
+    await refresh();
+    return saved;
+  }, [refresh]);
+
+  const deleteLabel = useCallback(async key => {
+    await guarded(() => api.deleteLabel(key));
+  }, [guarded]);
+
   const saveRecipe = useCallback(async input => {
     try {
       const saved = await api.saveRecipe(input);
@@ -412,6 +465,8 @@ export function useAppData(t = {}) {
     people,
     recipes: data.recipes,
     recipesById,
+    hiddenMap,
+    sectionHidden,
     assignments: data.assignments,
     plan,
     notesMap,
@@ -419,6 +474,7 @@ export function useAppData(t = {}) {
     waterMap,
     checksMap,
     pantry: data.pantry,
+    labels: data.labels,
     lowPantry,
     shoppingList,
     menus,
@@ -426,7 +482,9 @@ export function useAppData(t = {}) {
     weekStart,
     authLoading,
     profileLoading,
+    profileChecked,
     dataLoading,
+    dataReady,
     loadError,
     toast,
     notify,
@@ -440,6 +498,9 @@ export function useAppData(t = {}) {
     setSplit,
     setSame,
     clearSlot,
+    moveSlot,
+    hideSection,
+    showSection,
     applyMenu,
     toggleEaten,
     setWater,
@@ -447,6 +508,9 @@ export function useAppData(t = {}) {
     toggleShoppingItem,
     clearShoppingChecks,
     saveRecipe,
+    saveLabel,
+    deleteLabel,
+    generateIdea,
     saveMenu,
     deleteMenu,
     resetMenu,

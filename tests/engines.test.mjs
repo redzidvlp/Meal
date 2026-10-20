@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { sanitizeRecipe, sanitizePantryItem, sanitizeInviteCode, isInviteCode, sanitizeNote, sanitizeMenu, sanitizePhotoPayload } from "../src/lib/validate.js";
+import { sanitizeRecipe, sanitizePantryItem, sanitizeInviteCode, isInviteCode, sanitizeNote, sanitizeMenu, sanitizePhotoPayload, sanitizeLabel } from "../src/lib/validate.js";
 import { ingredientKey, findForbiddenIngredients } from "../src/lib/ingredients.js";
 import { buildPlan, mealFactor, eatenTotals } from "../src/engine/plan.js";
 import { buildShoppingList } from "../src/engine/shopping.js";
@@ -9,6 +9,9 @@ import { applyDeltas, applyDeltasTracked, consumptionForRecipe, isLow, lowItems,
 import { suggestRecipes, isVegetarianSafe } from "../src/engine/recommend.js";
 import { PRESET_RECIPES, PRESET_MENUS } from "../src/data/presets.js";
 import { mergeMenus, menuTotals, menuItemsFromDay } from "../src/lib/menus.js";
+import { customTag, isCustomTag, tagLabel, tagsInUse, labelKey } from "../src/lib/labels.js";
+import { generateRecipeDraft } from "../src/engine/generate.js";
+import { offlineIdea } from "../src/lib/ideas.js";
 
 const makeRecipe = (overrides = {}) => ({
   id: "test-a",
@@ -436,4 +439,73 @@ test("photo payloads accept only small image data urls", () => {
   assert.equal(sanitizePhotoPayload({ image: "javascript:alert(1)" }).ok, false);
   assert.equal(sanitizePhotoPayload({ image: "data:image/svg+xml;base64,abc" }).ok, false);
   assert.equal(sanitizePhotoPayload({ image: `data:image/jpeg;base64,${"A".repeat(2_000_000)}` }).ok, false);
+});
+
+
+test("household labels are sanitized into safe tag keys", () => {
+  const good = sanitizeLabel({ label: "  Made in 10 min  " });
+  assert.equal(good.ok, true);
+  assert.equal(good.label.label, "Made in 10 min");
+  assert.equal(good.label.key, "made-in-10-min");
+  assert.equal(customTag(good.label.key), "x-made-in-10-min");
+  assert.equal(isCustomTag("x-made-in-10-min"), true);
+  assert.equal(labelKey("Šventinis 10 min"), "sventinis-10-min");
+
+  assert.equal(sanitizeLabel({ label: "" }).ok, false);
+  assert.equal(sanitizeLabel({ label: "   " }).ok, false);
+  assert.equal(sanitizeLabel({ label: "x".repeat(60) }).label.label.length <= 24, true);
+
+  const tagged = sanitizeRecipe(makeRecipeInput({ tags: ["vegetarian", "x-made-in-10-min", "x-<script>", "not-a-tag"] }));
+  assert.equal(tagged.ok, true);
+  assert.deepEqual(tagged.recipe.tags, ["vegetarian", "x-made-in-10-min"]);
+
+  const labels = [{ key: "made-in-10-min", label: "Made in 10 min" }];
+  assert.equal(tagLabel("x-made-in-10-min", "en", labels), "Made in 10 min");
+  assert.equal(tagLabel("x-missing", "en", labels), "missing");
+  assert.equal(tagLabel("low-fodmap", "lt", labels).length > 0, true);
+});
+
+test("labels in use only include ones attached to a recipe", () => {
+  const labels = [
+    { key: "made-in-10-min", label: "Made in 10 min" },
+    { key: "weekend", label: "Weekend" },
+  ];
+  const recipes = [
+    makeRecipe({ tags: ["vegetarian", "quick", "x-made-in-10-min"] }),
+    makeRecipe({ id: "test-b", tags: ["vegetarian", "quick"] }),
+  ];
+  const info = tagsInUse(recipes, labels);
+  assert.deepEqual(info.builtIn, ["quick"]);
+  assert.deepEqual(info.custom.map(label => label.key), ["made-in-10-min"]);
+  assert.equal(info.counts.get("x-made-in-10-min"), 1);
+});
+
+test("the offline generator lands near the target and is vegetarian", () => {
+  for (const slot of ["breakfast", "lunch", "dinner", "snack"]) {
+    const draft = generateRecipeDraft({ slot, target: { kcal: 520, protein: 26, carbs: 48, fat: 22 }, seed: 11 });
+    assert.ok(draft, `draft for ${slot}`);
+    assert.equal(draft.slot, slot);
+    assert.equal(draft.vegetarian, true);
+    assert.equal(draft.tags.includes("vegetarian"), true);
+    assert.ok(draft.name.en.length > 3 && draft.name.lt.length > 3);
+    assert.ok(draft.ingredients.length >= 3);
+    assert.ok(draft.kcal >= 520 * 0.7 && draft.kcal <= 520 * 1.3, `${slot} kcal ${draft.kcal}`);
+    assert.ok(draft.protein > 0 && draft.carbs > 0 && draft.fat > 0);
+  }
+});
+
+test("rerolling an idea returns new names even across many taps", () => {
+  const seen = [];
+  for (let index = 0; index < 6; index += 1) {
+    const draft = offlineIdea({
+      slot: "dinner",
+      target: { kcal: 560, protein: 28, carbs: 50, fat: 22 },
+      seed: 41 + index * 37,
+      excludeNames: seen,
+    });
+    assert.ok(draft, `idea ${index}`);
+    assert.equal(seen.includes(draft.name.en), false, "name is fresh");
+    seen.push(draft.name.en);
+  }
+  assert.equal(new Set(seen).size, 6);
 });

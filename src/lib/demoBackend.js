@@ -1,7 +1,7 @@
 import { PRESET_RECIPES, PRESET_MENUS } from "../data/presets.js";
 import { mondayISO, createId } from "./format.js";
 import { applyDeltas, applyDeltasTracked, consumptionForRecipe } from "../engine/pantry.js";
-import { sanitizePantryItem, sanitizeRecipe, sanitizeNote, sanitizeWater, sanitizeMenu, sanitizePhotoPayload } from "./validate.js";
+import { sanitizePantryItem, sanitizeRecipe, sanitizeNote, sanitizeWater, sanitizeMenu, sanitizePhotoPayload, sanitizeLabel } from "./validate.js";
 
 const STORAGE_KEY = "our-table-demo-v2";
 const EVENT = "our-table-demo-change";
@@ -64,6 +64,8 @@ function seedState() {
     ],
     shoppingChecks: [],
     menus: [],
+    labels: [],
+    hiddenSections: [],
     pantry,
     weekStart,
   };
@@ -84,6 +86,8 @@ function loadState() {
       return seeded;
     }
     if (!Array.isArray(parsed.menus)) parsed.menus = [];
+    if (!Array.isArray(parsed.hiddenSections)) parsed.hiddenSections = [];
+    if (!Array.isArray(parsed.labels)) parsed.labels = [];
     return parsed;
   } catch {
     return seedState();
@@ -131,6 +135,8 @@ export function createDemoBackend() {
     shoppingChecks: state.shoppingChecks.filter(row => row.weekStart === mondayISO()),
     menus: state.menus || [],
     pantry: state.pantry,
+    labels: state.labels || [],
+    hiddenSections: (state.hiddenSections || []).map(row => ({ day: row.day, slot: row.slot })),
   });
 
   const findEaten = (day, slot, personKey) =>
@@ -238,6 +244,44 @@ export function createDemoBackend() {
         }
       }
       state.eaten = state.eaten.filter(row => row.day !== day);
+      state.hiddenSections = (state.hiddenSections || []).filter(row => !(row.day === day && Object.prototype.hasOwnProperty.call(menu.items, row.slot)));
+      emit();
+      return true;
+    },
+
+    async moveSlot(day, fromSlot, toSlot) {
+      if (fromSlot === toSlot) return true;
+      const take = slot => state.assignments
+        .filter(row => row.day === day && row.slot === slot)
+        .map(row => ({ personKey: row.personKey, recipeId: row.recipeId }));
+      const fromRows = take(fromSlot);
+      const toRows = take(toSlot);
+      // Moving clears eaten marks on both ends, matching the cloud RPC.
+      for (const slot of [fromSlot, toSlot]) {
+        state.eaten.filter(row => row.day === day && row.slot === slot)
+          .forEach(row => restoreEaten(day, slot, row.personKey));
+      }
+      state.eaten = state.eaten.filter(row => !(row.day === day && [fromSlot, toSlot].includes(row.slot)));
+      state.assignments = state.assignments.filter(row => !(row.day === day && [fromSlot, toSlot].includes(row.slot)));
+      for (const row of toRows) state.assignments.push({ day, slot: fromSlot, ...row });
+      for (const row of fromRows) state.assignments.push({ day, slot: toSlot, ...row });
+      state.hiddenSections = (state.hiddenSections || []).filter(row => !(row.day === day && [fromSlot, toSlot].includes(row.slot)));
+      emit();
+      return true;
+    },
+
+    async setSectionHidden(day, slot, hidden) {
+      state.eaten.filter(row => row.day === day && row.slot === slot)
+        .forEach(row => restoreEaten(day, slot, row.personKey));
+      state.eaten = state.eaten.filter(row => !(row.day === day && row.slot === slot));
+      if (hidden) {
+        state.assignments = state.assignments.filter(row => !(row.day === day && row.slot === slot));
+        if (!(state.hiddenSections || []).some(row => row.day === day && row.slot === slot)) {
+          state.hiddenSections = [...(state.hiddenSections || []), { day, slot }];
+        }
+      } else {
+        state.hiddenSections = (state.hiddenSections || []).filter(row => !(row.day === day && row.slot === slot));
+      }
       emit();
       return true;
     },
@@ -339,6 +383,29 @@ export function createDemoBackend() {
       return true;
     },
 
+    async saveLabel(input) {
+      const { ok, errors, label } = sanitizeLabel(input);
+      if (!ok) throw Object.assign(new Error("Invalid label"), { errors });
+      state.labels = [...(state.labels || []).filter(row => row.key !== label.key), label];
+      emit();
+      return clone(label);
+    },
+
+    async deleteLabel(key) {
+      state.labels = (state.labels || []).filter(row => row.key !== key);
+      state.recipes = state.recipes.map(recipe => ({
+        ...recipe,
+        tags: (recipe.tags || []).filter(tag => tag !== `x-${key}`),
+      }));
+      emit();
+      return true;
+    },
+
+    async generateRecipe() {
+      // Demo builds have no AI key; the app falls back to the offline generator.
+      return { available: false, reason: "ai_offline" };
+    },
+
     async analyzePhoto(input) {
       const { ok, error, payload } = sanitizePhotoPayload(input);
       if (!ok) throw Object.assign(new Error(error || "invalidImage"), { userMessage: error });
@@ -375,6 +442,7 @@ export function createDemoBackend() {
       state.water = [];
       state.shoppingChecks = [];
       state.notes = [];
+      state.hiddenSections = [];
       emit();
       return true;
     },

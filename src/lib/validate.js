@@ -1,4 +1,5 @@
 import { ALL_TAGS, SLOTS, UNITS } from "../theme.js";
+import { labelKey, MAX_LABEL_LENGTH } from "./labels.js";
 import { findForbiddenIngredients, ingredientKey, slugify } from "./ingredients.js";
 import { clamp } from "./format.js";
 
@@ -8,7 +9,7 @@ export const LIMITS = {
   method: 4000,
   note: 500,
   ingredients: 40,
-  tags: 8,
+  tags: 12,
   emoji: 8,
   search: 80,
 };
@@ -99,9 +100,11 @@ export function sanitizeRecipe(input, { existingId = null } = {}) {
   if (nutrition.kcal === 0) errors.kcal = "invalidNumber";
   if (nutrition.protein === 0 && nutrition.carbs === 0 && nutrition.fat === 0) errors.kcal = "invalidNumber";
 
+  const CUSTOM_TAG_RE = /^x-[a-z0-9-]{1,32}$/;
   const tags = [...new Set(
     (Array.isArray(input?.tags) ? input.tags : [])
-      .filter(tag => ALL_TAGS.includes(tag) && tag !== "vegetarian")
+      .filter(tag => typeof tag === "string" && (ALL_TAGS.includes(tag) || CUSTOM_TAG_RE.test(tag)))
+      .filter(tag => tag !== "vegetarian")
       .slice(0, LIMITS.tags),
   )];
   tags.unshift("vegetarian");
@@ -233,4 +236,13 @@ export function sanitizePhotoPayload(input) {
   if (!PHOTO_DATA_RE.test(image)) return { ok: false, error: "invalidImage" };
   if (image.length > MAX_PHOTO_BYTES) return { ok: false, error: "imageTooLarge" };
   return { ok: true, payload: { image, mode } };
+}
+
+/** Creates a household label: a short display name plus a slug key. */
+export function sanitizeLabel(input) {
+  const label = cleanText(input?.label ?? input?.name, MAX_LABEL_LENGTH);
+  if (!label) return { ok: false, errors: { label: "required" } };
+  const key = labelKey(input?.key || label);
+  if (!key) return { ok: false, errors: { label: "invalid" } };
+  return { ok: true, errors: {}, label: { key, label } };
 }

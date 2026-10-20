@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { C, SLOT_META, TAG_LABELS } from "../theme.js";
+import { C, SLOT_META } from "../theme.js";
 import { fmtNum } from "../lib/format.js";
 import { Sheet, TagChips } from "./ui.jsx";
 
-export default function RecipeModal({ recipe, lang, t, onClose, onEdit }) {
+export default function RecipeModal({ recipe, lang, t, labels = [], onClose, onEdit }) {
   const [scale, setScale] = useState(1);
   const [checked, setChecked] = useState(() => new Set());
 
@@ -44,11 +44,11 @@ export default function RecipeModal({ recipe, lang, t, onClose, onEdit }) {
         <div className="recipe-emoji" aria-hidden="true">{recipe.emoji}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-            <TagChips tags={recipe.tags || []} lang={lang} limit={4} />
+            <TagChips tags={recipe.tags || []} lang={lang} labels={labels} limit={4} />
           </div>
           <div className="macro-row">
             {[["🔥", `${fmtNum(recipe.kcal * scale)} ${t.kcal}`], ["💪", `${fmtNum(recipe.protein * scale)}g`], ["🌾", `${fmtNum(recipe.carbs * scale)}g`], ["🫒", `${fmtNum(recipe.fat * scale)}g`]].map(([icon, value]) => (
-              <span key={icon} className="macro-pill" style={{ background: "#fff" }}><span aria-hidden="true">{icon}</span>{value}</span>
+              <span key={icon} className="macro-pill" style={{ background: "var(--surface)" }}><span aria-hidden="true">{icon}</span>{value}</span>
             ))}
           </div>
           <div className="tiny" style={{ marginTop: 6 }}>{t.perServing}</div>
@@ -67,7 +67,7 @@ export default function RecipeModal({ recipe, lang, t, onClose, onEdit }) {
               style={{
                 width: 27, height: 27, borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer",
                 border: scale === value ? `1.5px solid ${C.forest}` : `1px solid ${C.line}`,
-                background: scale === value ? C.forest : "#fff",
+                background: scale === value ? C.forest : "var(--surface)",
                 color: scale === value ? "#fff" : C.inkSoft,
               }}
             >

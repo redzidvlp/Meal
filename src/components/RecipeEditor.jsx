@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ALL_TAGS, C, SLOT_META, SLOTS, TAG_LABELS, UNITS } from "../theme.js";
-import { sanitizeRecipe } from "../lib/validate.js";
+import { sanitizeRecipe, sanitizeLabel } from "../lib/validate.js";
+import { customTag, tagLabel } from "../lib/labels.js";
 import { Field, Sheet, ConfirmDialog, parseNumber } from "./ui.jsx";
 import PhotoSheet from "./PhotoSheet.jsx";
 
@@ -61,6 +62,8 @@ export default function RecipeEditor({ open, recipe, defaultSlot, lang, t, app, 
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const [labelDraft, setLabelDraft] = useState("");
+  const [labelBusy, setLabelBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -68,6 +71,7 @@ export default function RecipeEditor({ open, recipe, defaultSlot, lang, t, app, 
     setErrors({});
     setGeneralError("");
     setConfirmDelete(false);
+    setLabelDraft("");
   }, [open, recipe, defaultSlot]);
 
   const update = (patch) => setForm(previous => ({ ...previous, ...patch }));
@@ -84,6 +88,30 @@ export default function RecipeEditor({ open, recipe, defaultSlot, lang, t, app, 
       const has = previous.tags.includes(tag);
       return { ...previous, tags: has ? previous.tags.filter(value => value !== tag) : [...previous.tags, tag] };
     });
+  };
+
+  const addCustomLabel = async () => {
+    const raw = labelDraft.trim();
+    if (!raw) return;
+    const check = sanitizeLabel({ label: raw });
+    if (!check.ok) return;
+    const tag = customTag(check.label.key);
+    if (form.tags.includes(tag)) {
+      setLabelDraft("");
+      return;
+    }
+    setLabelBusy(true);
+    try {
+      const saved = await app?.saveLabel?.(check.label);
+      const nextTag = customTag(saved?.key || check.label.key);
+      setForm(previous => ({ ...previous, tags: [...previous.tags, nextTag] }));
+      setLabelDraft("");
+      app?.notify?.(t.labelAdded);
+    } catch {
+      setLabelDraft("");
+    } finally {
+      setLabelBusy(false);
+    }
   };
 
   const submit = async event => {
@@ -157,6 +185,13 @@ export default function RecipeEditor({ open, recipe, defaultSlot, lang, t, app, 
             <div className="demo-banner" style={{ margin: 0, background: "#eef3e7", borderColor: C.sage, color: C.forest }}>
               <span aria-hidden="true">📚</span>
               <span>{t.presetNotice}</span>
+            </div>
+          )}
+
+          {recipe?.generated && (
+            <div className="demo-banner" style={{ margin: 0, background: "var(--sage-soft)", borderColor: "var(--sage)", color: "var(--forest-deep)" }}>
+              <span aria-hidden="true">{recipe.ai ? "🤖" : "✨"}</span>
+              <span>{recipe.ai ? t.ideaAi : t.ideaOffline} — {t.ideaSavedHint}</span>
             </div>
           )}
 
@@ -272,6 +307,45 @@ export default function RecipeEditor({ open, recipe, defaultSlot, lang, t, app, 
                 </button>
               ))}
             </div>
+          </div>
+
+          <div>
+            <div className="row-between" style={{ marginBottom: 6 }}>
+              <span className="eyebrow">{t.yourLabels}</span>
+              <span className="tiny">{t.labelFilter}</span>
+            </div>
+            {(app?.labels || []).length > 0 && (
+              <div className="row" style={{ gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
+                {app.labels.map(label => {
+                  const tag = customTag(label.key);
+                  return (
+                    <button key={label.key} type="button" className={`chip ${form.tags.includes(tag) ? "active" : ""}`} onClick={() => toggleTag(tag)}>
+                      🏷 {tagLabel(tag, lang, app.labels)}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div className="row" style={{ gap: 6 }}>
+              <input
+                className="input input-sm"
+                value={labelDraft}
+                maxLength={24}
+                placeholder={t.newLabelPlaceholder}
+                aria-label={t.newLabelPlaceholder}
+                onChange={event => setLabelDraft(event.target.value)}
+                onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addCustomLabel(); } }}
+                style={{ flex: 1 }}
+              />
+              <button type="button" className="btn btn-sm btn-soft" onClick={addCustomLabel} disabled={labelBusy || !labelDraft.trim()}>
+                ＋ {t.addLabel}
+              </button>
+            </div>
+            {form.tags.filter(tag => tag.startsWith("x-")).length > 0 && (
+              <p className="tiny" style={{ marginTop: 6 }}>
+                {form.tags.filter(tag => tag.startsWith("x-")).map(tag => `🏷 ${tagLabel(tag, lang, app?.labels)}`).join("  ·  ")}
+              </p>
+            )}
           </div>
 
           <Field label={`${t.methodTitle} — EN`}>

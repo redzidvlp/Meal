@@ -116,7 +116,7 @@ console.log(`SPLIT: day ${splitTarget.day} ${splitTarget.slot} → two person ca
 
 const mergeButton = [...document.querySelectorAll("button")]
   .filter(el => el.textContent.includes("⇄"))
-  .find(el => el.closest(".row-between")?.textContent.toLowerCase().includes(splitTarget.slot));
+  .find(el => el.closest(".slot-head, .row-between")?.textContent.toLowerCase().includes(splitTarget.slot));
 assert(mergeButton, "merge control is visible");
 await click(mergeButton, 300);
 const keepOptions = [...document.querySelectorAll(".modal .recipe-option")];
@@ -129,7 +129,7 @@ console.log("MERGE BACK: shared meal restored");
 // 2b. Merge a slot whose two variants are different recipes — the app asks which one to keep.
 const differentMerge = [...document.querySelectorAll("button")]
   .filter(el => el.textContent.includes("⇄"))
-  .find(el => el.closest(".row-between")?.textContent.toLowerCase().includes("breakfast"));
+  .find(el => el.closest(".slot-head, .row-between")?.textContent.toLowerCase().includes("breakfast"));
 if (differentMerge) {
   await click(differentMerge, 300);
   const keepVariant = [...document.querySelectorAll(".modal .recipe-option")];
@@ -178,7 +178,7 @@ console.log("SHOPPING: ticking a bought item stocks the pantry");
 // 3b. Editing a recipe updates the plan and the shopping quantities.
 await nav("Plan");
 const firstCard = document.querySelector(".meal-card");
-const firstMealName = firstCard.querySelector(".meal-name")?.textContent?.trim() || "";
+const firstMealName = firstCard.querySelector(".meal-name, .meal-name-btn")?.textContent?.trim() || "";
 const plannedRecipe = state().recipes.find(recipe => recipe.name.en === firstMealName);
 assert(plannedRecipe, `planned recipe found (${firstMealName})`);
 const editedIngredient = plannedRecipe.ingredients[0].en;
@@ -191,7 +191,7 @@ assert(rowBeforeEdit, `shopping lists ${editedIngredient}`);
 const qtyBeforeEdit = qtyOf(rowBeforeEdit);
 
 await nav("Plan");
-await click(button("Recipe", document.querySelector(".meal-card")), 450);
+await click(document.querySelector(".meal-card .meal-name-btn"), 450);
 assert(sheet()?.textContent.includes(firstMealName), "recipe viewer opened");
 await click(button("Edit", sheet()), 450);
 assert(document.querySelector(".sheet .card-soft input[type=number]"), "editor opened");
@@ -293,12 +293,30 @@ await setInput(ingredientInputs[2], "120");
 const textareas = [...document.querySelectorAll(".sheet textarea")];
 await setInput(textareas[0], "Slice and fry.");
 await setInput(textareas[1], "Supjaustyti ir pakepinti.");
+const labelInput = document.querySelector('.sheet input[placeholder="e.g. 10-minute meal"]');
+assert(labelInput, "label field in the editor");
+await setInput(labelInput, "made in 10 min");
+await click(button("Add label", document.querySelector(".sheet")), 500);
+assert(state().labels?.some(label => label.key === "made-in-10-min"), "household label is stored");
 await click(button("Save", document.querySelector(".sheet-foot")), 800);
 const saved = state().recipes.find(recipe => recipe.name.en === "Smoke test bowl");
 assert(saved, "recipe saved");
 assert(saved.ingredients[0].key === "smoked-tofu", "ingredient key generated");
 assert(saved.vegetarian === true, "saved recipe is vegetarian");
-console.log(`NEW RECIPE: "${saved.name.en}" saved with ${saved.ingredients.length} ingredient`);
+assert(saved.tags.includes("x-made-in-10-min"), "custom label saved as a tag");
+console.log(`NEW RECIPE: "${saved.name.en}" saved with ${saved.ingredients.length} ingredient and a custom label`);
+
+// 5b. The recipe book filters by that label.
+await nav("Plan");
+await click(button("Change"), 300);
+const labelChip = [...document.querySelectorAll(".sheet .chip")]
+  .find(el => el.textContent.trim() === "made in 10 min");
+assert(labelChip, "label appears as a recipe-book filter");
+await click(labelChip, 400);
+const filteredNames = [...document.querySelectorAll(".sheet .recipe-option .opt-name")].map(el => el.textContent.trim());
+assert(filteredNames.includes("Smoke test bowl"), "label filter shows the labelled recipe");
+await click(document.querySelector(".sheet .close-btn"), 300);
+console.log("LABELS: custom label saved and filters the recipe book");
 
 // 6. Non-vegetarian input is blocked client-side.
 await click(button("Change"), 300);
@@ -339,6 +357,67 @@ assert([...document.querySelectorAll(".sheet-title")].some(el => el.textContent.
 await click([...document.querySelectorAll(".sheet .close-btn")].at(-1), 300);
 await click(button("Cancel", [...document.querySelectorAll(".sheet-foot")].at(-1)), 300);
 console.log("PHOTO: camera sheet reachable from the plan and the recipe editor");
+
+// 7b2. Tap the drag handle to move a whole slot, then move it back.
+await nav("Plan");
+const slotIds = () => {
+  const map = {};
+  for (const row of state().assignments) {
+    if (row.day !== activeDay) continue;
+    map[row.slot] = [...(map[row.slot] || []), row.recipeId].sort();
+  }
+  return map;
+};
+const beforeMove = slotIds();
+const grip = document.querySelector("[data-drop-slot='breakfast'] .meal-grip");
+assert(grip, "meal has a drag handle");
+await act(async () => {
+  grip.dispatchEvent(new dom.window.MouseEvent("pointerdown", { bubbles: true, clientX: 10, clientY: 10 }));
+  await sleep(120);
+});
+await act(async () => {
+  dom.window.dispatchEvent(new dom.window.MouseEvent("pointerup", { bubbles: true, clientX: 10, clientY: 10 }));
+  await sleep(300);
+});
+assert(document.querySelector(".modal")?.textContent.includes("Move this meal"), "tap on the handle opens the move sheet");
+await click(document.querySelector(".modal .recipe-option"), 700);
+const afterMove = slotIds();
+assert(JSON.stringify(afterMove.breakfast) === JSON.stringify(beforeMove.lunch), "dinner/lunch swap moved the meal across slots");
+assert(JSON.stringify(afterMove.lunch) === JSON.stringify(beforeMove.breakfast), "the target slot moved back");
+console.log("MOVE: tapped handle moved a meal between sections");
+
+// 7c. Hide a whole section for the day, then restore it.
+await nav("Plan");
+const zonesBefore = document.querySelectorAll("[data-drop-slot]").length;
+assert(zonesBefore === 4, `four sections before hiding (${zonesBefore})`);
+await click(document.querySelector(".slot-remove"), 250);
+const hideDialog = text();
+assert(hideDialog.includes("Remove this meal section from this day?"), "section removal asks first");
+await click(confirm(), 700);
+assert(document.querySelectorAll("[data-drop-slot]").length === 3, "hidden section is gone from the day");
+const addSectionButton = button("Add a meal section");
+assert(addSectionButton, "removed section can be restored");
+await click(addSectionButton, 300);
+await click(document.querySelector(".modal .recipe-option"), 700);
+assert(document.querySelectorAll("[data-drop-slot]").length === 4, "restored section is back");
+console.log("SECTIONS: hide and restore a whole meal section");
+
+// 7d. Generate a brand-new recipe idea and reroll it.
+await nav("Sous-chef");
+await click(document.querySelector(".idea-card .btn-primary"), 900);
+assert(document.querySelector(".idea-preview"), "idea preview appears");
+const firstIdea = document.querySelector(".idea-name")?.textContent?.trim();
+assert(firstIdea && firstIdea.length > 3, `idea has a name (${firstIdea})`);
+const reroll = [...document.querySelectorAll(".idea-preview button")].find(el => el.textContent.includes("🎲"));
+assert(reroll, "reroll control in the idea preview");
+await click(reroll, 900);
+const secondIdea = document.querySelector(".idea-name")?.textContent?.trim();
+assert(secondIdea && secondIdea !== firstIdea, `reroll gives a new idea (${firstIdea} → ${secondIdea})`);
+await click(button("Review & save"), 500);
+assert(text().includes("Offline idea engine"), "generated draft opens in the editor for review");
+assert([...document.querySelectorAll(".sheet-title")].some(el => el.textContent.includes("New recipe")), "draft uses the new-recipe editor");
+await click(button("Cancel", [...document.querySelectorAll(".sheet-foot")].at(-1)), 300);
+console.log(`IDEAS: generated and rerolled "${firstIdea}" → "${secondIdea}"`);
 
 // 8. Week reset keeps pantry, clears plan.
 await nav("Pantry");

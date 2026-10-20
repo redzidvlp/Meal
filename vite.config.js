@@ -42,8 +42,10 @@ export default defineConfig(({ mode }) => {
       react(),
       securityMetaPlugin(),
       VitePWA({
-        registerType: "autoUpdate",
-        injectRegister: "auto",
+        // "prompt" + our own virtual registration: a banner appears after each
+        // deploy instead of the app silently reloading under the user.
+        registerType: "prompt",
+        injectRegister: null,
         includeAssets: ["favicon.ico", "apple-touch-icon.png", "favicon-32x32.png", "favicon-16x16.png"],
         manifest: {
           name: "Our Table — vegetarian meal planner",

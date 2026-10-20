@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { C, SLOT_META, SLOTS, TAG_LABELS } from "../theme.js";
 import { allPlannedRecipes } from "../engine/plan.js";
 import { plannedIds, suggestRecipes, targetFromRecipe } from "../engine/recommend.js";
 import { fmtNum, interpolate, todayIndex } from "../lib/format.js";
+import { tagLabel } from "../lib/labels.js";
 import { Chip, EmptyState, Field, Modal, NumberInput, Segmented } from "./ui.jsx";
 
 function reasonText(reason, t, lang) {
@@ -15,7 +16,7 @@ function reasonText(reason, t, lang) {
   }
 }
 
-export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRecipe }) {
+export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRecipe, onReviewIdea }) {
   const [source, setSource] = useState("plan");
   const [refKey, setRefKey] = useState("");
   const [slot, setSlot] = useState("lunch");
@@ -24,6 +25,9 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
   const [addRecipe, setAddRecipe] = useState(null);
   const [addDay, setAddDay] = useState(todayIndex());
   const [addSlot, setAddSlot] = useState("lunch");
+  const [idea, setIdea] = useState(null);
+  const [ideaBusy, setIdeaBusy] = useState(false);
+  const seedRef = useRef(1 + Math.floor(Math.random() * 90000));
 
   const refs = useMemo(() => allPlannedRecipes(app.plan).map(item => ({
     ...item,
@@ -71,6 +75,29 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
 
   const toggleFilter = key => setFilters(previous => ({ ...previous, [key]: !previous[key] }));
 
+  const generateIdea = async () => {
+    setIdeaBusy(true);
+    const seed = seedRef.current;
+    seedRef.current += 37;
+    const excludeNames = [
+      ...app.recipes.map(recipe => recipe.name?.en).filter(Boolean),
+      ...suggestions.map(item => item.recipe.name?.en).filter(Boolean),
+      ...(idea ? [idea.name?.en] : []),
+    ].filter(Boolean);
+    try {
+      const draft = await app.generateIdea({ slot, target, filters, seed, excludeNames });
+      if (!draft) {
+        app.notify(t.ideaFailed, "error");
+      } else {
+        setIdea(draft);
+      }
+    } catch {
+      app.notify(t.ideaFailed, "error");
+    } finally {
+      setIdeaBusy(false);
+    }
+  };
+
   const openAdd = recipe => {
     setAddRecipe(recipe);
     setAddDay(todayIndex());
@@ -96,10 +123,85 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
 
       <div className="ai-note">
         <span style={{ fontSize: 18 }} aria-hidden="true">🧠</span>
-        <span>
+        <span style={{ flex: 1 }}>
           <b>{t.aiTitle}</b><br />
           {t.aiBody}
         </span>
+        {idea && (
+          <span className={`tag ${idea.ai ? "ok" : ""}`} style={{ alignSelf: "flex-start", whiteSpace: "nowrap" }}>
+            {idea.ai ? `🤖 ${t.ideaAi}` : `✨ ${t.ideaOffline}`}
+          </span>
+        )}
+      </div>
+
+      <details className="ai-explain">
+        <summary>{t.aiExplainTitle}</summary>
+        <p>{t.aiExplainBody}</p>
+        {idea && !idea.ai && (
+          <>
+            <p className="tiny" style={{ marginTop: 6 }}><b>{t.aiNeedsSetupTitle}</b></p>
+            <p className="tiny" style={{ marginTop: 2 }}>{t.aiNeedsSetupBody}</p>
+          </>
+        )}
+      </details>
+
+      <div className="card card-pad idea-card">
+        <div className="row-between" style={{ alignItems: "flex-start", gap: 10 }}>
+          <div style={{ minWidth: 0 }}>
+            <div className="eyebrow">✨ {t.navSuggest}</div>
+            <div className="idea-title">{t.ideaTitle}</div>
+            <p className="caption" style={{ margin: "3px 0 0" }}>{t.ideaSub}</p>
+          </div>
+          <button type="button" className="btn btn-sm btn-primary" onClick={generateIdea} disabled={ideaBusy} style={{ flexShrink: 0 }}>
+            {ideaBusy ? t.generatingIdea : idea ? t.rerollIdea : t.generateIdea}
+          </button>
+        </div>
+
+        {idea && (
+          <div className="idea-preview">
+            <div className="row" style={{ gap: 9, alignItems: "flex-start" }}>
+              <span className="idea-emoji" aria-hidden="true">{idea.emoji || "🍽️"}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="idea-name">{idea.name?.[lang] || idea.name?.en}</div>
+                <div className="opt-meta">
+                  <span>{SLOT_META[idea.slot]?.[lang]}</span>
+                  <span>🔥 {fmtNum(idea.kcal)}</span>
+                  <span>💪 {fmtNum(idea.protein)}g</span>
+                  <span>🌾 {fmtNum(idea.carbs)}g</span>
+                  <span>🫒 {fmtNum(idea.fat)}g</span>
+                  {idea.prepMinutes ? <span>⏱ {idea.prepMinutes} {t.minutes}</span> : null}
+                </div>
+              </div>
+              <span className={`tag ${idea.ai ? "ok" : ""}`}>{idea.ai ? `🤖 ${t.ideaAi}` : `✨ ${t.ideaOffline}`}</span>
+            </div>
+
+            <div className="row" style={{ gap: 4, flexWrap: "wrap", marginTop: 8 }}>
+              {[...(idea.tags || []), ...(idea.ai ? [] : [])].filter(tag => tag !== "vegetarian").slice(0, 5).map(tag => (
+                <span key={tag} className="stock-badge">{tagLabel(tag, lang, app.labels)}</span>
+              ))}
+            </div>
+
+            <ul className="idea-ingredients">
+              {(idea.ingredients || []).slice(0, 6).map((ingredient, index) => (
+                <li key={`${ingredient.en}-${index}`}>
+                  <span>{ingredient.en || ingredient.key}</span>
+                  <span>{fmtNum(ingredient.amount)} {ingredient.unit}</span>
+                </li>
+              ))}
+            </ul>
+
+            <div className="row" style={{ gap: 6, marginTop: 10 }}>
+              <button type="button" className="btn btn-sm btn-soft" onClick={generateIdea} disabled={ideaBusy}>
+                {ideaBusy ? t.generatingIdea : t.rerollIdea}
+              </button>
+              <button type="button" className="btn btn-sm btn-primary" style={{ flex: 1 }} onClick={() => onReviewIdea(idea)}>
+                {t.ideaEdit}
+              </button>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setIdea(null)} aria-label={t.close}>✕</button>
+            </div>
+            <p className="tiny" style={{ marginTop: 6 }}>{t.ideaSavedHint}</p>
+          </div>
+        )}
       </div>
 
       <div className="card card-pad" style={{ marginBottom: 14 }}>
