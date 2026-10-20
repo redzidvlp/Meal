@@ -509,3 +509,19 @@ test("rerolling an idea returns new names even across many taps", () => {
   }
   assert.equal(new Set(seen).size, 6);
 });
+
+test("quick ideas really are quick and never reuse a name", () => {
+  for (const slot of ["breakfast", "lunch", "dinner", "snack"]) {
+    for (let seed = 3; seed <= 7; seed += 1) {
+      const draft = generateRecipeDraft({
+        slot,
+        target: { kcal: 480, protein: 24, carbs: 45, fat: 20 },
+        filters: { quick: true },
+        seed,
+      });
+      assert.ok(draft, `${slot} draft ${seed}`);
+      assert.ok(draft.prepMinutes <= 15, `${slot} prep ${draft.prepMinutes}`);
+      assert.equal(draft.tags.includes("quick"), true);
+    }
+  }
+});
