@@ -4,6 +4,8 @@ Written for someone who has never done this before. Follow it top to bottom; do 
 a phase, and check the **“You should see”** line before moving on. Total time: about
 40 minutes without AI, 60 with it.
 
+Phone version of this page: **https://redzidvlp.github.io/Meal/guide.html**
+
 ---
 
 ## Before you start: the three places involved
@@ -77,7 +79,7 @@ water and notes into the new structure.
 
 Open this address — it is plain text, no buttons to hunt for:
 
-`https://raw.githubusercontent.com/redzidvlp/Meal/arena/7c386ed8-meal/supabase/upgrade-existing-project.sql`
+`https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/upgrade-existing-project.sql`
 
 `Ctrl+A` / `Cmd+A`, then `Ctrl+C` / `Cmd+C`.
 
@@ -175,7 +177,8 @@ Names must match exactly, including the `VITE_` prefix and capitals.
 ### 4c. Build and publish
 
 1. Repo → **Actions** tab → left column **Preview build (demo mode)**.
-2. **Run workflow** (right side) → branch `arena/7c386ed8-meal` → **Run workflow**.
+2. **Run workflow** (right side) → branch `main` → **Run workflow**.
+   (If the button is missing, the workflow has not reached `main` yet — use the link instead.)
 3. Wait ~1 minute for a green tick. Open the run and confirm **Deploy to GitHub Pages** is green.
 
 > **You should see:** the site at **https://redzidvlp.github.io/Meal/** opens with a sign-in
@@ -254,10 +257,10 @@ Optional extras, same screen: `AI_MODEL` = `gpt-4o-mini`, `AI_BASE_URL` =
 1. Supabase → **Edge Functions** → **Deploy a new function** → **Via editor**.
 2. Name it exactly `recipe-ai`.
 3. Delete the sample code, paste the whole of
-   `https://raw.githubusercontent.com/redzidvlp/Meal/arena/7c386ed8-meal/supabase/functions/recipe-ai/index.ts`
+   `https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/functions/recipe-ai/index.ts`
    → **Deploy**.
 4. Repeat with name `nutrition-scan` and
-   `https://raw.githubusercontent.com/redzidvlp/Meal/arena/7c386ed8-meal/supabase/functions/nutrition-scan/index.ts`.
+   `https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/functions/nutrition-scan/index.ts`.
 5. Leave **Verify JWT** ON for both (the app sends the signed-in user’s token).
 
 ### 7d. Prove it works
@@ -373,16 +376,19 @@ Nothing is deleted. Every old table is renamed into the `legacy` schema and stay
 
 ---
 
-## What is not yet on the live link
+## This page on your phone
 
-The working branch currently has uncommitted improvements: faster mobile start-up (no
-Google Fonts, lazy Supabase client, delayed service-worker install), a loading screen that
-explains itself, connection diagnostics, the data migration, and a real database test suite
-(`npm run test:db`, five scenarios on a real Postgres engine).
+The same guide, formatted for a phone screen:
 
-Everything in this guide works without them. They reach the phone only when those changes
-are committed and pushed — one word from you and I will do that.
+**https://redzidvlp.github.io/Meal/guide.html**
 
-The one-paste upgrade file is part of that unpushed set: it must be in the repository before
-the `raw.githubusercontent.com` link above works. Until then, ask me and I will post the same
-SQL in chat.
+Keep it in a second tab while you work through the phases — the SQL link and the Supabase
+and GitHub screens are much easier to follow on a big screen, so doing Phase 2 on a computer
+and the rest on the phone is the comfortable way.
+
+Everything below is already live on `main`:
+
+- the app and its build id — https://redzidvlp.github.io/Meal/
+- the one-paste upgrade — `supabase/upgrade-existing-project.sql`
+- the database migration and its tests — `supabase/migrate-legacy-data.sql`, `npm run test:db`
+- this guide — `GO-LIVE-GUIDE.md`

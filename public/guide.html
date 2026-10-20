@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Our Table — go-live guide</title>
+<meta name="description" content="Step-by-step setup for the Our Table meal planner: upgrade the existing Supabase project, put the keys in GitHub, install on both phones.">
+<style>
+:root{--ink:#1d2420;--muted:#5d6a63;--line:#e2e6e0;--bg:#f6f5f0;--card:#fffdf7;--accent:#2f6b4f;--accent-soft:#e8f0e6}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:0 0 64px}
+main{max-width:760px;margin:0 auto;padding:18px 18px 0}
+h1{font-size:1.7rem;line-height:1.2;margin:8px 0 4px;letter-spacing:-.02em}
+h2{font-size:1.24rem;margin:44px 0 10px;padding-top:16px;border-top:1px solid var(--line);letter-spacing:-.01em}
+h3{font-size:1.02rem;margin:26px 0 6px;color:var(--accent)}
+p,li{max-width:66ch}
+a{color:var(--accent);text-underline-offset:2px}
+code{background:#eceee8;border-radius:5px;padding:.12em .38em;font-size:.9em;word-break:break-word}
+pre{background:#20261f;color:#eef3ea;padding:14px 16px;border-radius:12px;overflow-x:auto;font-size:.85rem;line-height:1.5}
+pre code{background:none;padding:0;color:inherit;font-size:1em}
+blockquote{margin:16px 0;padding:12px 16px;border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:0 10px 10px 0}
+blockquote p{margin:4px 0}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:.9rem;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:block;overflow-x:auto}
+thead th{background:#eef1ea;text-align:left;font-size:.82rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+th,td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:none}
+hr{border:0;border-top:1px solid var(--line);margin:34px 0}
+ol,ul{padding-left:22px}
+li{margin:3px 0}
+strong{font-weight:650}
+.top{position:sticky;top:0;z-index:5;display:flex;gap:12px;align-items:center;justify-content:space-between;background:rgba(246,245,240,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:9px 18px;font-size:.8rem;color:var(--muted);letter-spacing:.03em;text-transform:uppercase}
+.top a{text-decoration:none}
+@media (max-width:520px){body{font-size:15.5px}main{padding:14px 14px 0}h1{font-size:1.45rem}h2{font-size:1.15rem}th,td{padding:8px 9px;font-size:.85rem}}
+@media print{.top{display:none}body{background:#fff}}
+</style></head>
+<body>
+<div class="top"><span>Our Table · go-live guide</span><a href="../">Open the app ↗</a></div>
+<main><h1>Our Table — the complete go-live guide</h1>
+<p>Written for someone who has never done this before. Follow it top to bottom; do not skip
+a phase, and check the <strong>“You should see”</strong> line before moving on. Total time: about
+40 minutes without AI, 60 with it.</p>
+<p>Phone version of this page: <strong><a href="https://redzidvlp.github.io/Meal/guide.html">https://redzidvlp.github.io/Meal/guide.html</a></strong></p>
+<hr>
+<h2>Before you start: the three places involved</h2>
+<table>
+<thead>
+<tr>
+<th>Place</th>
+<th>What it is</th>
+<th>What lives there</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Supabase</strong> (supabase.com)</td>
+<td>Your database in the cloud</td>
+<td>The tables, your recipes, your plan, both logins. Also the AI functions and the AI key.</td>
+</tr>
+<tr>
+<td><strong>GitHub</strong> (github.com)</td>
+<td>Where the code lives and where the site is built</td>
+<td>The app code. Two <strong>secrets</strong> (how the site finds your database) and one <strong>variable</strong> (a switch that says “use the real database”).</td>
+</tr>
+<tr>
+<td><strong>Your phone</strong></td>
+<td>Just a browser</td>
+<td>Nothing to install from a store. You open a link and add it to the home screen.</td>
+</tr>
+</tbody></table>
+<p>Two ideas that make everything below make sense:</p>
+<ul>
+<li><strong>A “secret” in GitHub is not a password you type into the app.</strong> It is a value the build
+reads once, at the moment it creates the website. If you change it, the website must be
+rebuilt (Phase 4 explains how).</li>
+<li><strong>The database key that goes into the website is public on purpose.</strong> It only identifies
+the project; Supabase’s row-level security decides what each signed-in person may read.
+The key that must never be published is the <code>service_role</code> / secret key — we never use it
+in the website.</li>
+</ul>
+<hr>
+<h2>What is still missing — the short list</h2>
+<p>The code is finished. What the app cannot do by itself is know where your database is.
+These are the only open items, and each one is a phase below:</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Missing</th>
+<th>Where it goes</th>
+<th>Phase</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>The old project has not been upgraded yet</td>
+<td>Supabase SQL editor, one paste</td>
+<td>2</td>
+</tr>
+<tr>
+<td>2</td>
+<td>The website does not know your project URL</td>
+<td>GitHub → <strong>Secrets</strong> → <code>VITE_SUPABASE_URL</code></td>
+<td>4a</td>
+</tr>
+<tr>
+<td>3</td>
+<td>The website does not know your public database key</td>
+<td>GitHub → <strong>Secrets</strong> → <code>VITE_SUPABASE_ANON_KEY</code></td>
+<td>4a</td>
+</tr>
+<tr>
+<td>4</td>
+<td>The build is not told to use the real database (it falls back to the demo kitchen)</td>
+<td>GitHub → <strong>Variables</strong> → <code>USE_SUPABASE=true</code></td>
+<td>4b</td>
+</tr>
+<tr>
+<td>5</td>
+<td>The site has not been rebuilt since those values were added</td>
+<td>GitHub → Actions → re-run the workflow</td>
+<td>4c</td>
+</tr>
+<tr>
+<td>6</td>
+<td><em>(optional)</em> No AI provider key, so recipes and photo reading use the offline engine</td>
+<td>Supabase → <strong>Edge Functions → Secrets</strong> → <code>AI_API_KEY</code></td>
+<td>7</td>
+</tr>
+<tr>
+<td>7</td>
+<td>The new build is not on the phone yet</td>
+<td>Open the link → <strong>Update now</strong></td>
+<td>8</td>
+</tr>
+</tbody></table>
+<p>Nothing else is required. In particular you do <strong>not</strong> need a new Supabase project, a new
+database password, a new link, or a new account.</p>
+<hr>
+<hr>
+<h2>Phase 1 — Find your existing Supabase project (2 min)</h2>
+<p>You are keeping the project that already holds your logins, so there is nothing to create.</p>
+<ol>
+<li>Go to <strong><a href="https://supabase.com/dashboard/projects">https://supabase.com/dashboard/projects</a></strong>. If you see several projects, open the one
+the old app was using — the one with tables named <code>plan</code>, <code>eaten</code>, <code>water</code>, <code>recipe_notes</code>,
+<code>meal_swaps</code> (check <strong>Table Editor</strong>).</li>
+<li>Write down its <strong>Project URL</strong>: <strong>Project Settings → API → Project URL</strong>.</li>
+</ol>
+<blockquote>
+<p><strong>You should see:</strong> a dashboard, and in Table Editor the old tables listed.</p>
+</blockquote>
+<blockquote>
+<p><strong>No such project?</strong> Then you are starting fresh — skip to Phase 2 and use
+<code>schema.sql</code> + <code>seed.sql</code> instead of the upgrade file; everything else is identical.</p>
+</blockquote>
+<p>The old app will stop working after Phase 2. That is expected: this app replaces it. Your
+<strong>email and password keep working</strong>, because logins live in <code>auth.users</code>, which is untouched.</p>
+<hr>
+<h2>Phase 2 — Upgrade the database in one paste (10 min)</h2>
+<p>One file does everything: it moves the old tables aside (nothing is deleted), creates the new
+tables, loads the recipe library, and copies your household, both logins, the planned week,
+water and notes into the new structure.</p>
+<h3>2a. Copy the file</h3>
+<p>Open this address — it is plain text, no buttons to hunt for:</p>
+<p><code>https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/upgrade-existing-project.sql</code></p>
+<p><code>Ctrl+A</code> / <code>Cmd+A</code>, then <code>Ctrl+C</code> / <code>Cmd+C</code>.</p>
+<p>“Running a file” always means <strong>copy its text, paste it, press Run</strong>. The SQL editor cannot
+open files — that is exactly what your earlier <code>syntax error at or near &quot;upgrade&quot;</code> was: it ran
+the <em>filename</em> as if it were SQL.</p>
+<h3>2b. Paste and run</h3>
+<ol>
+<li>Supabase → left sidebar <strong>SQL Editor</strong> → <strong>New query</strong>.</li>
+<li>Paste. Press <strong>Run</strong> (<code>Ctrl+Enter</code>). It takes 10–30 seconds.</li>
+<li>Scroll to the <strong>last result table</strong>.</li>
+</ol>
+<blockquote>
+<p><strong>You should see:</strong> one table starting with <code>table | households | ok | —</code>. Every one of the
+12 table rows must say <strong>ok</strong> and <strong>—</strong>. Below them: <code>row count</code> rows showing your household,
+your 2 profiles, 38 recipes, and the number of planned meals carried over (for a full week,
+26–28). The very end shows <code>project | database | postgres</code> and your number of auth users.</p>
+</blockquote>
+<p>What the result tells you:</p>
+<table>
+<thead>
+<tr>
+<th>In the table</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ok</code> and <code>—</code> everywhere</td>
+<td>Done. Go to Phase 3.</td>
+</tr>
+<tr>
+<td><code>MISSING TABLE</code> on one row</td>
+<td>The paste was cut short — run the same file again; it is safe.</td>
+</tr>
+<tr>
+<td><code>detail</code> lists columns</td>
+<td>The paste was cut short or an old table survived; send me the row.</td>
+</tr>
+<tr>
+<td>Red error</td>
+<td>Stop; send me the text. Nothing was half-applied because the scripts are idempotent.</td>
+</tr>
+</tbody></table>
+<h3>2c. What happened to your old data</h3>
+<ul>
+<li>Old tables are <strong>moved</strong>, not dropped, into a schema called <code>legacy</code>. You can look at them in
+Table Editor → schema dropdown <code>legacy</code>. Delete them later with
+<code>drop schema legacy cascade;</code> when you are sure.</li>
+<li>Carried over: household name and id, invite code (if the old project had one), both profiles
+and names, the variant chosen for each day (as the matching day menu), “eaten” ticks, water,
+and notes matched by dish name.</li>
+<li>Not carried over: custom swapped meals from the old app; those days show the menu dish.</li>
+<li>Re-running the file is safe and changes nothing that is already there.</li>
+</ul>
+<hr>
+<h2>Phase 3 — Get the two values the website needs (3 min)</h2>
+<ol>
+<li>Left sidebar → <strong>Project Settings</strong> (gear) → <strong>API</strong> (some dashboards call the page
+<strong>API Keys</strong>).</li>
+<li>Copy these two things into a temporary note:<ul>
+<li><strong>Project URL</strong> — looks like <code>https://abcdefghijkl.supabase.co</code></li>
+<li><strong>anon public</strong> key — a long string starting with <code>eyJ…</code>
+(newer projects may show <strong>Publishable key</strong> starting with <code>sb_publishable_…</code> — use that
+one instead; either works.)</li>
+</ul>
+</li>
+<li><strong>Do not copy</strong> <code>service_role</code> or <strong>Secret key</strong>. If you ever paste that into a website or
+a chat, rotate it immediately.</li>
+</ol>
+<blockquote>
+<p><strong>Security, in one line:</strong> the anon/publishable key is designed to be visible in a browser;
+the service_role key bypasses all protections and stays inside Supabase only.</p>
+</blockquote>
+<h3>3b. Make sign-up painless for two people (recommended, 2 min)</h3>
+<p>Supabase’s free email sender allows only a couple of emails per hour, which is enough to
+block your partner’s registration.</p>
+<ol>
+<li>Left sidebar → <strong>Authentication</strong> → <strong>Sign In / Providers</strong> → <strong>Email</strong>.</li>
+<li>Turn <strong>Confirm email</strong> <strong>off</strong>. Save.</li>
+<li>Still in Authentication → <strong>URL Configuration</strong>:<ul>
+<li><strong>Site URL:</strong> <code>https://redzidvlp.github.io/Meal/</code></li>
+<li><strong>Redirect URLs:</strong> add <code>https://redzidvlp.github.io/Meal/</code></li>
+</ul>
+</li>
+</ol>
+<p>Without this step, after pressing <em>Create account</em> you may see
+“Account created. Confirm your email” and never receive the mail.</p>
+<hr>
+<h2>Phase 4 — Teach GitHub where the database is (8 min)</h2>
+<p>The site is built by GitHub Actions from <code>.github/workflows/preview.yml</code>. It is deliberately
+set to <strong>demo mode</strong> until you flip the switch below, so the public link can never break.</p>
+<h3>4a. The two secrets</h3>
+<ol>
+<li>Open your repo: <code>https://github.com/redzidvlp/Meal</code></li>
+<li><strong>Settings</strong> (top bar of the repo, not your account) → left sidebar
+<strong>Secrets and variables</strong> → <strong>Actions</strong>.</li>
+<li>Stay on the <strong>Secrets</strong> tab → <strong>New repository secret</strong>:<ul>
+<li>Name: <code>VITE_SUPABASE_URL</code> → Secret: the <strong>Project URL</strong> from Phase 3 → <strong>Add secret</strong></li>
+<li><strong>New repository secret</strong> again: Name: <code>VITE_SUPABASE_ANON_KEY</code> → Secret: the
+<strong>anon/publishable</strong> key → <strong>Add secret</strong></li>
+</ul>
+</li>
+</ol>
+<p>Names must match exactly, including the <code>VITE_</code> prefix and capitals.</p>
+<h3>4b. The switch</h3>
+<ol>
+<li>Same screen → <strong>Variables</strong> tab → <strong>New repository variable</strong>.</li>
+<li>Name: <code>USE_SUPABASE</code> → Value: <code>true</code> → <strong>Add variable</strong>.</li>
+<li>Delete this variable at any time to put the site back into the safe demo kitchen.</li>
+</ol>
+<h3>4c. Build and publish</h3>
+<ol>
+<li>Repo → <strong>Actions</strong> tab → left column <strong>Preview build (demo mode)</strong>.</li>
+<li><strong>Run workflow</strong> (right side) → branch <code>main</code> → <strong>Run workflow</strong>.
+(If the button is missing, the workflow has not reached <code>main</code> yet — use the link instead.)</li>
+<li>Wait ~1 minute for a green tick. Open the run and confirm <strong>Deploy to GitHub Pages</strong> is green.</li>
+</ol>
+<blockquote>
+<p><strong>You should see:</strong> the site at <strong><a href="https://redzidvlp.github.io/Meal/">https://redzidvlp.github.io/Meal/</a></strong> opens with a sign-in
+screen and <strong>no</strong> yellow “Local demo” banner. If the banner is still there, <code>USE_SUPABASE</code>
+is missing or the workflow was not re-run.</p>
+</blockquote>
+<hr>
+<h2>Phase 5 — Open the kitchen with your old login (5 min)</h2>
+<p>Because the migration kept your profiles, <strong>do not create a new kitchen</strong>.</p>
+<ol>
+<li>Open the link → <strong>Sign in</strong> with the email and password you already used in the old app.<ul>
+<li>If you never created an account (the old app may have been opened only on one device),
+use <strong>Create account</strong> instead; you will be asked to create a kitchen.</li>
+</ul>
+</li>
+<li>The app should land straight on this week&#39;s plan, with the migrated meals, water and notes.</li>
+<li>Open <strong>⚙️ Settings</strong> → the <strong>invite code</strong> is there.<ul>
+<li>Your partner also just signs in with her old password — she is already in the household.</li>
+<li>If she is new, she creates an account and chooses <strong>Join kitchen</strong> with that code.</li>
+</ul>
+</li>
+<li>Mark a meal eaten on one phone; the other phone updates within a second or two (the
+realtime connection).</li>
+</ol>
+<blockquote>
+<p><strong>You should see:</strong> the plan filled from the old week, both names in Settings, and no
+“Create kitchen” screen.</p>
+<p><strong>If “Create kitchen” appears:</strong> the old <code>profiles</code> table was empty in that project, so
+there was no login to carry over. Create the kitchen once and invite your partner — the
+rest of this guide still applies.</p>
+</blockquote>
+<blockquote>
+<p><strong>You should see:</strong> two people listed (e.g. <em>Regita</em>, <em>Ieva</em>), a shared week, and a
+shopping list already filled from the plan.</p>
+</blockquote>
+<hr>
+<h2>Phase 6 — Put it on the home screen (2 min per phone)</h2>
+<p>It is a website that behaves like an app; no store, no install file.</p>
+<ul>
+<li><strong>iPhone (Safari):</strong> open the link → <strong>Share</strong> → <strong>Add to Home Screen</strong> → Add.</li>
+<li><strong>Android (Chrome):</strong> open the link → <strong>⋮</strong> menu → <strong>Install app</strong> / <strong>Add to Home screen</strong>.</li>
+</ul>
+<p>From then on it opens without a browser bar. The first launch downloads ~0.4 MB and then
+works from the phone’s cache; later launches are immediate.</p>
+<hr>
+<h2>Phase 7 — The AI agent (optional, 15 min)</h2>
+<p>The app works without this: suggestions, new recipe ideas and photo reading all have an
+offline fallback. The AI simply writes nicer, more varied recipes and reads photos properly.</p>
+<h3>7a. Get an API key</h3>
+<p>Use an <strong>OpenAI-compatible</strong> provider. The simplest is OpenAI:</p>
+<ol>
+<li><a href="https://platform.openai.com">https://platform.openai.com</a> → sign in → <strong>API keys</strong> → <strong>Create new secret key</strong>.</li>
+<li>Copy it once (starts with <code>sk-…</code>), keep it private.</li>
+<li>OpenAI requires a payment method with a few dollars of credit. Each recipe costs a
+fraction of a cent.</li>
+</ol>
+<p>(OpenRouter works too: key from openrouter.ai, and later set <code>AI_BASE_URL</code> and <code>AI_MODEL</code>.)</p>
+<h3>7b. Put the key into Supabase (never GitHub, never the app)</h3>
+<ol>
+<li>Supabase → <strong>Edge Functions</strong> → <strong>Secrets</strong> (older dashboard: Project Settings →
+Edge Functions → Secrets).</li>
+<li><strong>Add new secret</strong>: Name <code>AI_API_KEY</code>, Value: your <code>sk-…</code> key. Save.</li>
+</ol>
+<p>Optional extras, same screen: <code>AI_MODEL</code> = <code>gpt-4o-mini</code>, <code>AI_BASE_URL</code> =
+<code>https://api.openai.com/v1</code>, <code>ALLOW_ORIGIN</code> = <code>https://redzidvlp.github.io</code>.</p>
+<h3>7c. Deploy the two functions</h3>
+<p><strong>Without installing anything (recommended):</strong></p>
+<ol>
+<li>Supabase → <strong>Edge Functions</strong> → <strong>Deploy a new function</strong> → <strong>Via editor</strong>.</li>
+<li>Name it exactly <code>recipe-ai</code>.</li>
+<li>Delete the sample code, paste the whole of
+<code>https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/functions/recipe-ai/index.ts</code>
+→ <strong>Deploy</strong>.</li>
+<li>Repeat with name <code>nutrition-scan</code> and
+<code>https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/functions/nutrition-scan/index.ts</code>.</li>
+<li>Leave <strong>Verify JWT</strong> ON for both (the app sends the signed-in user’s token).</li>
+</ol>
+<h3>7d. Prove it works</h3>
+<ol>
+<li>Open the app → <strong>✨ Sous-chef</strong> → press <strong>Generate</strong>.</li>
+<li>The small badge on the idea card must read <strong>🤖 AI recipe</strong>.
+If it says <strong>✨ Offline idea engine</strong>, something in 7a–7c is missing.</li>
+<li>Press <strong>🎲 Reroll</strong> — a different dish must appear.</li>
+<li>Plan tab → <strong>📷</strong> → photograph a nutrition label → it fills calories and macros.</li>
+</ol>
+<hr>
+<h2>Phase 8 — Prove the update button works (2 min)</h2>
+<p>This matters to you: your partner must never see changes without pressing a button.</p>
+<p>After any future deploy, her phone shows a full-screen card <strong>“A fresh version is ready”</strong>
+with <strong>Update now</strong> / <strong>Later</strong>. If she presses Later, the old version keeps running and her
+week, pantry and shopping list stay exactly as they are.</p>
+<p>To see it once deliberately: make a tiny change (or ask me to), let the workflow go green,
+then open the app on a phone that already has it installed. Settings shows the running
+<strong>build id</strong> (short commit hash) so you can compare phones.</p>
+<hr>
+<h2>Phase 9 — Optional: let Supabase read the repository itself</h2>
+<p>Your screenshot (Supabase → Integrations → GitHub) is a <em>different</em> feature from Phase 4:</p>
+<table>
+<thead>
+<tr>
+<th>It does</th>
+<th>It does not</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Apply <code>supabase/migrations/*.sql</code> to your database when commits reach the production branch</td>
+<td>Provide <code>VITE_SUPABASE_URL</code> / <code>VITE_SUPABASE_ANON_KEY</code> to the website</td>
+</tr>
+<tr>
+<td>Deploy Edge Functions declared in <code>supabase/config.toml</code></td>
+<td>Store your AI key</td>
+</tr>
+</tbody></table>
+<p>So it never replaces Phase 4 or 7b. It is only worth enabling once you stop wanting to paste
+SQL by hand — and it only does something when <code>main</code> contains a <code>supabase/migrations/</code> folder
+(the working branch has one prepared; <code>main</code> does not yet).</p>
+<hr>
+<h2>If something goes wrong</h2>
+<p>The app names the failure instead of saying “refresh to retry”. Match the title on screen:</p>
+<table>
+<thead>
+<tr>
+<th>On screen</th>
+<th>Real cause</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>The database is missing tables</strong> (lists a table)</td>
+<td>Phase 2 skipped or partially run</td>
+<td>Run <code>upgrade-existing-project.sql</code> again, then <code>doctor.sql</code></td>
+</tr>
+<tr>
+<td><strong>This build has the wrong Supabase key</strong></td>
+<td>Secret pasted wrong / belongs to another project</td>
+<td>Re-do 4a with the URL and anon key of the <em>same</em> project, then 4c</td>
+</tr>
+<tr>
+<td><strong>Your sign-in expired</strong></td>
+<td>Account from a different project, or session invalid</td>
+<td>Sign out, sign in; if it repeats, check that the secrets are from this project</td>
+</tr>
+<tr>
+<td><strong>The Supabase project is paused or unreachable</strong></td>
+<td>Free projects pause after ~a week idle</td>
+<td>Supabase dashboard → Restore project</td>
+</tr>
+<tr>
+<td><strong>No answer from Supabase</strong></td>
+<td>Wi-Fi, VPN, ad-blocker, or the project URL is wrong</td>
+<td>Try mobile data; re-check 4a</td>
+</tr>
+<tr>
+<td><strong>The database said no</strong></td>
+<td>Row-level security blocked the account</td>
+<td>Confirm the account joined a kitchen; re-run <code>schema.sql</code></td>
+</tr>
+<tr>
+<td>Yellow <strong>Local demo</strong> banner after going live</td>
+<td><code>USE_SUPABASE</code> variable missing, or workflow not re-run</td>
+<td>Do 4b and 4c again</td>
+</tr>
+<tr>
+<td><code>syntax error at or near &quot;upgrade&quot;</code></td>
+<td>The <em>filename</em> was run instead of the file’s text</td>
+<td>Open the <code>raw.githubusercontent.com</code> link → select all → paste</td>
+</tr>
+<tr>
+<td><code>MISSING TABLE</code> in Phase 2’s last table</td>
+<td>Paste cut short, or an older run stopped halfway</td>
+<td>Run the same file again — it is idempotent</td>
+</tr>
+<tr>
+<td>“Account created. Confirm your email.” and no email</td>
+<td>Confirmation is on / free email limit</td>
+<td>Phase 3b: turn Confirm email off, sign in again</td>
+</tr>
+<tr>
+<td>Generate shows <strong>Offline idea engine</strong></td>
+<td>AI key or function missing</td>
+<td>Phase 7b and 7c; redeploy both functions after changing secrets</td>
+</tr>
+</tbody></table>
+<p>When asking for help, send: the connection screen with <strong>Details</strong> open, the result of
+<code>doctor.sql</code>, and the failed step from the <strong>Actions</strong> tab.</p>
+<hr>
+<h2>Where each value lives — one-page cheat sheet</h2>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Correct home</th>
+<th>Where you find it later</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Database URL</td>
+<td>GitHub → Settings → Secrets and variables → Actions → <strong>Secrets</strong> (<code>VITE_SUPABASE_URL</code>)</td>
+<td>Supabase → Project Settings → API</td>
+</tr>
+<tr>
+<td>Database anon key</td>
+<td>GitHub → same <strong>Secrets</strong> (<code>VITE_SUPABASE_ANON_KEY</code>)</td>
+<td>Supabase → Project Settings → API</td>
+</tr>
+<tr>
+<td>“Use the real database” switch</td>
+<td>GitHub → same screen → <strong>Variables</strong> (<code>USE_SUPABASE=true</code>)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>AI provider key</td>
+<td>Supabase → <strong>Edge Functions → Secrets</strong> (<code>AI_API_KEY</code>)</td>
+<td>OpenAI / OpenRouter dashboard</td>
+</tr>
+<tr>
+<td>Database password</td>
+<td>Your password manager only</td>
+<td>Not needed day to day</td>
+</tr>
+<tr>
+<td>Invite code</td>
+<td>Inside the app: Settings (visible to both partners)</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>service_role</code> / secret key</td>
+<td><strong>Nowhere.</strong> Never in GitHub, never in chat</td>
+<td>—</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>Appendix A — From zero, with no old project</h2>
+<p>Only if Phase 1 found nothing. Everything else in this guide is unchanged.</p>
+<ol>
+<li><strong>Create the project</strong> at <a href="https://supabase.com/dashboard/projects">https://supabase.com/dashboard/projects</a> → <strong>New project</strong>.
+Region: the one closest to you (e.g. <em>Frankfurt</em>). Save the database password in your
+password manager; you will not need it again.</li>
+<li><strong>SQL Editor → New query</strong>, paste <strong><code>supabase/schema.sql</code></strong> → Run
+(<code>Success. No rows returned</code>).</li>
+<li>New query, paste <strong><code>supabase/seed.sql</code></strong> → Run. This adds the 38 recipes and 10 menus.</li>
+<li>New query, paste <strong><code>supabase/doctor.sql</code></strong> → Run. Twelve <code>ok</code> rows, then row counts of 0.</li>
+<li>Continue at Phase 3 with the URL and anon key of this new project.</li>
+</ol>
+<blockquote>
+<p>Do <strong>not</strong> run <code>upgrade-from-legacy.sql</code> on an empty project. It is only for a project that
+still holds the old <code>plan</code> / <code>eaten</code> / <code>water</code> tables, and the one-paste file already
+includes it.</p>
+</blockquote>
+<hr>
+<h2>Appendix B — What the upgrade did to each old table</h2>
+<table>
+<thead>
+<tr>
+<th>Old table</th>
+<th>New home</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>households</code></td>
+<td><code>households</code> (same id; old invite code kept, otherwise a new 6-character one)</td>
+</tr>
+<tr>
+<td><code>profiles</code></td>
+<td><code>profiles</code> (same auth user ids — same email and password)</td>
+</tr>
+<tr>
+<td><code>plan</code> (<code>variant_id</code> 1–3 per day)</td>
+<td>the matching reusable day menu, expanded into <code>meal_assignments</code></td>
+</tr>
+<tr>
+<td><code>eaten</code></td>
+<td><code>eaten</code>, now pointing at the actual recipe</td>
+</tr>
+<tr>
+<td><code>water</code></td>
+<td><code>water</code> (ml clamped to 0–5000)</td>
+</tr>
+<tr>
+<td><code>recipe_notes</code></td>
+<td><code>recipe_notes</code>, matched by the English dish name</td>
+</tr>
+<tr>
+<td><code>meal_swaps</code></td>
+<td><strong>not migrated</strong> — the old rows store no recipe ids; those slots show the menu dish</td>
+</tr>
+</tbody></table>
+<p>Nothing is deleted. Every old table is renamed into the <code>legacy</code> schema and stays readable in
+<strong>Table Editor → schema <code>legacy</code></strong>. When you are confident, remove them with
+<code>drop schema legacy cascade;</code>.</p>
+<hr>
+<h2>This page on your phone</h2>
+<p>The same guide, formatted for a phone screen:</p>
+<p><strong><a href="https://redzidvlp.github.io/Meal/guide.html">https://redzidvlp.github.io/Meal/guide.html</a></strong></p>
+<p>Keep it in a second tab while you work through the phases — the SQL link and the Supabase
+and GitHub screens are much easier to follow on a big screen, so doing Phase 2 on a computer
+and the rest on the phone is the comfortable way.</p>
+<p>Everything below is already live on <code>main</code>:</p>
+<ul>
+<li>the app and its build id — <a href="https://redzidvlp.github.io/Meal/">https://redzidvlp.github.io/Meal/</a></li>
+<li>the one-paste upgrade — <code>supabase/upgrade-existing-project.sql</code></li>
+<li>the database migration and its tests — <code>supabase/migrate-legacy-data.sql</code>, <code>npm run test:db</code></li>
+<li>this guide — <code>GO-LIVE-GUIDE.md</code></li>
+</ul>
+</main>
+</body></html>
