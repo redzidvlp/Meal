@@ -1,11 +1,29 @@
 import { useEffect, useState } from "react";
 import { C } from "../theme.js";
 import { Chip, ConfirmDialog, Segmented, Sheet, Stepper, useCopy } from "./ui.jsx";
+import { setOverrideDemo } from "../lib/errors.js";
+import { currentBuildId } from "../lib/build.js";
 
-export default function SettingsSheet({ open, onClose, app, lang, setLang, t }) {
+export default function SettingsSheet({ open, onClose, app, lang, setLang, t, pwa }) {
   const [name, setName] = useState(app.household?.name || "");
   const [resetOpen, setResetOpen] = useState(false);
+  const [updateNote, setUpdateNote] = useState("");
   const { copied, copy } = useCopy();
+
+  const checkUpdates = async () => {
+    if (!pwa?.supported) {
+      setUpdateNote(t.updateUnsupported);
+      return;
+    }
+    setUpdateNote(t.updateChecking);
+    const started = await pwa.checkNow();
+    if (!started) {
+      setUpdateNote(t.updateCheckFailed);
+      return;
+    }
+    // The service worker needs a moment to register a waiting build.
+    window.setTimeout(() => setUpdateNote(t.updateUpToDate), 1400);
+  };
 
   useEffect(() => {
     if (open) setName(app.household?.name || "");
@@ -125,6 +143,15 @@ export default function SettingsSheet({ open, onClose, app, lang, setLang, t }) 
                 {t.signOut}
               </button>
             )}
+            {app.isDemo && app.isCloudConfigured && (
+              <button
+                type="button"
+                className="btn btn-sm btn-soft"
+                onClick={() => { setOverrideDemo(false); window.location.reload(); }}
+              >
+                {t.tryCloud}
+              </button>
+            )}
           </div>
         </section>
 
@@ -139,8 +166,26 @@ export default function SettingsSheet({ open, onClose, app, lang, setLang, t }) 
         </section>
 
         <div className="divider" />
+
+        <section>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>{t.updateSection}</div>
+          <div className="settings-row">
+            <div style={{ flex: 1 }}>
+              <div className="settings-label">{t.updateCheckNow}</div>
+              <div className="settings-hint">{updateNote || (pwa?.needRefresh ? t.updateAvailableNow : t.versionHint)}</div>
+            </div>
+            <button type="button" className="btn btn-sm btn-soft" onClick={checkUpdates} disabled={pwa?.checking || pwa?.needRefresh}>
+              {pwa?.checking ? t.updateChecking : t.updateCheckNow}
+            </button>
+          </div>
+        </section>
+
+        <div className="divider" />
         <div className="row-between">
-          <span className="tiny">{t.version} 2.0.0</span>
+          <span className="tiny">
+            {t.version} 2.0.0
+            {currentBuildId() ? ` · ${currentBuildId()}` : ""}
+          </span>
           <span className="tiny">{t.madeWith}</span>
         </div>
       </Sheet>

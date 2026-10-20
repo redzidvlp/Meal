@@ -1,4 +1,5 @@
 import { mondayISO, createId } from "./format.js";
+import { describeLoadError } from "./errors.js";
 import { sanitizePantryItem, sanitizeRecipe, sanitizeNote, sanitizeWater, sanitizeMenu, sanitizePhotoPayload, sanitizeLabel } from "./validate.js";
 
 const mapProfile = row => row && ({
@@ -135,6 +136,13 @@ export function createSupabaseBackend(client) {
       ctx = { ...ctx, ...next };
     },
 
+    async refreshSession() {
+      const { data, error } = await client.auth.refreshSession();
+      if (error) throw error;
+      ctx = { ...ctx, userId: data?.session?.user?.id || ctx.userId };
+      return data?.session || null;
+    },
+
     async getProfile() {
       if (!ctx.userId) return null;
       const { data, error } = await client.from("profiles").select("*").eq("id", ctx.userId).maybeSingle();
@@ -167,33 +175,65 @@ export function createSupabaseBackend(client) {
     async loadAll() {
       const hid = ctx.householdId;
       if (!hid) return null;
-      const results = await Promise.all([
-        client.from("households").select("*").eq("id", hid).single(),
-        client.from("profiles").select("*").eq("household_id", hid),
-        client.from("recipes").select("*"),
-        client.from("meal_assignments").select("*").eq("household_id", hid),
-        client.from("eaten").select("*").eq("household_id", hid).eq("eaten", true),
-        client.from("water").select("*").eq("household_id", hid),
-        client.from("recipe_notes").select("*").eq("household_id", hid),
-        client.from("shopping_checks").select("*").eq("household_id", hid).eq("week_start", mondayISO()),
-        client.from("pantry").select("*").eq("household_id", hid),
-        client.from("menus").select("*").eq("household_id", hid),
-        client.from("day_sections").select("*").eq("household_id", hid),
-        client.from("labels").select("*").eq("household_id", hid),
-      ]);
-      // The last two tables arrive with the v4 schema. Ignore their errors so a
-      // project that has not re-run schema.sql still opens instead of dead-ending.
-      results.slice(0, 10).forEach(({ error }) => raise(error));
-      const [household, profiles, recipes, assignments, eaten, water, notes, checks, pantry, menus, sections, labelRows] = results;
-      if (sections?.error) console.warn("day_sections unavailable — re-run supabase/schema.sql", sections.error.message);
-      if (labelRows?.error) console.warn("labels unavailable — re-run supabase/schema.sql", labelRows.error.message);
+
+      // One query per table, each allowed to fail on its own. A project that was
+      // never upgraded (or a single blocked table) should still open the kitchen
+      // with the data it does have instead of dead-ending on a blank error page.
+      const queries = {
+        household: () => client.from("households").select("*").eq("id", hid).maybeSingle(),
+        profiles: () => client.from("profiles").select("*").eq("household_id", hid),
+        recipes: () => client.from("recipes").select("*"),
+        assignments: () => client.from("meal_assignments").select("*").eq("household_id", hid),
+        eaten: () => client.from("eaten").select("*").eq("household_id", hid).eq("eaten", true),
+        water: () => client.from("water").select("*").eq("household_id", hid),
+        notes: () => client.from("recipe_notes").select("*").eq("household_id", hid),
+        checks: () => client.from("shopping_checks").select("*").eq("household_id", hid).eq("week_start", mondayISO()),
+        pantry: () => client.from("pantry").select("*").eq("household_id", hid),
+        menus: () => client.from("menus").select("*").eq("household_id", hid),
+        sections: () => client.from("day_sections").select("*").eq("household_id", hid),
+        labels: () => client.from("labels").select("*").eq("household_id", hid),
+      };
+
+      const entries = await Promise.all(
+        Object.entries(queries).map(async ([table, run]) => {
+          try {
+            const result = await run();
+            return { table, data: result?.data ?? null, error: result?.error || null };
+          } catch (error) {
+            return { table, data: null, error };
+          }
+        }),
+      );
+
+      const byTable = Object.fromEntries(entries.map(entry => [entry.table, entry]));
+      const rows = table => (Array.isArray(byTable[table]?.data) ? byTable[table].data : []);
+      const single = table => (byTable[table]?.data && !Array.isArray(byTable[table].data) ? byTable[table].data : null);
+
+      const issues = entries
+        .filter(entry => entry.error)
+        .map(entry => describeLoadError(entry.error, entry.table));
+
+      // If the household row itself is unreadable there is nothing to show, so
+      // stop with a described error rather than pretending the kitchen is empty.
+      if (byTable.household?.error) {
+        const own = issues.find(issue => issue.table === "household") || issues[0] || {};
+        throw Object.assign(new Error(own.message || "household_unavailable"), own);
+      }
+      if (!single("household")) {
+        throw Object.assign(new Error("household_not_found"), { kind: "not_found", table: "households" });
+      }
+
+      // A dead token poisons every table at once — surface it as an auth problem
+      // so the app can refresh the session once and retry.
+      const authIssue = issues.find(issue => issue.kind === "auth");
+      if (authIssue && !byTable.recipes?.data) throw Object.assign(new Error(authIssue.message), authIssue);
 
       return {
-        household: mapHousehold(household.data),
-        profiles: (profiles.data || []).map(mapProfile),
-        recipes: (recipes.data || []).map(mapRecipeRow),
-        assignments: (assignments.data || []).map(mapAssignment),
-        eaten: (eaten.data || []).filter(row => row.eaten).map(row => ({
+        household: mapHousehold(single("household")),
+        profiles: rows("profiles").map(mapProfile),
+        recipes: rows("recipes").map(mapRecipeRow),
+        assignments: rows("assignments").map(mapAssignment),
+        eaten: rows("eaten").filter(row => row.eaten).map(row => ({
           day: row.day_index,
           slot: row.slot,
           personKey: row.person_key,
@@ -201,13 +241,14 @@ export function createSupabaseBackend(client) {
           recipeId: row.recipe_id,
           applied: Array.isArray(row.applied) ? row.applied : [],
         })),
-        water: (water.data || []).map(row => ({ day: row.day_index, personKey: row.person_key, ml: Number(row.ml) || 0 })),
-        notes: (notes.data || []).map(row => ({ recipeId: row.recipe_id, personKey: row.person_key, note: row.note })),
-        shoppingChecks: (checks.data || []).map(row => ({ weekStart: row.week_start, itemKey: row.item_key, checked: row.checked })),
-        pantry: (pantry.data || []).map(mapPantry),
-        menus: (menus.data || []).map(mapMenuRow),
-        hiddenSections: (sections.data || []).map(row => ({ day: row.day_index, slot: row.slot })),
-        labels: (labelRows.data || []).map(row => ({ key: row.key, label: row.label })),
+        water: rows("water").map(row => ({ day: row.day_index, personKey: row.person_key, ml: Number(row.ml) || 0 })),
+        notes: rows("notes").map(row => ({ recipeId: row.recipe_id, personKey: row.person_key, note: row.note })),
+        shoppingChecks: rows("checks").map(row => ({ weekStart: row.week_start, itemKey: row.item_key, checked: row.checked })),
+        pantry: rows("pantry").map(mapPantry),
+        menus: rows("menus").map(mapMenuRow),
+        hiddenSections: rows("sections").map(row => ({ day: row.day_index, slot: row.slot })),
+        labels: rows("labels").map(row => ({ key: row.key, label: row.label })),
+        issues,
       };
     },
 

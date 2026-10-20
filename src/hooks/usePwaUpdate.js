@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { markUpdating } from "../lib/build.js";
 
 /**
  * Registers the service worker in "prompt" mode so a new deployment shows a
@@ -7,6 +8,8 @@ import { useEffect, useRef, useState } from "react";
  */
 export function usePwaUpdate() {
   const [needRefresh, setNeedRefresh] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [supported, setSupported] = useState(false);
   const updateRef = useRef(null);
   const registrationRef = useRef(null);
 
@@ -16,6 +19,7 @@ export function usePwaUpdate() {
 
     let cancelled = false;
     let timer = null;
+    setSupported(true);
 
     import("virtual:pwa-register")
       .then(({ registerSW }) => {
@@ -52,9 +56,31 @@ export function usePwaUpdate() {
     };
   }, []);
 
+  // Ask the browser to look for a new build right now (used by Settings and by
+  // the update screen). It never activates the waiting worker on its own.
+  const checkNow = async () => {
+    const registration = registrationRef.current;
+    if (!registration?.update) return false;
+    setChecking(true);
+    try {
+      await registration.update();
+    } catch {
+      // offline or a transient failure: the next timer tick tries again
+    } finally {
+      setChecking(false);
+    }
+    return true;
+  };
+
   return {
     needRefresh,
+    checking,
+    supported,
+    checkNow,
     updateNow: () => {
+      // Tell the version gate that this update already had its button, so the
+      // next launch does not ask a second time.
+      markUpdating();
       setNeedRefresh(false);
       updateRef.current?.(true);
     },

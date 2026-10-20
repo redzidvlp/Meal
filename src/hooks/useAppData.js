@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, isDemo } from "../lib/api.js";
+import { api, isDemo, isCloudConfigured, backendMode, backendHost } from "../lib/api.js";
+import { projectHost } from "../lib/errors.js";
 import { buildPlan } from "../engine/plan.js";
 import { buildShoppingList } from "../engine/shopping.js";
 import { lowItems } from "../engine/pantry.js";
@@ -29,10 +30,13 @@ export function useAppData(t = {}) {
   const [data, setData] = useState(EMPTY);
   const [authLoading, setAuthLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState(null);
+  const [profileNonce, setProfileNonce] = useState(0);
   const [profileChecked, setProfileChecked] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
   const [dataReady, setDataReady] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  const [dataIssues, setDataIssues] = useState([]);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
   const profileRef = useRef(null);
@@ -94,12 +98,16 @@ export function useAppData(t = {}) {
       .then(nextProfile => {
         if (!active) return;
         applyProfile(nextProfile);
+        setProfileError(null);
         setProfileLoading(false);
         setProfileChecked(true);
       })
       .catch(error => {
         if (!active) return;
         console.error(error);
+        // Do not drop to "set up your kitchen" when the profile could not be
+        // read — that would look like the household was lost.
+        setProfileError(error);
         setProfileLoading(false);
         setProfileChecked(true);
         notify(t.loadingError || "Could not load your profile.", "error");
@@ -107,18 +115,30 @@ export function useAppData(t = {}) {
     return () => { active = false; };
     // Depend on the user id, not the session object: token refreshes must not
     // send the app back through the loading gate.
-  }, [userId, applyProfile, notify]);
+  }, [userId, profileNonce, applyProfile, notify]);
 
-  const loadAll = useCallback(async ({ silent = false } = {}) => {
+  const loadAll = useCallback(async ({ silent = false, retried = false } = {}) => {
     if (!profileRef.current?.householdId) return;
     if (!silent) setDataLoading(true);
     try {
       const next = await api.loadAll();
       if (next) {
         setData({ ...EMPTY, ...next });
+        setDataIssues(Array.isArray(next.issues) ? next.issues : []);
         setLoadError(null);
       }
     } catch (error) {
+      // A stale access token is the most common cause of a blank kitchen. Refresh
+      // the session once and try again before showing anything to the user.
+      if (!retried && (error?.kind === "auth" || String(error?.message || "").match(/jwt|token/i))) {
+        try {
+          await api.refreshSession?.();
+          setDataLoading(false);
+          return loadAll({ silent, retried: true });
+        } catch {
+          // falls through to the error screen below
+        }
+      }
       console.error(error);
       setLoadError(error);
       if (!silent) notify(t.loadingError || "Could not load your kitchen.", "error");
@@ -149,6 +169,15 @@ export function useAppData(t = {}) {
   }, [profile?.householdId]);
 
   const refresh = useCallback(() => loadAll({ silent: true }), [loadAll]);
+
+  // Used by the connection screen: re-read the profile and the kitchen instead
+  // of leaving the person on a dead-end page.
+  const retryConnection = useCallback(() => {
+    setProfileError(null);
+    setProfileChecked(false);
+    setProfileNonce(value => value + 1);
+    if (profileRef.current?.householdId) loadAll({ retried: true });
+  }, [loadAll]);
 
   const signIn = useCallback(async (email, password) => {
     await api.signIn(email, password);
@@ -458,6 +487,8 @@ export function useAppData(t = {}) {
 
   return {
     isDemo,
+    isCloudConfigured,
+    backendMode,
     session,
     profile,
     household: data.household,
@@ -482,10 +513,13 @@ export function useAppData(t = {}) {
     weekStart,
     authLoading,
     profileLoading,
+    profileError,
     profileChecked,
     dataLoading,
     dataReady,
     loadError,
+    dataIssues,
+    backendHost,
     toast,
     notify,
     signIn,
@@ -523,5 +557,6 @@ export function useAppData(t = {}) {
     updateDisplayName,
     resetWeek,
     refresh,
+    retryConnection,
   };
 }

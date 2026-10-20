@@ -34,8 +34,11 @@ both partners see the same plan in real time.
   a list. Occupied targets swap.
 - **Remove a whole section**: hide snack (or any section) for one day; the day keeps
   only the meals you want, and the section can be restored later.
-- **Recurring update prompt**: the PWA runs in prompt mode, checks for a fresh build in
-  the background and shows "A fresh version is ready" after every deploy.
+- **Updates need a tap**: the PWA runs in prompt mode. After a deploy the new build
+  downloads and waits; a full-screen "A fresh version is ready" gate appears with
+  **Update now** / **Later** before anything on screen changes, and keeps the current
+  week, pantry and shopping list intact until the button is pressed. Settings has a
+  manual **Check for updates** as well.
 - **Live shopping list**: derived from the plan and from recipe contents; edits to a
   recipe immediately change the quantities. Tick items off, then stock the pantry in
   one tap.
@@ -61,6 +64,13 @@ npm run dev                # http://localhost:5173
 Without `.env` values the app starts in demo mode with a sample household and week.
 
 ### Supabase setup
+
+> **Upgrading from the old "Our Meal Plan" app?** That app used a different schema
+> (`plan`, `meal_swaps`, no `recipes`/`meal_assignments`), and some names collide with
+> narrower tables. Either create a fresh Supabase project, or run
+> `supabase/upgrade-from-legacy.sql` first: it moves the seven old tables into a
+> `legacy` schema (nothing is deleted) so `schema.sql` can build clean ones. Auth
+> accounts keep working; sign in again and create or join a kitchen.
 
 1. Create a Supabase project.
 2. In the SQL editor run, in order:
@@ -89,6 +99,26 @@ VITE_SUPABASE_ANON_KEY=<anon-key>
 5. Run the app, sign up, create a household, open **Settings** and share the 6-character
    invite code with your partner. They sign up, choose *Join household* and enter it.
 
+### When the kitchen will not open
+
+The app never shows a bare "try again" screen. If Supabase cannot be read it names the
+failing table and the likely cause — expired sign-in, wrong anon key, missing tables,
+row-level security, a paused project or no network — with the project host and the raw
+error behind a **Details** toggle. **Open the demo kitchen instead** keeps the app usable
+on the phone while you fix the project.
+
+`supabase/doctor.sql` is a read-only health check: paste it into the Supabase SQL editor
+to list every table the app expects and any columns that are missing. Run it whenever the
+connection screen says a table is missing.
+
+If the screen says **"This account points at a missing kitchen"**, the profile row survived
+an older schema but its `household_id` no longer exists. Unlink it once in the SQL editor
+and reload; the app then offers *create kitchen* again:
+
+```sql
+delete from public.profiles where id = auth.uid();
+```
+
 The anon key is safe to ship: every table is protected by row-level security, writes go
 through validated RPC functions, and all access is scoped to the caller's household.
 Never put the `service_role` key in the client.
@@ -96,11 +126,16 @@ Never put the `service_role` key in the client.
 ### Publishing the phone preview
 
 Pushing `arena/7c386ed8-meal` deploys to GitHub Pages through
-`.github/workflows/preview.yml`. The build reads `VITE_SUPABASE_URL` and
-`VITE_SUPABASE_ANON_KEY` from the repository secrets with those names (Settings →
-Secrets and variables → Actions). With the secrets present the public link talks to your
-Supabase project; without them it runs the labelled demo household. The workflow also
-exposes the app at `https://<owner>.github.io/Meal/`, so you can scan it on a phone.
+`.github/workflows/preview.yml`, at `https://<owner>.github.io/Meal/`.
+
+The link runs the labelled **demo household by default** so it always opens on a phone,
+even while the database is being set up. Switch it to your project only when
+`doctor.sql` reports every table as `ok`:
+
+1. Settings → Secrets and variables → Actions → **Secrets**: `VITE_SUPABASE_URL`,
+   `VITE_SUPABASE_ANON_KEY`.
+2. The same screen → **Variables**: `USE_SUPABASE` = `true`.
+3. Re-run the workflow (or push). Remove the variable to fall back to demo instantly.
 
 ### Preset library
 

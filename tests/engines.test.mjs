@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { sanitizeRecipe, sanitizePantryItem, sanitizeInviteCode, isInviteCode, sanitizeNote, sanitizeMenu, sanitizePhotoPayload, sanitizeLabel } from "../src/lib/validate.js";
 import { ingredientKey, findForbiddenIngredients } from "../src/lib/ingredients.js";
@@ -524,4 +525,98 @@ test("quick ideas really are quick and never reuse a name", () => {
       assert.equal(draft.tags.includes("quick"), true);
     }
   }
+});
+
+// ── Connection diagnostics ──────────────────────────────────────────────────
+import { describeLoadError, schemaState } from "../src/lib/errors.js";
+import { createSupabaseBackend } from "../src/lib/supabaseBackend.js";
+
+test("load errors are explained, not swallowed", () => {
+  const missing = describeLoadError({ code: "42P01", message: 'relation "public.labels" does not exist' }, "labels");
+  assert.equal(missing.kind, "missing_schema");
+  assert.equal(missing.table, "labels");
+
+  const expired = describeLoadError({ status: 401, message: "JWT expired" }, "recipes");
+  assert.equal(expired.kind, "auth");
+
+  const blocked = describeLoadError({ code: "42501", message: "new row violates row-level security policy" }, "pantry");
+  assert.equal(blocked.kind, "permission");
+
+  const offline = describeLoadError(new TypeError("Failed to fetch"), "households");
+  assert.equal(offline.kind, "network");
+
+  assert.equal(schemaState([missing]).level, 1, "only the new tables missing → usable kitchen");
+  assert.equal(schemaState([describeLoadError({ code: "42P01", message: "no table" }, "recipes")]).level, 0);
+  assert.equal(schemaState([]).level, 2);
+});
+
+test("a broken table does not take the whole kitchen down", async () => {
+  const rows = {
+    households: { id: "h1", name: "Kitchen", invite_code: "ABC123", extra_portions: 0 },
+    profiles: [{ id: "u1", household_id: "h1", person_key: "R", display_name: "Regita" }],
+    recipes: [],
+    meal_assignments: [],
+    eaten: [],
+    water: [],
+    recipe_notes: [],
+    shopping_checks: [],
+    pantry: [],
+    menus: [],
+    day_sections: [],
+    labels: [],
+  };
+  const fake = {
+    from(table) {
+      const query = {
+        select: () => query,
+        eq: () => query,
+        maybeSingle: () => Promise.resolve({ data: table === "households" ? rows[table] : null, error: table === "labels" ? { code: "42P01", message: "does not exist" } : null }),
+        then: (resolve, reject) => Promise.resolve({
+          data: rows[table] || [],
+          error: table === "labels" ? { code: "42P01", message: 'relation "labels" does not exist' } : null,
+        }).then(resolve, reject),
+      };
+      return query;
+    },
+  };
+  const backend = createSupabaseBackend(fake);
+  backend.setContext({ userId: "u1", householdId: "h1" });
+  const loaded = await backend.loadAll();
+  assert.equal(loaded.household.name, "Kitchen");
+  assert.equal(loaded.issues.length, 1);
+  assert.equal(loaded.issues[0].kind, "missing_schema");
+  assert.equal(loaded.issues[0].table, "labels");
+  assert.deepEqual(loaded.labels, []);
+});
+
+test("the app never swaps builds before the update button is tapped", () => {
+  const config = readFileSync(new URL("../vite.config.js", import.meta.url), "utf8");
+  assert.match(config, /registerType:\s*"prompt"/, "service worker must run in prompt mode");
+  assert.match(config, /injectRegister:\s*null/, "the app registers the worker itself");
+  assert.doesNotMatch(config, /skipWaiting:\s*true/, "a new build must not take over on install");
+  assert.doesNotMatch(config, /clientsClaim:\s*true/, "a new build must not claim open pages");
+  assert.doesNotMatch(config, /autoUpdate/, "autoUpdate would replace the running build silently");
+});
+
+test("the build gate only asks once per version", async () => {
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: key => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => store.set(key, String(value)),
+    removeItem: key => store.delete(key),
+  };
+  const build = await import("../src/lib/build.js");
+  assert.equal(build.currentBuildId(), "", "no injected build id in unit tests");
+  assert.equal(build.readStoredBuild(), "");
+
+  build.writeBuild("abc1234");
+  assert.equal(build.readStoredBuild(), "abc1234");
+  build.writeBuild("");
+  assert.equal(build.readStoredBuild(), "");
+
+  // A service-worker update marks itself so the cold-start gate stays quiet.
+  build.markUpdating();
+  assert.equal(build.takePendingUpdate(), true);
+  assert.equal(build.takePendingUpdate(), false, "the flag is consumed once");
+  delete globalThis.localStorage;
 });

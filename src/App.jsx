@@ -3,6 +3,7 @@ import { T } from "./data/translations.js";
 import { interpolate, todayIndex } from "./lib/format.js";
 import { useAppData } from "./hooks/useAppData.js";
 import { usePwaUpdate } from "./hooks/usePwaUpdate.js";
+import { useVersionGate } from "./hooks/useVersionGate.js";
 import AuthScreen from "./components/AuthScreen.jsx";
 import SetupScreen from "./components/SetupScreen.jsx";
 import PlanTab from "./components/PlanTab.jsx";
@@ -18,6 +19,7 @@ import MenuEditor from "./components/MenuEditor.jsx";
 import { menuItemsFromDay } from "./lib/menus.js";
 import RecipePicker from "./components/RecipePicker.jsx";
 import { EmptyState, Toast } from "./components/ui.jsx";
+import ConnectionScreen, { SchemaNotice } from "./components/ConnectionScreen.jsx";
 import "./styles.css";
 
 const TABS = [
@@ -38,17 +40,37 @@ function LoadingScreen({ t, label }) {
   );
 }
 
-function UpdateBanner({ t, onUpdate, onDismiss }) {
+/**
+ * Blocks the app until the person chooses. The new build is already downloaded
+ * and waiting, but the old one keeps running — and the week, pantry and shopping
+ * list keep their current values — until "Update now" is tapped on purpose.
+ */
+function UpdateGate({ t, onUpdate, onLater }) {
   return (
-    <div className="update-banner" role="status" aria-live="polite">
-      <span className="update-icon" aria-hidden="true">✨</span>
-      <div className="update-copy">
-        <b>{t.updateTitle}</b>
-        <span>{t.updateBody}</span>
+    <div className="update-gate" role="dialog" aria-modal="true" aria-labelledby="update-title">
+      <div className="update-gate-card">
+        <div className="update-gate-mark" aria-hidden="true">✨</div>
+        <h2 className="update-gate-title" id="update-title">{t.updateTitle}</h2>
+        <p className="update-gate-body">{t.updateBody}</p>
+        <button type="button" className="btn btn-primary btn-block" onClick={onUpdate}>{t.updateNow}</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onLater}>{t.updateLater}</button>
+        <p className="tiny" style={{ textAlign: "center", margin: 0 }}>{t.updateHold}</p>
       </div>
-      <div className="update-actions">
-        <button type="button" className="btn btn-xs btn-primary" onClick={onUpdate}>{t.updateNow}</button>
-        <button type="button" className="btn btn-xs btn-ghost" onClick={onDismiss}>{t.updateLater}</button>
+    </div>
+  );
+}
+
+/** Cold-start twin of UpdateGate: the new build is already running, but the
+ *  person is asked before the kitchen appears. */
+function VersionGate({ t, onAccept, onLater }) {
+  return (
+    <div className="update-gate" role="dialog" aria-modal="true" aria-labelledby="version-title">
+      <div className="update-gate-card">
+        <div className="update-gate-mark" aria-hidden="true">🌿</div>
+        <h2 className="update-gate-title" id="version-title">{t.versionReadyTitle}</h2>
+        <p className="update-gate-body">{t.versionReadyBody}</p>
+        <button type="button" className="btn btn-primary btn-block" onClick={onAccept}>{t.versionOpen}</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onLater}>{t.updateLater}</button>
       </div>
     </div>
   );
@@ -59,6 +81,7 @@ export default function App() {
   const t = T[lang];
   const app = useAppData(t);
   const pwa = usePwaUpdate();
+  const version = useVersionGate(!pwa.needRefresh && !!app.household);
   const todayIdx = todayIndex();
   const [tab, setTab] = useState("plan");
   const [day, setDay] = useState(todayIdx);
@@ -201,35 +224,72 @@ export default function App() {
   };
 
   // ── Gates ─────────────────────────────────────────────────────────────────
-  if (app.authLoading) return <LoadingScreen t={t} />;
-  if (!app.session) return <AuthScreen lang={lang} setLang={setLang} onSignIn={app.signIn} onSignUp={app.signUp} />;
-  // Keep the loading screen up until the profile lookup has actually resolved,
-  // so "connect household" never flashes for an account that already has one.
-  if (app.profileLoading || !app.profileChecked) return <LoadingScreen t={t} />;
-  if (!app.profile) {
+  // The update gate is rendered on every screen (including sign-in) so a new
+  // build is offered before anything on screen can change.
+  const updateGate = pwa.needRefresh
+    ? <UpdateGate t={t} onUpdate={pwa.updateNow} onLater={pwa.dismiss} />
+    : version.pending
+      ? <VersionGate t={t} onAccept={version.accept} onLater={version.later} />
+      : null;
+
+  if (app.authLoading) return <>{<LoadingScreen t={t} />}{updateGate}</>;
+  if (!app.session) {
     return (
-      <SetupScreen
-        lang={lang}
-        setLang={setLang}
-        userEmail={app.session.user?.email}
-        onCreate={app.createHousehold}
-        onJoin={app.joinHousehold}
-        onSignOut={app.signOut}
-      />
+      <>
+        <AuthScreen lang={lang} setLang={setLang} onSignIn={app.signIn} onSignUp={app.signUp} />
+        {updateGate}
+      </>
     );
   }
-  if (!app.dataReady) return <LoadingScreen t={t} label={t.loadingKitchen} />;
+  // Keep the loading screen up until the profile lookup has actually resolved,
+  // so "connect household" never flashes for an account that already has one.
+  if (app.profileLoading || !app.profileChecked) return <>{<LoadingScreen t={t} />}{updateGate}</>;
+  if (app.profileError) {
+    return (
+      <>
+        <ConnectionScreen
+          t={t}
+          error={app.profileError}
+          host={app.backendHost}
+          lang={lang}
+          onRetry={app.retryConnection}
+          onSignOut={app.signOut}
+        />
+        {updateGate}
+      </>
+    );
+  }
+  if (!app.profile) {
+    return (
+      <>
+        <SetupScreen
+          lang={lang}
+          setLang={setLang}
+          userEmail={app.session.user?.email}
+          onCreate={app.createHousehold}
+          onJoin={app.joinHousehold}
+          onSignOut={app.signOut}
+        />
+        {updateGate}
+      </>
+    );
+  }
+  if (!app.dataReady) return <>{<LoadingScreen t={t} label={t.loadingKitchen} />}{updateGate}</>;
+  // A failed kitchen load must say *what* failed. The screen names the table,
+  // the Supabase project host and the likely fix, and always offers a retry.
   if (app.loadError && !app.household) {
     return (
-      <div className="auth-screen">
-        <div className="auth-card">
-          <EmptyState
-            icon="🛠️"
-            title={t.loadingError}
-            action={<button type="button" className="btn btn-primary btn-sm" onClick={() => app.refresh()}>{t.retry}</button>}
-          />
-        </div>
-      </div>
+      <>
+        <ConnectionScreen
+          t={t}
+          error={app.loadError}
+          host={app.backendHost}
+          lang={lang}
+          onRetry={app.retryConnection}
+          onSignOut={app.signOut}
+        />
+        {updateGate}
+      </>
     );
   }
 
@@ -257,6 +317,10 @@ export default function App() {
             </div>
           </div>
         </header>
+
+        {(app.dataIssues || []).some(issue => issue.kind === "missing_schema") && (
+          <SchemaNotice t={t} issues={app.dataIssues} />
+        )}
 
         {app.isDemo && (
           <div className="demo-banner">
@@ -377,6 +441,7 @@ export default function App() {
         lang={lang}
         setLang={setLang}
         t={t}
+        pwa={pwa}
       />
 
       <MenuEditor
@@ -400,7 +465,7 @@ export default function App() {
         onApply={handleScanResult}
       />
 
-      {pwa.needRefresh && <UpdateBanner t={t} onUpdate={pwa.updateNow} onDismiss={pwa.dismiss} />}
+      {updateGate}
 
       <Toast toast={app.toast} />
     </>

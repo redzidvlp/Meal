@@ -1,9 +1,10 @@
 name: Preview build (demo mode)
 
 # Deploys the working branch to GitHub Pages so it can be opened and tested
-# on a real phone. Add the two repository secrets to point the preview at a
-# Supabase project; without them the build starts in the labelled demo
-# household and never touches production data.
+# on a real phone. The preview stays in the labelled demo household until you
+# explicitly switch it on: set the repository variable USE_SUPABASE=true (and
+# the two Supabase secrets) under Settings → Secrets and variables → Actions.
+# This keeps a half-configured database from breaking the phone link.
 on:
   push:
     branches: ["arena/7c386ed8-meal"]
@@ -40,9 +41,10 @@ jobs:
       - name: Build preview (demo mode)
         run: npm run build
         env:
-          # Empty when the secrets are not set -> clearly labelled demo mode.
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # Demo until vars.USE_SUPABASE is "true"; an empty URL selects the
+          # local demo backend, so the link always opens on a phone.
+          VITE_SUPABASE_URL: ${{ vars.USE_SUPABASE == 'true' && secrets.VITE_SUPABASE_URL || '' }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.USE_SUPABASE == 'true' && secrets.VITE_SUPABASE_ANON_KEY || '' }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

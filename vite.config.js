@@ -38,6 +38,12 @@ export default defineConfig(({ mode }) => {
   const base = mode === "production" ? PROD_BASE : "/";
   return {
     base,
+    // The commit short SHA doubles as the visible build id in Settings, so it is
+    // easy to tell which version a phone is running. Rebuilds of the same commit
+    // keep the same id and therefore do not trigger a pointless update prompt.
+    define: {
+      __BUILD_ID__: JSON.stringify((process.env.GITHUB_SHA || "").slice(0, 7) || "dev"),
+    },
     plugins: [
       react(),
       securityMetaPlugin(),

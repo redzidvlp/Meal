@@ -13,6 +13,7 @@ function validUrl(value) {
   }
 }
 
+export const supabaseUrl = url;
 export const isSupabaseConfigured = validUrl(url) && anonKey.length > 20;
 
 if (!isSupabaseConfigured && import.meta.env.DEV) {

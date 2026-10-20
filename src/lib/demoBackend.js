@@ -171,7 +171,7 @@ export function createDemoBackend() {
     async joinHousehold() { return getProfile(); },
 
     async loadAll() {
-      return clone(fullState());
+      return { ...clone(fullState()), issues: [] };
     },
 
     subscribe(callback) {
