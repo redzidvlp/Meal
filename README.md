@@ -93,6 +93,15 @@ The anon key is safe to ship: every table is protected by row-level security, wr
 through validated RPC functions, and all access is scoped to the caller's household.
 Never put the `service_role` key in the client.
 
+### Publishing the phone preview
+
+Pushing `arena/7c386ed8-meal` deploys to GitHub Pages through
+`.github/workflows/preview.yml`. The build reads `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY` from the repository secrets with those names (Settings →
+Secrets and variables → Actions). With the secrets present the public link talks to your
+Supabase project; without them it runs the labelled demo household. The workflow also
+exposes the app at `https://<owner>.github.io/Meal/`, so you can scan it on a phone.
+
 ### Preset library
 
 `supabase/seed.sql` is generated from `src/data/presets.js`:
