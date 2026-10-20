@@ -1,7 +1,7 @@
 import { PRESET_RECIPES, PRESET_MENUS } from "../data/presets.js";
 import { mondayISO, createId } from "./format.js";
-import { applyDeltas, consumptionForRecipe } from "../engine/pantry.js";
-import { sanitizePantryItem, sanitizeRecipe, sanitizeNote, sanitizeWater } from "./validate.js";
+import { applyDeltas, applyDeltasTracked, consumptionForRecipe } from "../engine/pantry.js";
+import { sanitizePantryItem, sanitizeRecipe, sanitizeNote, sanitizeWater, sanitizeMenu, sanitizePhotoPayload } from "./validate.js";
 
 const STORAGE_KEY = "our-table-demo-v2";
 const EVENT = "our-table-demo-change";
@@ -63,6 +63,7 @@ function seedState() {
       { recipeId: "rice-bowl-with-edamame-tahini", personKey: "both", note: "A little more tahini next time — so good." },
     ],
     shoppingChecks: [],
+    menus: [],
     pantry,
     weekStart,
   };
@@ -82,6 +83,7 @@ function loadState() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
       return seeded;
     }
+    if (!Array.isArray(parsed.menus)) parsed.menus = [];
     return parsed;
   } catch {
     return seedState();
@@ -127,6 +129,7 @@ export function createDemoBackend() {
     water: state.water,
     notes: state.notes,
     shoppingChecks: state.shoppingChecks.filter(row => row.weekStart === mondayISO()),
+    menus: state.menus || [],
     pantry: state.pantry,
   });
 
@@ -247,8 +250,10 @@ export function createDemoBackend() {
         emit();
         return false;
       }
-      const applied = consumptionForRecipe(recipe, factor);
-      state.pantry = applyDeltas(state.pantry, applied);
+      const nominal = consumptionForRecipe(recipe, factor);
+      const result = applyDeltasTracked(state.pantry, nominal);
+      state.pantry = result.items;
+      const applied = result.applied;
       state.eaten = state.eaten.filter(row => !(row.day === day && row.slot === slot && row.personKey === personKey));
       state.eaten.push({ day, slot, personKey, eaten: true, applied, recipeId });
       emit();
@@ -311,6 +316,34 @@ export function createDemoBackend() {
       }
       emit();
       return state.pantry.length;
+    },
+
+    async saveMenu(input) {
+      const { ok, errors, menu } = sanitizeMenu(input, { existingId: input?.id });
+      if (!ok) throw Object.assign(new Error("Invalid menu"), { errors });
+      state.menus = (state.menus || []).filter(row => row.id !== menu.id && !(menu.presetKey && row.presetKey === menu.presetKey));
+      state.menus.push({ ...menu, updatedAt: new Date().toISOString() });
+      emit();
+      return clone(menu);
+    },
+
+    async deleteMenu(id) {
+      state.menus = (state.menus || []).filter(row => row.id !== id);
+      emit();
+      return true;
+    },
+
+    async resetMenu(presetKey) {
+      state.menus = (state.menus || []).filter(row => row.presetKey !== presetKey);
+      emit();
+      return true;
+    },
+
+    async analyzePhoto(input) {
+      const { ok, error, payload } = sanitizePhotoPayload(input);
+      if (!ok) throw Object.assign(new Error(error || "invalidImage"), { userMessage: error });
+      // Demo mode has no AI key: the sheet falls back to confirmed manual entry.
+      return { available: false, reason: "ai_offline", size: payload.image.length };
     },
 
     async setExtraPortions(value) {

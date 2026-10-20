@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { T } from "./data/translations.js";
-import { todayIndex } from "./lib/format.js";
+import { interpolate, todayIndex } from "./lib/format.js";
 import { useAppData } from "./hooks/useAppData.js";
 import AuthScreen from "./components/AuthScreen.jsx";
 import SetupScreen from "./components/SetupScreen.jsx";
@@ -12,6 +12,9 @@ import TipsTab from "./components/TipsTab.jsx";
 import SettingsSheet from "./components/SettingsSheet.jsx";
 import RecipeModal from "./components/RecipeModal.jsx";
 import RecipeEditor from "./components/RecipeEditor.jsx";
+import PhotoSheet from "./components/PhotoSheet.jsx";
+import MenuEditor from "./components/MenuEditor.jsx";
+import { menuItemsFromDay } from "./lib/menus.js";
 import RecipePicker from "./components/RecipePicker.jsx";
 import { EmptyState, Toast } from "./components/ui.jsx";
 import "./styles.css";
@@ -43,6 +46,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [viewer, setViewer] = useState(null);
   const [viewerContext, setViewerContext] = useState(null);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [menuEditor, setMenuEditor] = useState({ open: false, menu: null });
   const [editor, setEditor] = useState({ open: false, recipe: null, slot: null, context: null });
   const [picker, setPicker] = useState({ open: false, day: todayIdx, slot: null, mode: "empty", person: null, initialTab: "recipes" });
 
@@ -91,6 +96,32 @@ export default function App() {
     });
   };
 
+  const handleScanResult = result => {
+    const hour = new Date().getHours();
+    const slot = hour < 11 ? "breakfast" : hour < 15 ? "lunch" : hour < 18 ? "snack" : "dinner";
+    const ingredientName = result.name || t.scanMeal;
+    setEditor({
+      open: true,
+      recipe: {
+        isDraft: true,
+        name: { en: result.name || t.scanMeal, lt: "" },
+        emoji: "📷",
+        slot,
+        kcal: result.kcal,
+        protein: result.protein,
+        carbs: result.carbs,
+        fat: result.fat,
+        prepMinutes: 10,
+        ingredients: [{ en: ingredientName, lt: "", amount: result.portionGrams || 1, unit: result.portionGrams ? "g" : "vnt" }],
+        method: { en: "", lt: "" },
+        tags: ["vegetarian"],
+      },
+      slot,
+      context: null,
+    });
+    setScanOpen(false);
+  };
+
   const openNewRecipe = context => {
     const nextContext = context || (picker.open ? { day: picker.day, slot: picker.slot, mode: picker.mode, person: picker.person } : null);
     setPicker(previous => ({ ...previous, open: false }));
@@ -103,15 +134,40 @@ export default function App() {
     await applyRecipeTo(context, recipe);
   };
 
-  const handleApplyMenu = async menu => {
-    const targetDay = picker.day;
+  const handleApplyMenu = async (menu, targetDay = picker.day) => {
     setPicker(previous => ({ ...previous, open: false }));
     try {
       await app.applyMenu(targetDay, menu);
-      app.notify(t.menuApplied);
+      app.notify(interpolate(t.menuApplied, { day: t.dayNames[targetDay] }));
     } catch {
       // The hook already surfaced the error.
     }
+  };
+
+  const openMenuEditor = (menuOrOptions = null) => {
+    const isContext = menuOrOptions && typeof menuOrOptions === "object" && "fromDay" in menuOrOptions;
+    if (isContext) {
+      const targetDay = menuOrOptions.fromDay ?? day;
+      const items = menuItemsFromDay(app.plan[targetDay]);
+      setMenuEditor({
+        open: true,
+        menu: {
+          id: null,
+          presetKey: null,
+          name: { en: `${t.menuFromToday} · ${t.dayNames[targetDay]}`, lt: "" },
+          emoji: "📅",
+          items,
+        },
+      });
+      return;
+    }
+    setMenuEditor({ open: true, menu: menuOrOptions || null });
+  };
+
+  const handleMenuSaved = async input => {
+    const saved = await app.saveMenu(input);
+    app.notify(t.menuSaved);
+    return saved;
   };
 
   const handleEditorSaved = saved => {
@@ -200,6 +256,7 @@ export default function App() {
               onOpenRecipe={openViewer}
               onPick={openPicker}
               onOpenMenu={targetDay => openPicker({ day: targetDay, slot: null, mode: "menu", initialTab: "menus" })}
+              onScan={() => setScanOpen(true)}
             />
           )}
 
@@ -261,6 +318,7 @@ export default function App() {
         t={t}
         onClose={() => setEditor(previous => ({ ...previous, open: false }))}
         onSave={app.saveRecipe}
+        app={app}
         onDelete={handleDeleteRecipe}
         onSaved={handleEditorSaved}
       />
@@ -282,6 +340,10 @@ export default function App() {
         onSelect={handlePick}
         onApplyMenu={handleApplyMenu}
         onCreateNew={() => openNewRecipe()}
+        menus={app.menus}
+        onCreateMenu={openMenuEditor}
+        onEditMenu={menu => openMenuEditor(menu)}
+        onResetMenu={key => app.resetMenu(key).catch(() => {})}
       />
 
       <SettingsSheet
@@ -291,6 +353,27 @@ export default function App() {
         lang={lang}
         setLang={setLang}
         t={t}
+      />
+
+      <MenuEditor
+        open={menuEditor.open}
+        menu={menuEditor.menu}
+        recipes={app.recipes}
+        lang={lang}
+        t={t}
+        onClose={() => setMenuEditor(previous => ({ ...previous, open: false }))}
+        onSave={handleMenuSaved}
+        onDelete={id => app.deleteMenu(id)}
+        onReset={key => app.resetMenu(key).catch(() => {})}
+      />
+
+      <PhotoSheet
+        open={scanOpen}
+        onClose={() => setScanOpen(false)}
+        t={t}
+        app={app}
+        initialMode="meal"
+        onApply={handleScanResult}
       />
 
       <Toast toast={app.toast} />

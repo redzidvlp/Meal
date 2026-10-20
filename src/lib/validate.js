@@ -175,3 +175,62 @@ export function isInviteCode(value) {
   return /^[A-Z0-9]{6}$/.test(sanitizeInviteCode(value));
 }
 
+
+const MENU_ID_RE = /^[a-z0-9][a-z0-9-]{0,79}$/;
+const MAX_MENU_ITEMS_BYTES = 6000;
+
+/** Validates a reusable full-day menu. Preset menus can be edited by storing an override. */
+export function sanitizeMenu(input, { existingId = null } = {}) {
+  const errors = {};
+  const nameEn = cleanText(input?.name?.en, LIMITS.name);
+  const nameLt = cleanText(input?.name?.lt, LIMITS.name) || nameEn;
+  if (!nameEn) errors.name = "required";
+
+  const items = {};
+  const rawItems = input?.items && typeof input.items === "object" ? input.items : {};
+  for (const slot of SLOTS) {
+    const entry = rawItems[slot];
+    if (!entry || typeof entry !== "object") continue;
+    if (entry.both) {
+      if (!MENU_ID_RE.test(String(entry.both))) { errors.items = "invalidRecipe"; continue; }
+      items[slot] = { both: entry.both };
+      continue;
+    }
+    const row = {};
+    if (entry.R && MENU_ID_RE.test(String(entry.R))) row.R = entry.R;
+    if (entry.I && MENU_ID_RE.test(String(entry.I))) row.I = entry.I;
+    if (Object.keys(row).length) items[slot] = row;
+  }
+  if (Object.keys(items).length === 0) errors.items = "emptyMenu";
+  if (JSON.stringify(items).length > MAX_MENU_ITEMS_BYTES) errors.items = "tooLarge";
+
+  let id = existingId && MENU_ID_RE.test(existingId) ? existingId : null;
+  if (!id) {
+    const base = (slugify(nameEn) || "menu").slice(0, 56);
+    id = `menu-${base}-${Math.random().toString(36).slice(2, 6)}`;
+  }
+  const presetKey = input?.presetKey && MENU_ID_RE.test(input.presetKey) ? input.presetKey : null;
+
+  const menu = {
+    id,
+    presetKey,
+    name: { en: nameEn, lt: nameLt },
+    emoji: sanitizeEmoji(input?.emoji),
+    items,
+    diff: ["breakfast", "lunch", "snack", "dinner"].some(slot => items[slot] && !items[slot].both),
+  };
+
+  return { ok: Object.keys(errors).length === 0, errors, menu };
+}
+
+const PHOTO_DATA_RE = /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/;
+export const MAX_PHOTO_BYTES = 1_800_000; // ~1.3 MB of image data
+
+/** Returns a narrow, validated payload for the photo analysis function. */
+export function sanitizePhotoPayload(input) {
+  const image = typeof input?.image === "string" ? input.image.trim() : "";
+  const mode = input?.mode === "label" ? "label" : "meal";
+  if (!PHOTO_DATA_RE.test(image)) return { ok: false, error: "invalidImage" };
+  if (image.length > MAX_PHOTO_BYTES) return { ok: false, error: "imageTooLarge" };
+  return { ok: true, payload: { image, mode } };
+}

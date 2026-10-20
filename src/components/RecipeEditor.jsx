@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ALL_TAGS, C, SLOT_META, SLOTS, TAG_LABELS, UNITS } from "../theme.js";
 import { sanitizeRecipe } from "../lib/validate.js";
 import { Field, Sheet, ConfirmDialog, parseNumber } from "./ui.jsx";
+import PhotoSheet from "./PhotoSheet.jsx";
 
 const EMOJI_CHOICES = ["🥗", "🥣", "🍲", "🌯", "🍚", "🫘", "🍳", "🥑", "🍽️", "🥦"];
 
@@ -53,12 +54,13 @@ const errorMessage = (errors, t) => {
   return null;
 };
 
-export default function RecipeEditor({ open, recipe, defaultSlot, lang, t, onClose, onSave, onDelete, onSaved }) {
+export default function RecipeEditor({ open, recipe, defaultSlot, lang, t, app, onClose, onSave, onDelete, onSaved }) {
   const [form, setForm] = useState(() => blankForm(defaultSlot));
   const [errors, setErrors] = useState({});
   const [generalError, setGeneralError] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -139,7 +141,7 @@ export default function RecipeEditor({ open, recipe, defaultSlot, lang, t, onClo
       <Sheet
         open={open}
         onClose={onClose}
-        title={recipe ? (recipe.isPreset ? t.copyRecipeTitle : t.editRecipeTitle) : t.newRecipeTitle}
+        title={recipe && !recipe.isDraft ? (recipe.isPreset ? t.copyRecipeTitle : t.editRecipeTitle) : t.newRecipeTitle}
         subtitle={recipe?.isPreset ? t.presetNotice : t.perPortionHint}
         footer={(
           <>
@@ -197,7 +199,9 @@ export default function RecipeEditor({ open, recipe, defaultSlot, lang, t, onClo
           <div>
             <div className="row-between" style={{ marginBottom: 6 }}>
               <span className="eyebrow">{t.nutrition}</span>
-              <span className="tiny">{t.perServing}</span>
+              <button type="button" className="btn btn-xs btn-soft" onClick={() => setScanOpen(true)}>
+                📷 {t.scanLabel}
+              </button>
             </div>
             <div className="form-grid">
               <Field label={`${t.kcal} 🔥`} error={errors.kcal ? t.invalidNumber : ""}>
@@ -286,6 +290,20 @@ export default function RecipeEditor({ open, recipe, defaultSlot, lang, t, onClo
           )}
         </form>
       </Sheet>
+
+      <PhotoSheet
+        open={scanOpen}
+        onClose={() => setScanOpen(false)}
+        t={t}
+        app={app}
+        initialMode="label"
+        onApply={result => update({
+          kcal: String(Math.round(result.kcal)),
+          protein: String(result.protein),
+          carbs: String(result.carbs),
+          fat: String(result.fat),
+        })}
+      />
 
       <ConfirmDialog
         open={confirmDelete}

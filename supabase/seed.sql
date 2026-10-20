@@ -708,3 +708,107 @@ on conflict (id) do update set
   prep_minutes = excluded.prep_minutes,
   updated_at = now()
 where recipes.household_id is null;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Our Table — library day menus (generated)
+-- Household edits are stored as separate override rows; these stay untouched.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+insert into public.menus (id, household_id, preset_key, name_en, name_lt, emoji, items) values
+(
+  'menu-1',
+  null,
+  null,
+  'Menu I',
+  'I meniu',
+  '🍱',
+  '{"breakfast":{"R":"avocado-toast-with-boiled-eggs","I":"buckwheat-with-boiled-eggs-seeds"},"lunch":{"both":"roasted-vegetables-with-tofu-tahini"},"snack":{"both":"lactose-free-yogurt-with-berries"},"dinner":{"both":"rice-bowl-with-edamame-tahini"}}'::jsonb
+),
+(
+  'menu-2',
+  null,
+  null,
+  'Menu II',
+  'II meniu',
+  '🍱',
+  '{"breakfast":{"both":"gf-tortilla-with-egg-omelette-avocado"},"lunch":{"both":"baked-tofu-with-lentils-sun-dried-tomatoes"},"snack":{"both":"corn-chips"},"dinner":{"both":"soy-steaks-with-braised-vegetables-kalamata-olives"}}'::jsonb
+),
+(
+  'menu-3',
+  null,
+  null,
+  'Menu III',
+  'III meniu',
+  '🍱',
+  '{"breakfast":{"both":"shakshuka-eggs-with-gf-bread"},"lunch":{"both":"grilled-halloumi-with-quinoa-roasted-vegetables"},"snack":{"both":"baked-pear"},"dinner":{"both":"chickpea-beetroot-salad-with-orange-mustard-dressing"}}'::jsonb
+),
+(
+  'menu-4',
+  null,
+  null,
+  'Menu IV',
+  'IV meniu',
+  '🍱',
+  '{"breakfast":{"both":"chia-pudding-with-plant-protein-berries-coconut"},"lunch":{"both":"gf-toast-with-tofu-sun-dried-tomato-spread"},"snack":{"both":"kiwi"},"dinner":{"both":"quinoa-salad-with-spinach-soft-boiled-eggs-walnuts"}}'::jsonb
+),
+(
+  'menu-5',
+  null,
+  null,
+  'Menu V',
+  'V meniu',
+  '🍱',
+  '{"breakfast":{"R":"protein-smoothie-with-banana-berries","I":"overnight-oats-with-berries-nut-butter"},"lunch":{"both":"buckwheat-pasta-with-smoked-tofu-cherry-tomatoes"},"snack":{"R":"corn-chips","I":"banana-with-peanut-butter"},"dinner":{"both":"chickpea-beetroot-salad-with-orange-mustard-dressing"}}'::jsonb
+),
+(
+  'menu-6',
+  null,
+  null,
+  'Menu VI',
+  'VI meniu',
+  '🍱',
+  '{"breakfast":{"both":"baked-oatmeal-with-banana-hemp-seeds"},"lunch":{"both":"soy-teriyaki-with-gf-pasta"},"snack":{"both":"kiwi"},"dinner":{"both":"rice-with-smoked-tofu-olives-coconut-cream"}}'::jsonb
+),
+(
+  'menu-7',
+  null,
+  null,
+  'Menu VII',
+  'VII meniu',
+  '🍱',
+  '{"breakfast":{"both":"yogurt-with-chia-seeds-berries-nut-butter"},"lunch":{"both":"gf-toast-with-tofu-sun-dried-tomato-spread"},"snack":{"both":"fresh-pineapple"},"dinner":{"both":"lentil-chickpea-bowl-with-beetroot"}}'::jsonb
+),
+(
+  'menu-8',
+  null,
+  null,
+  'Menu VIII',
+  'VIII meniu',
+  '🍱',
+  '{"breakfast":{"R":"yogurt-with-banana","I":"quinoa-porridge-with-protein"},"lunch":{"both":"gf-pasta-with-tofu-broccoli-spinach-tahini"},"snack":{"R":"dried-apricots","I":"dried-apricots"},"dinner":{"both":"soy-steaks-with-braised-vegetables-kalamata-olives"}}'::jsonb
+),
+(
+  'menu-9',
+  null,
+  null,
+  'Menu IX',
+  'IX meniu',
+  '🍱',
+  '{"breakfast":{"both":"tofu-cottage-cheese-balls-with-yogurt-berries"},"lunch":{"both":"gf-tortilla-wrap-with-hummus-eggs-roasted-vegetables"},"snack":{"both":"nuts"},"dinner":{"both":"vegetarian-bowl-with-smoked-tofu-tahini-yogurt-dressing"}}'::jsonb
+),
+(
+  'menu-10',
+  null,
+  null,
+  'Menu X',
+  'X meniu',
+  '🍱',
+  '{"breakfast":{"both":"flaxseed-cracker-with-avocado-eggs"},"lunch":{"both":"millet-bowl-with-edamame-vegetables-tahini"},"snack":{"both":"nuts"},"dinner":{"both":"greek-salad-with-baked-tofu-black-olives"}}'::jsonb
+)
+on conflict (id) do update set
+  name_en = excluded.name_en,
+  name_lt = excluded.name_lt,
+  emoji = excluded.emoji,
+  items = excluded.items,
+  updated_at = now()
+where menus.household_id is null;

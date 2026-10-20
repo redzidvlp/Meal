@@ -8,7 +8,11 @@ both partners see the same plan in real time.
 
 ## Features
 
+- **Phone-first design**: one column, large tap targets, safe-area spacing, installable PWA.
 - **Weekly plan** for two people, with four meals a day (breakfast, lunch, snack, dinner).
+- **Reusable day menus**: apply a whole day in one tap to any day you choose, edit the
+  root variant once and everyone gets your version next time, or save a planned day as
+  a new menu.
 - **Same or different** for any meal: split a shared meal, change one person's portion,
   or merge two variants back into one shared meal (the app asks which variant to keep).
 - **Recipe CRUD**: edit any recipe, edit a library recipe as a personal copy, create or
@@ -24,7 +28,10 @@ both partners see the same plan in real time.
   one tap.
 - **Pantry**: stock bars, low-stock alerts, manual restocking, and automatic stock
   decreases (with exact undo) when a meal is marked eaten.
-- **EN / LT** interface, light warm-parchment design, installable PWA.
+- **Photo capture**: take a picture of a nutrition label or a plated meal and read the
+  calories and macros into the recipe editor (with a manual fallback when the AI
+  function is not configured).
+- **EN / LT** interface.
 - **Demo mode** when Supabase is not configured, so the UI can be explored without a
   backend (data is then kept in the browser only).
 
@@ -44,14 +51,16 @@ Without `.env` values the app starts in demo mode with a sample household and we
 2. In the SQL editor run, in order:
    - `supabase/schema.sql` — tables, RLS policies, grants and RPC functions.
    - `supabase/seed.sql` — the preset recipe library and preset menus.
-3. Put the project URL and anon key in `.env`:
+3. (Optional) Deploy the photo reader: `supabase functions deploy nutrition-scan`
+   and set `AI_API_KEY` as described in `supabase/functions/nutrition-scan/README.md`.
+4. Put the project URL and anon key in `.env`:
 
 ```bash
 VITE_SUPABASE_URL=https://<project>.supabase.co
 VITE_SUPABASE_ANON_KEY=<anon-key>
 ```
 
-4. Run the app, sign up, create a household, open **Settings** and share the 6-character
+5. Run the app, sign up, create a household, open **Settings** and share the 6-character
    invite code with your partner. They sign up, choose *Join household* and enter it.
 
 The anon key is safe to ship: every table is protected by row-level security, writes go
@@ -78,7 +87,7 @@ Do not hand-edit the SQL seed; change the JS data and regenerate.
 | `npm test` | Engine + validation unit tests (`node --test`) |
 | `npm run test:ui` | Render smoke test of the whole app in jsdom |
 | `npm run test:flows` | End-to-end workflow test in jsdom (eat/undo, split/merge, picker, shopping, recipes, pantry, reset) |
-| `npm run seed:sql` | Regenerate `supabase/seed.sql` |
+| `npm run seed:sql` | Regenerate `supabase/seed.sql` (recipes + library menus) |
 
 The UI tests run against the demo backend; they need no browser or network.
 
@@ -98,7 +107,9 @@ src/
   engine/pantry.js        stock deltas, low stock, coverage
   engine/recommend.js     scoring and filters for suggestions
   data/presets.js         38 vegetarian preset recipes + 10 preset menus
+  lib/menus.js            library menus + household overrides
   data/translations.js    EN / LT strings
+supabase/functions/nutrition-scan/  photo → nutrition Edge Function
 supabase/schema.sql       schema, RLS, RPCs, realtime publication
 ```
 

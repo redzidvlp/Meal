@@ -1,5 +1,5 @@
 import { mondayISO, createId } from "./format.js";
-import { sanitizePantryItem, sanitizeRecipe, sanitizeNote, sanitizeWater } from "./validate.js";
+import { sanitizePantryItem, sanitizeRecipe, sanitizeNote, sanitizeWater, sanitizeMenu, sanitizePhotoPayload } from "./validate.js";
 
 const mapProfile = row => row && ({
   id: row.id,
@@ -38,6 +38,14 @@ export const mapRecipeRow = row => row && ({
   vegetarian: row.vegetarian !== false,
   prepMinutes: Number(row.prep_minutes) || 0,
   updatedAt: row.updated_at,
+});
+
+const mapMenuRow = row => row && ({
+  id: row.id,
+  presetKey: row.preset_key || null,
+  name: { en: row.name_en, lt: row.name_lt || row.name_en },
+  emoji: row.emoji || "🍱",
+  items: row.items && typeof row.items === "object" ? row.items : {},
 });
 
 const mapAssignment = row => ({
@@ -169,9 +177,10 @@ export function createSupabaseBackend(client) {
         client.from("recipe_notes").select("*").eq("household_id", hid),
         client.from("shopping_checks").select("*").eq("household_id", hid).eq("week_start", mondayISO()),
         client.from("pantry").select("*").eq("household_id", hid),
+        client.from("menus").select("*").eq("household_id", hid),
       ]);
       results.forEach(({ error }) => raise(error));
-      const [household, profiles, recipes, assignments, eaten, water, notes, checks, pantry] = results;
+      const [household, profiles, recipes, assignments, eaten, water, notes, checks, pantry, menus] = results;
 
       return {
         household: mapHousehold(household.data),
@@ -190,6 +199,7 @@ export function createSupabaseBackend(client) {
         notes: (notes.data || []).map(row => ({ recipeId: row.recipe_id, personKey: row.person_key, note: row.note })),
         shoppingChecks: (checks.data || []).map(row => ({ weekStart: row.week_start, itemKey: row.item_key, checked: row.checked })),
         pantry: (pantry.data || []).map(mapPantry),
+        menus: (menus.data || []).map(mapMenuRow),
       };
     },
 
@@ -202,7 +212,7 @@ export function createSupabaseBackend(client) {
         timer = setTimeout(callback, 220);
       };
       const channel = client.channel(`household-${hid}`);
-      const tables = ["meal_assignments", "eaten", "water", "recipe_notes", "shopping_checks", "pantry", "recipes"];
+      const tables = ["meal_assignments", "eaten", "water", "recipe_notes", "shopping_checks", "pantry", "recipes", "menus"];
       for (const table of tables) {
         channel.on("postgres_changes", { event: "*", schema: "public", table, filter: `household_id=eq.${hid}` }, trigger);
       }
@@ -378,6 +388,62 @@ export function createSupabaseBackend(client) {
       const { error } = await client.rpc("add_pantry_stock", { p_items: payload });
       raise(error);
       return payload.length;
+    },
+
+    async saveMenu(input) {
+      const { ok, errors, menu } = sanitizeMenu(input, { existingId: input?.id });
+      if (!ok) throw Object.assign(new Error("Invalid menu"), { errors });
+
+      if (menu.presetKey) {
+        // Editing a library menu stores a single override keyed to the preset.
+        const { data: preset, error: presetError } = await client
+          .from("menus").select("id").is("household_id", null).eq("id", menu.presetKey).maybeSingle();
+        raise(presetError);
+        if (!preset) throw new Error("Unknown library menu");
+        const { error } = await client.rpc("save_menu", {
+          p_id: null,
+          p_preset_key: menu.presetKey,
+          p_name_en: menu.name.en,
+          p_name_lt: menu.name.lt,
+          p_emoji: menu.emoji,
+          p_items: menu.items,
+        });
+        raise(error);
+        return menu;
+      }
+
+      const { error } = await client.rpc("save_menu", {
+        p_id: menu.id,
+        p_preset_key: null,
+        p_name_en: menu.name.en,
+        p_name_lt: menu.name.lt,
+        p_emoji: menu.emoji,
+        p_items: menu.items,
+      });
+      raise(error);
+      return menu;
+    },
+
+    async deleteMenu(id) {
+      const { error } = await client.from("menus").delete().eq("id", id).eq("household_id", ctx.householdId);
+      raise(error);
+      return true;
+    },
+
+    async resetMenu(presetKey) {
+      const { error } = await client.from("menus").delete()
+        .eq("household_id", ctx.householdId).eq("preset_key", presetKey);
+      raise(error);
+      return true;
+    },
+
+    async analyzePhoto(input) {
+      const { ok, error, payload } = sanitizePhotoPayload(input);
+      if (!ok) throw Object.assign(new Error(error || "invalidImage"), { userMessage: error });
+      const { data, error: invokeError } = await client.functions.invoke("nutrition-scan", { body: payload });
+      raise(invokeError);
+      if (!data || data.available !== true) return { available: false, reason: data?.reason || "ai_offline", size: payload.image.length };
+      return { available: true, mode: payload.mode, nutrition: data.nutrition || null, items: Array.isArray(data.items) ? data.items : [] };
     },
 
     async setExtraPortions(value) {

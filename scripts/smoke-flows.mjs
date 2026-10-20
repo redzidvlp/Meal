@@ -64,6 +64,16 @@ const setInput = async (input, value) => {
   });
 };
 
+const chooseSelect = async (select, value) => {
+  if (!select) throw new Error("select target missing");
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLSelectElement.prototype, "value").set;
+  await act(async () => {
+    setter.call(select, value);
+    select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    await sleep(60);
+  });
+};
+
 const nav = label => click(button(label, document.querySelector(".bottom-nav")), 250);
 const sheet = () => document.querySelector(".sheet");
 const confirmDialog = () => document.querySelector(".modal-backdrop.center");
@@ -74,20 +84,22 @@ await sleep(350);
 
 // 1. Eaten → pantry decreases → undo restores.
 await nav("Plan");
-const beforeBread = state().pantry.find(item => item.key === "gf-bread" && item.unit === "g")?.quantity;
-assert(typeof beforeBread === "number", "demo pantry has gf bread");
-const ate = button("🍴");
+const pantryTotal = () => state().pantry.reduce((sum, item) => sum + item.quantity, 0);
+const beforeTotal = pantryTotal();
+const ate = [...document.querySelectorAll("button")].find(el => el.textContent.includes("Ate it"));
 assert(ate, "ate button exists");
-await click(ate, 400);
-const afterBread = state().pantry.find(item => item.key === "gf-bread" && item.unit === "g")?.quantity;
-assert(afterBread < beforeBread, `pantry should decrease (${beforeBread} → ${afterBread})`);
-console.log(`EAT: gf bread ${beforeBread} → ${afterBread} g`);
+await click(ate, 450);
+const afterTotal = pantryTotal();
+assert(afterTotal < beforeTotal, `pantry should decrease (${beforeTotal} → ${afterTotal})`);
+const eatenRow = state().eaten.find(row => row.eaten);
+assert(eatenRow, "meal marked as eaten");
+console.log(`EAT: ${eatenRow.slot} on day ${eatenRow.day} used ${eatenRow.applied.length} pantry items (${beforeTotal} → ${afterTotal})`);
 
 const undo = button("✓");
 assert(undo, "eaten state rendered");
-await click(undo, 400);
-const restored = state().pantry.find(item => item.key === "gf-bread" && item.unit === "g")?.quantity;
-assert(restored === beforeBread, `pantry should restore (${restored})`);
+await click(undo, 450);
+const restored = pantryTotal();
+assert(restored === beforeTotal, `pantry should restore (${restored} vs ${beforeTotal})`);
 console.log("UNDO EAT: pantry restored");
 
 // 2. Split a shared meal, then merge it back.
@@ -189,7 +201,8 @@ const editorSheet = [...document.querySelectorAll(".sheet")].at(-1);
 await click(button("Save", editorSheet.querySelector(".sheet-foot")), 1000);
 const openClose = document.querySelector(".sheet .close-btn");
 if (openClose) await click(openClose, 300);
-const updatedPlanRow = state().assignments.find(row => row.day === 0 && row.slot === "breakfast");
+const activeDay = eatenRow?.day ?? 0;
+const updatedPlanRow = state().assignments.find(row => row.day === activeDay && row.slot === "breakfast");
 const updatedRecipe = state().recipes.find(recipe => recipe.id === updatedPlanRow.recipeId);
 assert(updatedRecipe?.ingredients[0].amount === 777, "edited recipe is saved onto the slot");
 await nav("Shopping");
@@ -197,6 +210,52 @@ const rowAfterEdit = shopRowFor();
 const qtyAfterEdit = qtyOf(rowAfterEdit);
 assert(qtyAfterEdit > qtyBeforeEdit, `shopping quantity follows recipe edit (${qtyBeforeEdit} → ${qtyAfterEdit})`);
 console.log(`EDIT RECIPE: ${editedIngredient} ${qtyBeforeEdit} → ${qtyAfterEdit} in the shopping list`);
+
+// 3d. Day menus: edit a library menu once, and the edited root variant is what comes back.
+await nav("Plan");
+await click(button("Change"), 300);
+await click(button("Menus"), 300);
+const menuCards = [...document.querySelectorAll(".menu-card")];
+assert(menuCards.length >= 5, `menu library renders (${menuCards.length} menus)`);
+const firstMenu = menuCards[0];
+const menuLabel = card => (card.querySelector(".menu-name")?.textContent || "").replace(/[^\p{L}\p{N} ]/gu, "").trim();
+const firstMenuName = menuLabel(firstMenu);
+await click(button("Edit", firstMenu), 500);
+assert(document.querySelector(".menu-edit-slot"), "menu editor opened");
+const editorSelects = [...document.querySelectorAll(".menu-edit-slot select")];
+assert(editorSelects.length >= 4, "menu editor lists a selector per day part");
+const morningSelect = editorSelects[0];
+const morningOptions = [...morningSelect.options].filter(option => option.value && option.value !== morningSelect.value);
+assert(morningOptions.length > 0, "menu slot offers alternative recipes");
+const replacement = { id: morningOptions[0].value, name: { en: morningOptions[0].textContent.replace(/^\S+\s/, "") } };
+await chooseSelect(morningSelect, replacement.id);
+await click(button("Save", [...document.querySelectorAll(".sheet-foot")].at(-1)), 900);
+await click(button("Menus", [...document.querySelectorAll(".sheet")].at(-1)), 300);
+const editedCard = [...document.querySelectorAll(".menu-card")]
+  .find(card => menuLabel(card) === firstMenuName);
+assert(editedCard, "menu is still listed after editing");
+assert(editedCard.textContent.includes("✏️"), "edited menu is flagged as a household variant");
+assert(editedCard.textContent.includes(replacement.name.en.slice(0, 10)), `edited root variant shows the new meal (${replacement.name.en})`);
+
+const menuSheet = [...document.querySelectorAll(".sheet")].at(-1);
+const wedChip = [...menuSheet.querySelectorAll("button.chip")].find(chip => chip.textContent === "Wed");
+assert(wedChip, "day chooser offers Wed");
+await click(wedChip, 250);
+const applyButton = [...editedCard.querySelectorAll("button")].find(el => el.textContent.includes("Apply to") || el.textContent.includes("Use this menu"));
+assert(applyButton.textContent.includes("Wed"), `apply button names the chosen day (${applyButton.textContent})`);
+await click(applyButton, 900);
+const appliedRows = state().assignments.filter(row => row.recipeId === replacement.id);
+assert(appliedRows.some(row => Number(row.day) === 2), "edited menu applied to Wednesday, not a random day");
+assert(state().assignments.filter(row => Number(row.day) === 2).length >= 4, "the whole day was filled");
+console.log(`DAY MENUS: edited "${firstMenuName}" root variant, applied to Wednesday`);
+
+await click(button("Change"), 300);
+await click(button("Menus"), 300);
+const reopened = [...document.querySelectorAll(".menu-card")]
+  .find(card => menuLabel(card) === firstMenuName);
+assert(reopened.textContent.includes(replacement.name.en.slice(0, 10)), "edited variant persists when the menu is reopened");
+console.log("DAY MENUS: edit persists as the new root variant");
+await click(document.querySelector(".sheet .close-btn"), 300);
 
 // 4. Sous-chef: add a suggestion to the plan.
 await nav("Sous-chef");
@@ -262,6 +321,24 @@ assert(text().includes("Planas"), "Lithuanian nav");
 console.log("LANGUAGE: Lithuanian renders");
 await click(document.querySelector(".header-actions .lang-btn"), 350);
 assert(text().includes("Our Table"), "English UI restored");
+
+// 7b. Photo capture entry points.
+await nav("Plan");
+await click(document.querySelector(".scan-btn"), 350);
+assert(document.querySelector(".sheet-title")?.textContent.includes("Snap it"), "photo sheet opened from the plan");
+const scanTabs = [...document.querySelectorAll(".sheet .segmented button")].map(el => el.textContent);
+assert(scanTabs.some(label => label.includes("Meal photo")) && scanTabs.some(label => label.includes("Nutrition label")), "photo sheet offers meal and label modes");
+assert(button("Take a photo", document.querySelector(".sheet")), "camera action present");
+await click(document.querySelector(".sheet .close-btn"), 250);
+
+await click(button("Change"), 300);
+await click(button("New recipe", [...document.querySelectorAll(".sheet")].at(-1)), 400);
+const editor = [...document.querySelectorAll(".sheet")].at(-1);
+await click(button("Nutrition label", editor), 350);
+assert([...document.querySelectorAll(".sheet-title")].some(el => el.textContent.includes("Snap it")), "photo sheet opened from the recipe editor");
+await click([...document.querySelectorAll(".sheet .close-btn")].at(-1), 300);
+await click(button("Cancel", [...document.querySelectorAll(".sheet-foot")].at(-1)), 300);
+console.log("PHOTO: camera sheet reachable from the plan and the recipe editor");
 
 // 8. Week reset keeps pantry, clears plan.
 await nav("Pantry");

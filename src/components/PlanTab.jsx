@@ -37,7 +37,7 @@ function PersonTotals({ personKey, name, full, eaten, meals, eatenMeals, t }) {
   );
 }
 
-export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRecipe, onPick, onOpenMenu }) {
+export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRecipe, onPick, onOpenMenu, onScan }) {
   const dayPlan = app.plan[day];
   const [remove, setRemove] = useState(null);
   const [merge, setMerge] = useState(null);
@@ -109,9 +109,14 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
           <div className="eyebrow">{t.planTitle}</div>
           <h1 className="page-title" style={{ fontSize: 24 }}>{dateLabel}</h1>
         </div>
-        <button type="button" className="btn btn-sm btn-soft" onClick={() => onOpenMenu(day)}>
-          🍱 {t.dayMenu}
-        </button>
+        <div className="row" style={{ gap: 6 }}>
+          <button type="button" className="btn btn-sm btn-soft" onClick={() => onOpenMenu(day)}>
+            🍱 {t.dayMenu}
+          </button>
+          <button type="button" className="icon-btn scan-btn" onClick={onScan} aria-label={t.scanTitle} title={t.scanTitle}>
+            📷
+          </button>
+        </div>
       </div>
 
       <div className="day-strip" role="tablist" aria-label={t.planTitle}>

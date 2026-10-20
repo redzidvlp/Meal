@@ -3,7 +3,7 @@
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { PRESET_RECIPES } from "../src/data/presets.js";
+import { PRESET_RECIPES, PRESET_MENUS } from "../src/data/presets.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -61,5 +61,32 @@ on conflict (id) do update set
 where recipes.household_id is null;
 `;
 
-writeFileSync(join(root, "supabase", "seed.sql"), sql, "utf8");
-console.log(`Wrote supabase/seed.sql with ${PRESET_RECIPES.length} recipes.`);
+const menuRows = PRESET_MENUS.map(menu => `(
+  ${sqlString(menu.id)},
+  null,
+  null,
+  ${sqlString(menu.name.en)},
+  ${sqlString(menu.name.lt)},
+  ${sqlString(menu.emoji || "🍱")},
+  ${sqlString(JSON.stringify(menu.items))}::jsonb
+)`).join(",\n");
+
+const menuSql = `
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Our Table — library day menus (generated)
+-- Household edits are stored as separate override rows; these stay untouched.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+insert into public.menus (id, household_id, preset_key, name_en, name_lt, emoji, items) values
+${menuRows}
+on conflict (id) do update set
+  name_en = excluded.name_en,
+  name_lt = excluded.name_lt,
+  emoji = excluded.emoji,
+  items = excluded.items,
+  updated_at = now()
+where menus.household_id is null;
+`;
+
+writeFileSync(join(root, "supabase", "seed.sql"), sql + menuSql, "utf8");
+console.log(`Wrote supabase/seed.sql with ${PRESET_RECIPES.length} recipes and ${PRESET_MENUS.length} menus.`);

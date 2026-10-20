@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { C, SLOT_META, SLOTS } from "../theme.js";
-import { PRESET_MENUS } from "../data/presets.js";
 import { fmtNum, interpolate } from "../lib/format.js";
+import { menuTotals } from "../lib/menus.js";
 import { sanitizeSearch } from "../lib/validate.js";
 import { Chip, EmptyState, Segmented, Sheet } from "./ui.jsx";
 
 export default function RecipePicker({
-  open, onClose, day, slot, mode, person, currentRecipe, recipes, recipesById, lang, t, people = {}, initialTab = "recipes", onSelect, onApplyMenu, onCreateNew,
+  open, onClose, day, slot, mode, person, currentRecipe, recipes, recipesById, menus = [], lang, t, people = {}, initialTab = "recipes",
+  onSelect, onApplyMenu, onCreateNew, onCreateMenu, onEditMenu, onResetMenu,
 }) {
   const [tab, setTab] = useState(initialTab);
+  const [applyDay, setApplyDay] = useState(day ?? 0);
   const [query, setQuery] = useState("");
   const [filterSlot, setFilterSlot] = useState("all");
 
@@ -17,7 +19,8 @@ export default function RecipePicker({
     setTab(initialTab || "recipes");
     setQuery("");
     setFilterSlot("all");
-  }, [open, initialTab]);
+    setApplyDay(day ?? 0);
+  }, [open, initialTab, day]);
 
   const search = sanitizeSearch(query);
 
@@ -129,46 +132,80 @@ export default function RecipePicker({
           )}
         </>
       ) : (
-        <div className="stack" style={{ gap: 8, marginTop: 14 }}>
-          {PRESET_MENUS.map(menu => (
-            <div key={menu.id} className="card card-pad" style={{ padding: 12, boxShadow: "none" }}>
-              <div className="row-between" style={{ marginBottom: 8 }}>
-                <div>
-                  <div style={{ fontFamily: "var(--display)", fontSize: 14.5 }}>{menu.name[lang]}</div>
-                  <div className="tiny">🔥 ~{fmtNum(menuTotal(menu))} {t.kcal} · {t.dayTotal}</div>
-                </div>
-                {menu.diff && <Chip as="span" tone="amber">✂️ {t.menuDiffNote}</Chip>}
-              </div>
-              <div className="stack" style={{ gap: 5, marginBottom: 10 }}>
-                {SLOTS.map(slotKey => {
-                  const entry = menu.items[slotKey];
-                  if (!entry) return null;
-                  const recipesForSlot = entry.both
-                    ? [[null, recipesById.get(entry.both)]]
-                    : [["R", recipesById.get(entry.R)], ["I", recipesById.get(entry.I)]];
-                  const available = recipesForSlot.filter(([, recipe]) => recipe);
-                  return (
-                    <div key={slotKey} className="row" style={{ gap: 8, alignItems: "flex-start" }}>
-                      <span className="slot-label" style={{ width: 58, flexShrink: 0, paddingTop: 2 }}>{SLOT_META[slotKey][lang]}</span>
-                      <span style={{ fontSize: 12, lineHeight: 1.5, color: C.inkSoft }}>
-                        {available.map(([personKey, recipe]) => (
-                          <span key={recipe.id} style={{ display: "block" }}>
-                            {recipe.emoji} {recipe.name?.[lang] || recipe.name?.en}
-                            {personKey && (
-                              <span className="tiny"> · {people[personKey] || t.personFallback[personKey]}</span>
-                            )}
-                          </span>
-                        ))}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-              <button type="button" className="btn btn-sm btn-primary btn-block" onClick={() => onApplyMenu(menu)}>
-                {t.menuApply}
-              </button>
+        <div className="stack" style={{ gap: 10, marginTop: 14 }}>
+          <div className="row" style={{ gap: 8 }}>
+            <button type="button" className="btn btn-sm btn-soft" style={{ flex: 1 }} onClick={onCreateMenu}>
+              ＋ {t.menuNew}
+            </button>
+            <button type="button" className="btn btn-sm btn-soft" style={{ flex: 1 }} onClick={() => onCreateMenu({ fromDay: day })}>
+              📅 {t.menuFromToday}
+            </button>
+          </div>
+
+          <div className="card card-pad" style={{ padding: "10px 12px" }}>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>{t.menuDayLabel}</div>
+            <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
+              {t.dayNames.map((name, index) => (
+                <Chip key={name} active={applyDay === index} onClick={() => setApplyDay(index)}>{name}</Chip>
+              ))}
             </div>
-          ))}
+          </div>
+
+          {menus.map(menu => {
+            const totals = menuTotals(menu, recipesById);
+            return (
+              <div key={menu.id} className="card card-pad menu-card">
+                <div className="row-between" style={{ marginBottom: 8 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="menu-name">{menu.emoji} {menu.name?.[lang] || menu.name?.en}</div>
+                    <div className="tiny">🔥 ~{fmtNum(totals.kcal)} {t.kcal} · {t.dayTotal}</div>
+                  </div>
+                  <div className="row" style={{ gap: 4 }}>
+                    {menu.diff && <Chip as="span" tone="amber">✂️ {t.menuDiffNote}</Chip>}
+                    {menu.overridden && <span className="chip sage static">✏️ {t.menuEdit}</span>}
+                  </div>
+                </div>
+                <div className="stack" style={{ gap: 5, marginBottom: 10 }}>
+                  {SLOTS.map(slotKey => {
+                    const entry = menu.items[slotKey];
+                    if (!entry) return null;
+                    const recipesForSlot = entry.both
+                      ? [[null, recipesById.get(entry.both)]]
+                      : [["R", recipesById.get(entry.R)], ["I", recipesById.get(entry.I)]];
+                    const available = recipesForSlot.filter(([, recipe]) => recipe);
+                    return (
+                      <div key={slotKey} className="row" style={{ gap: 8, alignItems: "flex-start" }}>
+                        <span className="slot-label" style={{ width: 58, flexShrink: 0, paddingTop: 2 }}>{SLOT_META[slotKey][lang]}</span>
+                        <span style={{ fontSize: 12, lineHeight: 1.5, color: C.inkSoft }}>
+                          {available.map(([personKey, recipe]) => (
+                            <span key={`${personKey || "both"}-${recipe.id}`} style={{ display: "block" }}>
+                              {recipe.emoji} {recipe.name?.[lang] || recipe.name?.en}
+                              {personKey && (
+                                <span className="tiny"> · {people[personKey] || t.personFallback[personKey]}</span>
+                              )}
+                            </span>
+                          ))}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="row" style={{ gap: 6 }}>
+                  <button type="button" className="btn btn-sm btn-primary" style={{ flex: 1.5 }} onClick={() => onApplyMenu(menu, applyDay)}>
+                    {interpolate(t.menuApplyTo, { day: t.dayNames[applyDay] })}
+                  </button>
+                  <button type="button" className="btn btn-sm btn-soft" onClick={() => onEditMenu(menu)}>
+                    ✏️ {t.menuEdit}
+                  </button>
+                  {menu.overridden && (
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => onResetMenu(menu.presetKey)} title={t.menuReset}>
+                      ↺
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </Sheet>

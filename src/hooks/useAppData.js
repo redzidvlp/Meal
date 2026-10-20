@@ -3,6 +3,8 @@ import { api, isDemo } from "../lib/api.js";
 import { buildPlan } from "../engine/plan.js";
 import { buildShoppingList } from "../engine/shopping.js";
 import { lowItems } from "../engine/pantry.js";
+import { mergeMenus } from "../lib/menus.js";
+import { PRESET_MENUS } from "../data/presets.js";
 import { mondayISO, debounce } from "../lib/format.js";
 
 const EMPTY = {
@@ -14,6 +16,7 @@ const EMPTY = {
   water: [],
   notes: [],
   shoppingChecks: [],
+  menus: [],
   pantry: [],
 };
 
@@ -217,6 +220,8 @@ export function useAppData(t = {}) {
 
   const lowPantry = useMemo(() => lowItems(data.pantry), [data.pantry]);
 
+  const menus = useMemo(() => mergeMenus(PRESET_MENUS, data.menus), [data.menus]);
+
   // ── Actions ───────────────────────────────────────────────────────────────
   const guarded = useCallback(async (fn, successMessage = null) => {
     try {
@@ -289,6 +294,38 @@ export function useAppData(t = {}) {
       notify(t.savingFailed || "Could not save water.", "error");
     });
   }, [notify, t.savingFailed]);
+
+  const saveMenu = useCallback(async input => {
+    try {
+      const saved = await api.saveMenu(input);
+      await refresh();
+      return saved;
+    } catch (error) {
+      console.error(error);
+      if (error?.errors) throw error;
+      notify(t.savingFailed || "Could not save the menu.", "error");
+      throw error;
+    }
+  }, [refresh, notify, t.savingFailed]);
+
+  const deleteMenu = useCallback(async id => {
+    await guarded(() => api.deleteMenu(id), t.menuDeleted || "Menu deleted");
+  }, [guarded, t.menuDeleted]);
+
+  const resetMenu = useCallback(async presetKey => {
+    await guarded(() => api.resetMenu(presetKey), t.menuResetDone || "Original menu restored");
+  }, [guarded, t.menuResetDone]);
+
+  const analyzePhoto = useCallback(async input => {
+    try {
+      return await api.analyzePhoto(input);
+    } catch (error) {
+      if (error?.userMessage) {
+        notify(error.userMessage === "imageTooLarge" ? (t.scanFailed || "That photo is too large.") : (t.scanFailed || "That photo could not be read."), "error");
+      }
+      throw error;
+    }
+  }, [notify, t.scanFailed]);
 
   const saveNote = useCallback(async (recipeId, personKey, note) => {
     try {
@@ -384,6 +421,7 @@ export function useAppData(t = {}) {
     pantry: data.pantry,
     lowPantry,
     shoppingList,
+    menus,
     extraPortions,
     weekStart,
     authLoading,
@@ -409,6 +447,10 @@ export function useAppData(t = {}) {
     toggleShoppingItem,
     clearShoppingChecks,
     saveRecipe,
+    saveMenu,
+    deleteMenu,
+    resetMenu,
+    analyzePhoto,
     deleteRecipe,
     savePantryItem,
     deletePantryItem,

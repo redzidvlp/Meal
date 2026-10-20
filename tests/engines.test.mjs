@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { sanitizeRecipe, sanitizePantryItem, sanitizeInviteCode, isInviteCode, sanitizeNote } from "../src/lib/validate.js";
+import { sanitizeRecipe, sanitizePantryItem, sanitizeInviteCode, isInviteCode, sanitizeNote, sanitizeMenu, sanitizePhotoPayload } from "../src/lib/validate.js";
 import { ingredientKey, findForbiddenIngredients } from "../src/lib/ingredients.js";
 import { buildPlan, mealFactor, eatenTotals } from "../src/engine/plan.js";
 import { buildShoppingList } from "../src/engine/shopping.js";
-import { applyDeltas, consumptionForRecipe, isLow, lowItems, pantryCoverage } from "../src/engine/pantry.js";
+import { applyDeltas, applyDeltasTracked, consumptionForRecipe, isLow, lowItems, pantryCoverage } from "../src/engine/pantry.js";
 import { suggestRecipes, isVegetarianSafe } from "../src/engine/recommend.js";
-import { PRESET_RECIPES } from "../src/data/presets.js";
+import { PRESET_RECIPES, PRESET_MENUS } from "../src/data/presets.js";
+import { mergeMenus, menuTotals, menuItemsFromDay } from "../src/lib/menus.js";
 
 const makeRecipe = (overrides = {}) => ({
   id: "test-a",
@@ -351,4 +352,88 @@ test("suggestion target drives the match percentage", () => {
   const off = suggestRecipes({ recipes: [recipe], target: { kcal: 750, protein: 25, carbs: 45, fat: 20 }, slot: "lunch" })[0];
   assert.ok(exact.nutritionPct > off.nutritionPct);
   assert.ok(exact.score > off.score);
+});
+
+test("a clamped pantry subtraction is reported so undo restores exactly", () => {
+  const pantry = [
+    { key: "tomato", unit: "g", quantity: 180, lowThreshold: 100 },
+    { key: "eggs", unit: "vnt", quantity: 6, lowThreshold: 2 },
+  ];
+  const result = applyDeltasTracked(pantry, [
+    { itemKey: "tomato|g", delta: -200 },
+    { itemKey: "eggs|vnt", delta: -2 },
+  ]);
+  assert.equal(result.items[0].quantity, 0);
+  assert.equal(result.items[1].quantity, 4);
+  assert.deepEqual(result.applied, [
+    { itemKey: "tomato|g", delta: -180 },
+    { itemKey: "eggs|vnt", delta: -2 },
+  ]);
+
+  const undo = applyDeltasTracked(result.items, result.applied.map(row => ({ itemKey: row.itemKey, delta: -row.delta })));
+  assert.equal(undo.items[0].quantity, 180);
+  assert.equal(undo.items[1].quantity, 6);
+});
+
+test("menu overrides replace the library root variant", () => {
+  const preset = PRESET_MENUS[0];
+  const merged = mergeMenus(PRESET_MENUS, []);
+  assert.equal(merged.length, PRESET_MENUS.length);
+  assert.equal(merged[0].isPreset, true);
+
+  const edited = mergeMenus(PRESET_MENUS, [{
+    id: "override-1",
+    presetKey: preset.id,
+    name: { en: "My Monday", lt: "Mano pirmadienis" },
+    emoji: "📅",
+    items: { breakfast: { both: "kiwi" } },
+  }]);
+  assert.equal(edited.length, PRESET_MENUS.length);
+  const first = edited.find(menu => menu.id === preset.id);
+  assert.equal(first.name.en, "My Monday");
+  assert.equal(first.overridden, true);
+  assert.equal(first.isPreset, false);
+  assert.deepEqual(first.items, { breakfast: { both: "kiwi" } });
+
+  const custom = mergeMenus(PRESET_MENUS, [{ id: "menu-custom-1", name: { en: "Custom" }, items: { lunch: { both: "kiwi" } } }]);
+  assert.equal(custom.length, PRESET_MENUS.length + 1);
+});
+
+test("day menu totals count two portions for shared meals", () => {
+  const recipesById = new Map(PRESET_RECIPES.map(recipe => [recipe.id, recipe]));
+  const menu = { items: { breakfast: { both: "kiwi" }, lunch: { R: "kiwi", I: "kiwi" } } };
+  const totals = menuTotals(menu, recipesById);
+  assert.equal(totals.portions, 4);
+  assert.equal(totals.kcal, Math.round((recipesById.get("kiwi").kcal * 4) * 10) / 10);
+});
+
+test("menus can be captured from a planned day and validated", () => {
+  const dayPlan = {
+    breakfast: { mode: "both", recipes: { R: { id: "kiwi" }, I: { id: "kiwi" } } },
+    lunch: { mode: "split", recipes: { R: { id: "kiwi" }, I: { id: "nuts" } } },
+    snack: { mode: "empty", recipes: {} },
+  };
+  const items = menuItemsFromDay(dayPlan);
+  assert.deepEqual(items, { breakfast: { both: "kiwi" }, lunch: { R: "kiwi", I: "nuts" } });
+
+  const good = sanitizeMenu({ name: { en: "Saved day" }, items });
+  assert.equal(good.ok, true);
+  assert.equal(good.menu.diff, true);
+
+  const empty = sanitizeMenu({ name: { en: "Nothing" }, items: {} });
+  assert.equal(empty.ok, false);
+  assert.ok(empty.errors.items);
+
+  const badIds = sanitizeMenu({ name: { en: "Bad" }, items: { lunch: { both: "../../etc/passwd" } } });
+  assert.equal(badIds.ok, false);
+});
+
+test("photo payloads accept only small image data urls", () => {
+  const png = "data:image/png;base64,iVBORw0KGgo=";
+  assert.equal(sanitizePhotoPayload({ image: png, mode: "label" }).ok, true);
+  assert.equal(sanitizePhotoPayload({ image: png, mode: "meal" }).payload.mode, "meal");
+  assert.equal(sanitizePhotoPayload({ image: "https://example.com/a.jpg" }).ok, false);
+  assert.equal(sanitizePhotoPayload({ image: "javascript:alert(1)" }).ok, false);
+  assert.equal(sanitizePhotoPayload({ image: "data:image/svg+xml;base64,abc" }).ok, false);
+  assert.equal(sanitizePhotoPayload({ image: `data:image/jpeg;base64,${"A".repeat(2_000_000)}` }).ok, false);
 });

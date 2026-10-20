@@ -13,20 +13,32 @@ export function consumptionForRecipe(recipe, factor = 1) {
   }));
 }
 
-/** Applies a list of { itemKey, delta } to pantry rows, never below zero. */
-export function applyDeltas(items, deltas) {
+/**
+ * Applies { itemKey, delta } rows to the pantry, never below zero, and reports the
+ * delta that actually landed. Callers store the reported value so undo restores the
+ * stock that was really used (a clamped subtraction must not add stock back).
+ */
+export function applyDeltasTracked(items, deltas) {
   const byKey = new Map();
   for (const d of deltas) {
     byKey.set(d.itemKey, (byKey.get(d.itemKey) || 0) + d.delta);
   }
-  return items.map(item => {
-    const delta = byKey.get(pantryKey(item.key, item.unit));
+  const applied = [];
+  const next = items.map(item => {
+    const key = pantryKey(item.key, item.unit);
+    const delta = byKey.get(key);
     if (!delta) return item;
-    return {
-      ...item,
-      quantity: Math.max(0, Math.round((Number(item.quantity) + delta) * 10) / 10),
-    };
+    const before = Number(item.quantity) || 0;
+    const after = Math.max(0, Math.round((before + delta) * 10) / 10);
+    if (after !== before) applied.push({ itemKey: key, delta: Math.round((after - before) * 10) / 10 });
+    return { ...item, quantity: after };
   });
+  return { items: next, applied };
+}
+
+/** Applies a list of { itemKey, delta } to pantry rows, never below zero. */
+export function applyDeltas(items, deltas) {
+  return applyDeltasTracked(items, deltas).items;
 }
 
 export function isLow(item) {
