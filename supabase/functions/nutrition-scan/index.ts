@@ -55,7 +55,14 @@ const prompt = mode => {
 };
 
 Deno.serve(async request => {
-  const origin = Deno.env.get("ALLOW_ORIGIN") || "*";
+  // Only echo origins we trust; the browser blocks the reply otherwise.
+  // Override with a comma-separated list (e.g. add http://localhost:5173).
+  const allowedOrigins = (Deno.env.get("ALLOW_ORIGIN") || "https://redzidvlp.github.io")
+    .split(",")
+    .map(item => item.trim())
+    .filter(Boolean);
+  const requestOrigin = request.headers.get("origin") || "";
+  const origin = allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0];
 
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: cors(origin) });

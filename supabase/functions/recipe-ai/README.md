@@ -16,6 +16,9 @@ supabase secrets set AI_MODEL=gpt-4o-mini
 supabase secrets set ALLOW_ORIGIN=https://your-app.example
 ```
 
+`ALLOW_ORIGIN` is a comma-separated allowlist and defaults to
+`https://redzidvlp.github.io`; add `http://localhost:5173` if you use AI from local dev.
+
 Without `AI_API_KEY` the function answers `{ "available": false, "reason": "ai_offline" }`
 and the app falls back to the built-in offline idea engine, so the button still works.
 

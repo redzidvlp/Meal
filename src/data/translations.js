@@ -11,7 +11,7 @@ export const T = {
     personTwo: "Person 2",
     you: "you",
     aiTitle: "Rules, not guesses",
-    aiBody: "The sous-chef scores every vegetarian recipe on nutrition similarity, shared ingredients, pantry stock and the rules you set. It runs on this device — nothing is sent to an AI provider.",
+    aiBody: "The sous-chef scores every vegetarian recipe on nutrition similarity, shared ingredients, pantry stock and the rules you set. Matching runs on this device; only Generate can ask your own Supabase AI function for a new dish.",
     replaceHint: "This replaces any meal already planned in that slot.",
 
     // Auth
@@ -400,7 +400,7 @@ export const T = {
     ideaEdit: "Review & save",
     ideaFailed: "Could not create an idea just now. Try a reroll.",
     aiExplainTitle: "How the sous-chef works",
-    aiExplainBody: "It scores every vegetarian recipe against your targets (calories, protein, carbs, fat), diet filters such as low-FODMAP or quick meals, what you already have in the pantry, shared ingredients and what you have eaten recently. Reroll walks down that ranking. When Supabase has an AI key configured, Generate also asks a model for a brand-new recipe; otherwise a local rule-based generator builds one from a nutrition table, and you always review it before saving.",
+    aiExplainBody: "It scores every vegetarian recipe against your targets (calories, protein, carbs, fat), diet filters such as low-FODMAP or quick meals, what you already have in the pantry, shared ingredients and what you have eaten recently. The best matches appear with the reason behind each score. When Supabase has an AI key configured, Generate asks a model for a brand-new recipe; Reroll asks for another draft and skips the names already shown. Without a key a local rule-based generator builds one from a nutrition table. Either way you review it before saving.",
     aiNeedsSetupTitle: "AI recipe writing is off",
     aiNeedsSetupBody: "Add AI_API_KEY to the recipe-ai function in Supabase to let a model write recipes here. The offline idea engine works right now.",
 
@@ -423,7 +423,7 @@ export const T = {
     personTwo: "Antras žmogus",
     you: "jūs",
     aiTitle: "Taisyklės, o ne spėjimai",
-    aiBody: "Sous-šefas vertina kiekvieną vegetarišką receptą pagal maistinės vertės panašumą, bendrus ingredientus, atsargas ir jūsų taisykles. Viskas vyksta šiame įrenginyje — duomenys nesiunčiami AI tiekėjui.",
+    aiBody: "Sous-šefas vertina kiekvieną vegetarišką receptą pagal maistinę vertę, bendrus ingredientus, atsargas ir jūsų taisykles. Suderinimas vyksta šiame įrenginyje; tik „Generuoti“ gali paprašyti jūsų Supabase AI funkcijos naujo patiekalo.",
     replaceHint: "Tai pakeis šiame langelyje jau suplanuotą patiekalą.",
 
     signIn: "Prisijungti",
@@ -800,7 +800,7 @@ export const T = {
     ideaFailed: "Nepavyko sukurti idėjos. Pabandykite dar kartą.",
     ideaSavedHint: "Patikrinkite skaičius ir išsaugokite receptų knygoje.",
     aiExplainTitle: "Kaip veikia sous-chef",
-    aiExplainBody: "Jis įvertina kiekvieną vegetarišką receptą pagal jūsų tikslus (kalorijos, baltymai, angliavandeniai, riebalai), mitybos filtrus (mažai FODMAP, greita), turimas atsargas, bendrus ingredientus ir ką valgėte neseniai. Reroll eina sąrašu žemyn. Kai Supabase turi AI raktą, Generuoti paprašo modelio naujo recepto; kitu atveju vietinis variklis sudaro receptą pagal maistinių verčių lentelę, o jūs visada patvirtinate prieš išsaugodami.",
+    aiExplainBody: "Jis įvertina kiekvieną vegetarišką receptą pagal jūsų tikslus (kalorijos, baltymai, angliavandeniai, riebalai), mitybos filtrus (mažai FODMAP, greita), turimas atsargas, bendrus ingredientus ir ką valgėte neseniai. Geriausi atitikimai rodomi su kiekvieno įvertinimo priežastimi. Kai Supabase turi AI raktą, „Generuoti“ paprašo modelio naujo recepto; „Generuoti iš naujo“ paprašo kito varianto ir praleidžia jau rodytus pavadinimus. Be rakto receptą sudaro vietinis variklis pagal maistinių verčių lentelę. Abiem atvejais jį peržiūrite prieš išsaugodami.",
     aiNeedsSetupTitle: "AI receptų kūrimas išjungtas",
     aiNeedsSetupBody: "Pridėkite AI_API_KEY į recipe-ai funkciją Supabase, kad modelis kurtų receptus. Vietinis idėjų variklis veikia jau dabar.",
 

@@ -22,7 +22,7 @@ both partners see the same plan in real time.
   vegetarian recipes.
 - **Sous-chef suggestions**: scores recipes against macro targets, low-FODMAP,
   gluten-free, quick-prep filters, pantry coverage and recently eaten meals, with
-  explanations for every match. **Reroll** walks down that ranking for a different set.
+  explanations for every match.
 - **New recipe ideas**: a generate button writes a brand-new vegetarian draft around
   your targets. With an AI key configured it asks the `recipe-ai` function; without a
   key the offline generator composes one from the nutrition table. Every draft opens in
@@ -154,14 +154,15 @@ There are two different jobs behind the sparkle tab:
 
 1. **Existing recipes.** `engine/recommend.js` scores every vegetarian recipe against
    the chosen reference meal or manual targets, diet filters (low-FODMAP, quick, high
-   protein), pantry coverage, shared ingredients and recently eaten meals. Reroll rotates
-   the same ranked list, so every card stays a real match while the visible set changes.
+   protein), pantry coverage, shared ingredients and recently eaten meals. The best
+   matches are shown with the reasons behind each score.
 2. **Brand-new recipes.** `lib/ideas.js` first asks the `recipe-ai` Edge Function. If the
    function is not deployed or `AI_API_KEY` is missing, it falls back to
    `engine/generate.js`, which composes a recipe from `ingredientFacts.js`, scales the
-   energy and protein ingredients toward the target and derives diet tags. The result is
-   always a draft: it opens in the normal editor and is only written to Supabase when you
-   tap Save.
+   energy and protein ingredients toward the target and derives diet tags. **Reroll**
+   advances the seed and excludes the names already on screen, so it composes a genuinely
+   different dish. The result is always a draft: it opens in the normal editor and is only
+   written to Supabase when you tap Save.
 
 To switch AI recipe writing on: run the updated `schema.sql`, deploy `recipe-ai`, and set
 `AI_API_KEY` (optionally `AI_MODEL` / `AI_BASE_URL`). The function validates the model's
