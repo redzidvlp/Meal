@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
@@ -10,8 +10,8 @@ const PROD_BASE = "/Meal/";
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' https://fonts.gstatic.com data:",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self' data:",
   "img-src 'self' data: blob:",
   "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
   "object-src 'none'",
@@ -36,6 +36,8 @@ function securityMetaPlugin() {
 
 export default defineConfig(({ mode }) => {
   const base = mode === "production" ? PROD_BASE : "/";
+  const env = loadEnv(mode, process.cwd(), "");
+  const cloudConfigured = !!(env.VITE_SUPABASE_URL && env.VITE_SUPABASE_ANON_KEY);
   return {
     base,
     // The commit short SHA doubles as the visible build id in Settings, so it is
@@ -71,6 +73,9 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest,woff,woff2}"],
+          // The Supabase client is a lazy chunk. A demo build never executes it,
+          // so do not spend a phone's data on precaching 190 kB it cannot use.
+          globIgnores: cloudConfigured ? [] : ["**/supabase-*.js", "**/supabaseBackend-*.js"],
           navigateFallback: `${base}index.html`,
           cleanupOutdatedCaches: true,
         },

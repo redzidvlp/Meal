@@ -10,22 +10,11 @@
 --   • Preset recipes (household_id IS NULL) are read-only for everyone.
 -- ═══════════════════════════════════════════════════════════════════════════
 
+-- gen_random_uuid() is built in on Postgres 13+; pgcrypto is kept for older
+-- projects. On a project that cannot install it, this line is a harmless no-op.
 create extension if not exists pgcrypto;
 
 -- ── Helpers ────────────────────────────────────────────────────────────────
-
-create or replace function public.my_household_id()
-returns uuid
-language sql
-stable
-security definer
-set search_path = public, pg_temp
-as $$
-  select household_id from public.profiles where id = auth.uid();
-$$;
-
-revoke all on function public.my_household_id() from public, anon;
-grant execute on function public.my_household_id() to authenticated;
 
 -- ── Tables ─────────────────────────────────────────────────────────────────
 
@@ -205,6 +194,22 @@ create table if not exists public.pantry (
 );
 
 create index if not exists pantry_household_idx on public.pantry (household_id);
+
+-- The household helper must be created after public.profiles exists: Postgres
+-- validates SQL function bodies at creation time, so on a fresh project this
+-- block cannot live at the top of the file.
+create or replace function public.my_household_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select household_id from public.profiles where id = auth.uid();
+$$;
+
+revoke all on function public.my_household_id() from public, anon;
+grant execute on function public.my_household_id() to authenticated;
 
 -- ── updated_at trigger ─────────────────────────────────────────────────────
 

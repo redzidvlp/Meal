@@ -9,6 +9,18 @@ import { PRESET_MENUS } from "../data/presets.js";
 import { mondayISO, debounce } from "../lib/format.js";
 import { requestRecipeIdea } from "../lib/ideas.js";
 
+// A load that never settles is worse than a failed one: the spinner turns
+// forever on a bad mobile connection. Every network read gets a deadline.
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(Object.assign(new Error(`${label}_timeout`), { kind: "network", table: label }));
+    }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 const EMPTY = {
   household: null,
   profiles: [],
@@ -59,7 +71,7 @@ export function useAppData(t = {}) {
 
   useEffect(() => {
     let active = true;
-    api.getSession()
+    withTimeout(Promise.resolve(api.getSession()), 12000, "session")
       .then(nextSession => {
         if (!active) return;
         setSession(nextSession);
@@ -94,7 +106,7 @@ export function useAppData(t = {}) {
     setProfileLoading(true);
     setProfileChecked(false);
     setDataReady(false);
-    api.getProfile()
+    withTimeout(Promise.resolve(api.getProfile()), 15000, "profiles")
       .then(nextProfile => {
         if (!active) return;
         applyProfile(nextProfile);
@@ -121,7 +133,7 @@ export function useAppData(t = {}) {
     if (!profileRef.current?.householdId) return;
     if (!silent) setDataLoading(true);
     try {
-      const next = await api.loadAll();
+      const next = await withTimeout(Promise.resolve(api.loadAll()), 20000, "kitchen");
       if (next) {
         setData({ ...EMPTY, ...next });
         setDataIssues(Array.isArray(next.issues) ? next.issues : []);

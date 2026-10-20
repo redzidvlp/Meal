@@ -1,5 +1,9 @@
 # Our Table
 
+> **Setting it up? Start with [GO-LIVE-GUIDE.md](GO-LIVE-GUIDE.md)** — the click-by-click
+> walkthrough for upgrading the existing Supabase project, putting the keys in GitHub, and
+> installing the app on both phones.
+
 A two-person vegetarian meal planner with a shared weekly plan, live shopping list,
 pantry stock tracking, and a rule-based "sous-chef" that suggests similar recipes.
 
@@ -48,8 +52,11 @@ both partners see the same plan in real time.
   calories and macros into the recipe editor (with a manual fallback when the AI
   function is not configured).
 - **EN / LT** interface.
-- **Smooth startup**: a loading screen covers the profile and kitchen fetch, so
-  "connect household" never flashes for an account that already has one.
+- **Fast, quiet startup**: system fonts only (no third-party font request to block the
+  first paint), the Supabase client is a lazy chunk that a demo build never downloads,
+  and the service worker registers after the first screen is drawn. A loading screen
+  covers the profile and kitchen fetch, so "connect household" never flashes for an
+  account that already has one; after five seconds it explains what is taking so long.
 - **Demo mode** when Supabase is not configured, so the UI can be explored without a
   backend (data is then kept in the browser only).
 
@@ -65,17 +72,19 @@ Without `.env` values the app starts in demo mode with a sample household and we
 
 ### Supabase setup
 
-> **Upgrading from the old "Our Meal Plan" app?** That app used a different schema
-> (`plan`, `meal_swaps`, no `recipes`/`meal_assignments`), and some names collide with
-> narrower tables. Either create a fresh Supabase project, or run
-> `supabase/upgrade-from-legacy.sql` first: it moves the seven old tables into a
-> `legacy` schema (nothing is deleted) so `schema.sql` can build clean ones. Auth
-> accounts keep working; sign in again and create or join a kitchen.
+> **Upgrading the old "Our Meal Plan" project in place?** Do not create a new project and
+> do not touch `auth.users` — the logins stay. Paste
+> **`supabase/upgrade-existing-project.sql`** once: it moves the old tables into a
+> `legacy` schema (nothing is deleted), builds the new schema, loads the recipe library and
+> copies the household, profiles, planned week, eaten ticks, water and notes across. See
+> `GO-LIVE-GUIDE.md` for the click-by-click version.
 
-1. Create a Supabase project.
+1. Create a Supabase project (or reuse the existing one).
 2. In the SQL editor run, in order:
    - `supabase/schema.sql` — tables, RLS policies, grants and RPC functions.
    - `supabase/seed.sql` — the preset recipe library and preset menus.
+   - `supabase/migrate-legacy-data.sql` — **only** when upgrading an old project, after
+     the two above.
    Re-run `schema.sql` after updating the app: v4 adds `labels`, `day_sections` and the
    `move_slot` / `set_section_hidden` RPCs.
 3. (Optional) Deploy the two AI functions and set the shared key:
@@ -137,6 +146,74 @@ even while the database is being set up. Switch it to your project only when
 2. The same screen → **Variables**: `USE_SUPABASE` = `true`.
 3. Re-run the workflow (or push). Remove the variable to fall back to demo instantly.
 
+### Keeping the database in sync with GitHub
+
+The **Supabase GitHub integration** (Dashboard → Project Settings → Integrations →
+GitHub) is for *schema*, not for app configuration. When it is enabled with
+**Deploy to production** on your production branch, every file in
+`supabase/migrations/` that reaches that branch is applied to the project
+automatically — no SQL editor.
+
+It does **not** give the web app its URL and anon key. Those are read at build time by
+Vite and must still live in GitHub → Settings → Secrets and variables → Actions.
+
+The SQL you run by hand and the SQL the integration applies are generated from one set of
+readable sources, so the two routes cannot drift:
+
+```bash
+npm run build:sql    # schema.sql, seed.sql, migrate-legacy-data.sql
+                     #   → supabase/migrations/*.sql
+                     #   → supabase/upgrade-existing-project.sql   (one paste, whole upgrade)
+                     #   → supabase/upgrade-from-legacy.sql        (step 1 only)
+```
+
+The schema migration first moves an old "Our Meal Plan" schema into a `legacy` schema
+(nothing deleted) and then creates the new tables, so a single merge can upgrade an old
+project as well as a fresh one. It deliberately does **not** run the data migration: that
+imports one particular household, which is right for a one-off upgrade and wrong for a
+shared migration file. Run `migrate-legacy-data.sql` by hand once, then leave the
+integration to handle schema from then on. If you prefer to stay in control, keep the
+integration off and paste `supabase/upgrade-existing-project.sql` into the SQL editor.
+
+### Go-live checklist
+
+1. **Database** — fresh project: `schema.sql`, then `seed.sql`. Existing project: paste
+   `upgrade-existing-project.sql` once (or `upgrade-from-legacy.sql` → `schema.sql` →
+   `seed.sql` → `migrate-legacy-data.sql`). Finish with `doctor.sql`; every table must
+   read `ok`. `npm run test:db` proves all of it on a real Postgres engine first.
+2. **Phone link** — repository secrets `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
+   then the repository variable `USE_SUPABASE=true`. Re-run the preview workflow. Remove
+   the variable at any time to fall back to the demo kitchen.
+3. **Household** — after an in-place upgrade, sign in with the **old** email and password
+   and the kitchen is already there. Otherwise *Create kitchen*, open Settings and share
+   the invite code; your partner signs up and chooses *Join kitchen*.
+4. **AI agent (optional)** — see below; without it the offline engine still writes new
+   recipes and photo capture falls back to manual entry.
+5. **Install on both phones** — open the link, then *Share → Add to Home Screen* (iOS)
+   or *Install app* (Android). Later launches open without a browser bar.
+6. **Updates** — every future deploy asks **Update now / Later** before changing
+   anything; Settings shows the running build id.
+
+### Turning the AI agent on
+
+```bash
+supabase functions deploy recipe-ai        # new recipe drafts
+supabase functions deploy nutrition-scan   # photo → calories
+supabase secrets set AI_API_KEY=sk-...     # the provider key, server-side only
+# optional
+supabase secrets set AI_MODEL=gpt-4o-mini
+supabase secrets set AI_BASE_URL=https://api.openai.com/v1
+supabase secrets set ALLOW_ORIGIN=https://redzidvlp.github.io
+```
+
+Verify it: open **✨ Sous-chef → Generate**. The small badge on the idea card must read
+**🤖 AI recipe**; if it reads **✨ Offline idea engine**, the function is not deployed, the
+key is missing or `ALLOW_ORIGIN` does not include the site you are using. Photo capture is
+confirmed the same way from **📷** — a successful scan fills calories and macros.
+
+Deploy without `--no-verify-jwt`: the functions expect a signed-in household, and the key
+never reaches the browser.
+
 ### Preset library
 
 `supabase/seed.sql` is generated from `src/data/presets.js`:
@@ -158,6 +235,8 @@ Do not hand-edit the SQL seed; change the JS data and regenerate.
 | `npm run test:ui` | Render smoke test of the whole app in jsdom |
 | `npm run test:flows` | End-to-end workflow test in jsdom (eat/undo, split/merge, picker, shopping, recipes, pantry, reset) |
 | `npm run seed:sql` | Regenerate `supabase/seed.sql` (recipes + library menus) |
+| `npm run build:sql` | Regenerate `supabase/migrations/*.sql` and the two upgrade files |
+| `npm run test:db` | Run the real SQL on a real Postgres engine (PGlite): fresh install, in-place upgrade, idempotent re-run, edge cases |
 
 The UI tests run against the demo backend; they need no browser or network.
 

@@ -620,3 +620,13 @@ test("the build gate only asks once per version", async () => {
   assert.equal(build.takePendingUpdate(), false, "the flag is consumed once");
   delete globalThis.localStorage;
 });
+
+test("startup does not wait on third-party fonts or the Supabase client", () => {
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  assert.doesNotMatch(css, /@import\s+url\(\s*["']https?:/, "no remote @import in the stylesheet");
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  assert.doesNotMatch(html, /fonts\.(googleapis|gstatic)\.com/, "no font preconnects");
+  const api = readFileSync(new URL("../src/lib/api.js", import.meta.url), "utf8");
+  assert.doesNotMatch(api, /^import[^;]*supabase\.js/m, "the Supabase client is not a static import");
+  assert.match(api, /import\("\.\/supabase\.js"\)/, "it is loaded on demand");
+});

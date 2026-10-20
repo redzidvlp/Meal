@@ -19,28 +19,40 @@ export function usePwaUpdate() {
 
     let cancelled = false;
     let timer = null;
+    let startTimer = null;
     setSupported(true);
 
-    import("virtual:pwa-register")
-      .then(({ registerSW }) => {
-        if (cancelled) return;
-        updateRef.current = registerSW({
-          immediate: true,
-          onNeedRefresh() {
-            setNeedRefresh(true);
-          },
-          onRegisteredSW(_url, registration) {
-            registrationRef.current = registration;
-            if (!registration) return;
-            timer = setInterval(() => {
-              registration.update?.().catch(() => {});
-            }, 30 * 60 * 1000);
-          },
+    const start = () => {
+      if (cancelled) return;
+      import("virtual:pwa-register")
+        .then(({ registerSW }) => {
+          if (cancelled) return;
+          updateRef.current = registerSW({
+            immediate: true,
+            onNeedRefresh() {
+              setNeedRefresh(true);
+            },
+            onRegisteredSW(_url, registration) {
+              registrationRef.current = registration;
+              if (!registration) return;
+              timer = setInterval(() => {
+                registration.update?.().catch(() => {});
+              }, 30 * 60 * 1000);
+            },
+          });
+        })
+        .catch(() => {
+          // Registration is a progressive enhancement; the app still works.
         });
-      })
-      .catch(() => {
-        // Registration is a progressive enhancement; the app still works.
-      });
+    };
+
+    // Registering pulls roughly a megabyte of precache. On a phone that must not
+    // compete with the first screen, so it waits until the page has loaded.
+    const afterLoad = () => {
+      startTimer = setTimeout(start, 1500);
+    };
+    if (document.readyState === "complete") afterLoad();
+    else window.addEventListener("load", afterLoad, { once: true });
 
     const onVisible = () => {
       if (document.visibilityState === "visible") {
@@ -52,6 +64,8 @@ export function usePwaUpdate() {
     return () => {
       cancelled = true;
       if (timer) clearInterval(timer);
+      if (startTimer) clearTimeout(startTimer);
+      window.removeEventListener("load", afterLoad);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);

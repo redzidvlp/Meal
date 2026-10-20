@@ -1,7 +1,6 @@
 -- Our Table — read-only health check
--- Paste this whole file into the Supabase SQL editor and run it.
--- It changes nothing. The first result lists every table the app needs and any
--- missing columns; the second shows the household/profile rows the app will read.
+-- Paste this whole file into the Supabase SQL editor and run it. It changes
+-- nothing. One table comes back: every table the app needs, then a few counts.
 
 with required(tbl, cols) as (
   values
@@ -22,31 +21,39 @@ existing as (
   select table_name
   from information_schema.tables
   where table_schema = 'public' and table_type = 'BASE TABLE'
+),
+checks as (
+  select
+    r.tbl as item,
+    case when e.table_name is null then 'MISSING TABLE' else 'ok' end as status,
+    coalesce((
+      select string_agg(c, ', ' order by c)
+      from unnest(r.cols) as c
+      where not exists (
+        select 1 from information_schema.columns ic
+        where ic.table_schema = 'public'
+          and ic.table_name = r.tbl
+          and ic.column_name = c
+      )
+    ), '—') as detail,
+    1 as section
+  from required r
+  left join existing e on e.table_name = r.tbl
 )
-select
-  r.tbl as table_name,
-  case when e.table_name is null then 'MISSING TABLE' else 'ok' end as table_status,
-  coalesce((
-    select string_agg(c, ', ' order by c)
-    from unnest(r.cols) as c
-    where not exists (
-      select 1 from information_schema.columns ic
-      where ic.table_schema = 'public'
-        and ic.table_name = r.tbl
-        and ic.column_name = c
-    )
-  ), '—') as missing_columns
-from required r
-left join existing e on e.table_name = r.tbl
-order by (e.table_name is null) desc, r.tbl;
-
--- What the app will actually see once the schema is in place.
-select
-  (select count(*) from public.households) as households,
-  (select count(*) from public.profiles) as profiles,
-  (select count(*) from public.recipes) as recipes;
-
--- Helpful extras from the project itself.
-select
-  current_database() as database,
-  (select count(*) from auth.users) as auth_users;
+select * from (
+select 'table' as section, item, status, detail
+from checks
+union all
+select 'row count', 'households', count(*)::text, null::text from public.households
+union all
+select 'row count', 'profiles', count(*)::text, null from public.profiles
+union all
+select 'row count', 'recipes', count(*)::text, null from public.recipes
+union all
+select 'row count', 'meal_assignments', count(*)::text, null from public.meal_assignments
+union all
+select 'project', 'database', current_database(), null
+union all
+select 'project', 'auth users', (select count(*)::text from auth.users), null
+) report
+order by section, (status = 'ok') desc, item;

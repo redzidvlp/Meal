@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { T } from "./data/translations.js";
 import { interpolate, todayIndex } from "./lib/format.js";
 import { useAppData } from "./hooks/useAppData.js";
@@ -20,6 +20,7 @@ import { menuItemsFromDay } from "./lib/menus.js";
 import RecipePicker from "./components/RecipePicker.jsx";
 import { EmptyState, Toast } from "./components/ui.jsx";
 import ConnectionScreen, { SchemaNotice } from "./components/ConnectionScreen.jsx";
+import { setOverrideDemo } from "./lib/errors.js";
 import "./styles.css";
 
 const TABS = [
@@ -30,12 +31,23 @@ const TABS = [
   { id: "tips", icon: "🌿" },
 ];
 
-function LoadingScreen({ t, label }) {
+function LoadingScreen({ t, label, onDemo }) {
+  // Silence for more than a few seconds looks like a frozen app, so say what is
+  // happening instead of spinning quietly.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setSlow(true), 5000);
+    return () => clearTimeout(id);
+  }, []);
   return (
     <div className="loading-screen" role="status" aria-live="polite">
       <div className="loading-mark" aria-hidden="true">🌿</div>
       <div className="spinner" aria-hidden="true" />
       <div>{label || t.loading}</div>
+      {slow && <p className="loading-slow">{t.loadingSlow}</p>}
+      {slow && onDemo && (
+        <button type="button" className="btn btn-sm btn-soft" onClick={onDemo}>{t.connectionDemo}</button>
+      )}
     </div>
   );
 }
@@ -223,6 +235,10 @@ export default function App() {
     if (viewer?.id === id) setViewer(null);
   };
 
+  const demoEscape = app.isCloudConfigured && !app.isDemo
+    ? () => { setOverrideDemo(true); window.location.reload(); }
+    : undefined;
+
   // ── Gates ─────────────────────────────────────────────────────────────────
   // The update gate is rendered on every screen (including sign-in) so a new
   // build is offered before anything on screen can change.
@@ -232,7 +248,7 @@ export default function App() {
       ? <VersionGate t={t} onAccept={version.accept} onLater={version.later} />
       : null;
 
-  if (app.authLoading) return <>{<LoadingScreen t={t} />}{updateGate}</>;
+  if (app.authLoading) return <>{<LoadingScreen t={t} onDemo={demoEscape} />}{updateGate}</>;
   if (!app.session) {
     return (
       <>
@@ -243,7 +259,7 @@ export default function App() {
   }
   // Keep the loading screen up until the profile lookup has actually resolved,
   // so "connect household" never flashes for an account that already has one.
-  if (app.profileLoading || !app.profileChecked) return <>{<LoadingScreen t={t} />}{updateGate}</>;
+  if (app.profileLoading || !app.profileChecked) return <>{<LoadingScreen t={t} onDemo={demoEscape} />}{updateGate}</>;
   if (app.profileError) {
     return (
       <>
@@ -274,7 +290,7 @@ export default function App() {
       </>
     );
   }
-  if (!app.dataReady) return <>{<LoadingScreen t={t} label={t.loadingKitchen} />}{updateGate}</>;
+  if (!app.dataReady) return <>{<LoadingScreen t={t} label={t.loadingKitchen} onDemo={demoEscape} />}{updateGate}</>;
   // A failed kitchen load must say *what* failed. The screen names the table,
   // the Supabase project host and the likely fix, and always offers a retry.
   if (app.loadError && !app.household) {
