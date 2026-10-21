@@ -43,6 +43,9 @@
 * { box-sizing: border-box; }
 
 html, body, #root { height: 100%; }
+/* Nothing may be wider than the phone: no sideways panning. */
+html, body { max-width: 100%; overflow-x: hidden; overscroll-behavior-x: none; }
+body { width: 100%; touch-action: manipulation; }
 
 body {
   margin: 0;
@@ -69,7 +72,10 @@ img { max-width: 100%; }
 
 /* ── Shell ─────────────────────────────────────────────────────────────── */
 .app-shell {
-  max-width: 460px;
+  /* Phone first: use every millimetre of the screen. The cap only matters on a
+     tablet or a desktop window, where a 1400px-wide column would be unreadable. */
+  width: 100%;
+  max-width: 560px;
   margin: 0 auto;
   min-height: 100dvh;
   display: flex;
@@ -671,7 +677,28 @@ body.is-dragging-meal { cursor: grabbing; }
   display: flex; align-items: center; justify-content: center;
 }
 .slot-remove:active { background: var(--coral-soft); color: var(--danger); border-color: var(--coral); }
-.slot-zone { border-radius: 20px; transition: box-shadow .12s ease, background .12s ease; }
+.slot-zone { position: relative; border-radius: 20px; transition: box-shadow .12s ease, background .12s ease; }
+.slot-zone.is-picked { outline: 2px solid var(--ink); outline-offset: 2px; opacity: .55; }
+.slot-zone.pick-target { outline: 2px dashed var(--line-soft); outline-offset: 2px; }
+.move-here {
+  position: absolute; inset: 0; z-index: 20; width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  border: 2px dashed var(--ink); border-radius: 20px;
+  background: color-mix(in srgb, var(--sage-soft) 86%, transparent);
+  color: var(--ink); font-size: 13px; font-weight: 800; letter-spacing: .01em;
+  cursor: pointer; -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px);
+}
+.move-here:active { background: var(--sage); }
+.pick-bar {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 260;
+  display: flex; align-items: center; gap: 10px;
+  width: min(430px, calc(100% - 26px));
+  padding: 10px 12px; border-radius: 16px;
+  background: var(--ink); color: var(--sage);
+  font-size: 12px; box-shadow: 0 12px 30px rgba(20,18,28,.32);
+}
+.pick-bar .btn { color: var(--ink); background: var(--sage); border-color: transparent; }
 .slot-zone.drop-target { outline: 2px dashed var(--line-soft); outline-offset: 2px; }
 .slot-zone.drop-hover { background: var(--sage-soft); outline: 2px solid var(--ink); outline-offset: 2px; box-shadow: 0 3px 0 var(--ink); }
 .is-dragging { user-select: none; -webkit-user-select: none; }
@@ -756,6 +783,13 @@ body.is-dragging-meal { cursor: grabbing; }
   animation: sway 2.2s ease-in-out infinite;
 }
 @keyframes sway { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+
+/* iOS zooms the whole page when a field smaller than 16px gets focus, and then
+   the page can be panned sideways. 16px keeps the layout still. */
+@media (max-width: 640px) {
+  .input, .select, .textarea, .input-sm { font-size: 16px; }
+  .textarea { font-size: 16px; }
+}
 
 /* Phone-only presentation: on larger screens keep the narrow app column. */
 @media (min-width: 600px) {

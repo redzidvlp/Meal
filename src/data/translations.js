@@ -422,6 +422,8 @@ export const T = {
     dragHandle: "Move meal",
 
     // AI idea generator
+    moveHere: "Move here",
+    movePickHint: "Tap the slot it should go to",
     ideaWish: "Anything you feel like?",
     ideaWishPlaceholder: "chickpeas, no onion, 20 min",
     ideaWillMake: "Will make",
@@ -867,6 +869,8 @@ export const T = {
     dragHandle: "Perkelti patiekalą",
 
     // AI idea generator
+    moveHere: "Perkelti čia",
+    movePickHint: "Bakstelėkite, kur perkelti",
     ideaWish: "Ko norėtumėte?",
     ideaWishPlaceholder: "avinžirniai, be svogūnų, 20 min",
     ideaWillMake: "Sukurs",

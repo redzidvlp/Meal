@@ -369,22 +369,26 @@ const slotIds = () => {
   return map;
 };
 const beforeMove = slotIds();
-const grip = document.querySelector("[data-drop-slot='breakfast'] .meal-grip");
+// Lunch, not breakfast: the old bug was that only the first slot could ever be
+// dragged, so testing breakfast proved nothing.
+const grip = document.querySelector("[data-drop-slot='lunch'] .meal-grip");
 assert(grip, "meal has a drag handle");
 await act(async () => {
-  grip.dispatchEvent(new dom.window.MouseEvent("pointerdown", { bubbles: true, clientX: 10, clientY: 10 }));
+  grip.dispatchEvent(new dom.window.MouseEvent("pointerdown", { bubbles: true, clientX: 10, clientY: 300, pointerType: "touch" }));
   await sleep(120);
 });
 await act(async () => {
-  dom.window.dispatchEvent(new dom.window.MouseEvent("pointerup", { bubbles: true, clientX: 10, clientY: 10 }));
+  dom.window.dispatchEvent(new dom.window.MouseEvent("pointerup", { bubbles: true, clientX: 10, clientY: 300, pointerType: "touch" }));
   await sleep(300);
 });
-assert(document.querySelector(".modal")?.textContent.includes("Move this meal"), "tap on the handle opens the move sheet");
-await click(document.querySelector(".modal .recipe-option"), 700);
+assert(document.querySelectorAll(".move-here").length === 3, "picking a meal up offers every other slot as a target");
+assert(document.querySelector(".pick-bar"), "a hint says what to do next");
+await click(document.querySelector("[data-drop-slot='dinner'] .move-here"), 700);
 const afterMove = slotIds();
-assert(JSON.stringify(afterMove.breakfast) === JSON.stringify(beforeMove.lunch), "dinner/lunch swap moved the meal across slots");
-assert(JSON.stringify(afterMove.lunch) === JSON.stringify(beforeMove.breakfast), "the target slot moved back");
-console.log("MOVE: tapped handle moved a meal between sections");
+assert(!document.querySelector(".move-here"), "targets disappear once the move is done");
+assert(JSON.stringify(afterMove.lunch) === JSON.stringify(beforeMove.dinner), "lunch meal landed in dinner");
+assert(JSON.stringify(afterMove.dinner) === JSON.stringify(beforeMove.lunch), "the dinner meal swapped back into lunch");
+console.log("MOVE: any slot can be picked up and moved (lunch ⇄ dinner)");
 
 // 7c. Hide a whole section for the day, then restore it.
 await nav("Plan");

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { C, SLOT_META, SLOTS, TAG_LABELS } from "../theme.js";
 import { allPlannedRecipes } from "../engine/plan.js";
 import { plannedIds, suggestRecipes, targetFromRecipe } from "../engine/recommend.js";
+import { parseWish } from "../lib/wishes.js";
+import { INGREDIENT_FACTS } from "../data/ingredientFacts.js";
 import { fmtNum, interpolate, todayIndex } from "../lib/format.js";
 import { tagLabel } from "../lib/labels.js";
 import { Chip, EmptyState, Field, Modal, NumberInput, Segmented } from "./ui.jsx";
@@ -25,8 +27,11 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
   const [addRecipe, setAddRecipe] = useState(null);
   const [addDay, setAddDay] = useState(todayIndex());
   const [addSlot, setAddSlot] = useState("lunch");
-  const [wish, setWish] = useState("");
+  const [wishText, setWishText] = useState("");
   const [idea, setIdea] = useState(null);
+  // Ingredients used by the last few ideas, so a reroll changes the dish rather
+  // than the garnish.
+  const [usedKeys, setUsedKeys] = useState([]);
   const [ideaBusy, setIdeaBusy] = useState(false);
   const seedRef = useRef(1 + Math.floor(Math.random() * 90000));
 
@@ -76,6 +81,8 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
 
   const toggleFilter = key => setFilters(previous => ({ ...previous, [key]: !previous[key] }));
 
+  const wish = useMemo(() => parseWish(wishText), [wishText]);
+
   // The controls sit below the Generate button, so the button used to look like
   // it had no inputs. This line says, in words, what pressing it will make.
   const ideaSummary = [
@@ -85,7 +92,8 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
     filters.quick ? t.quickOnly : null,
     filters.lowFodmap ? t.onlyFodmap : null,
     filters.pantryFirst ? t.pantryFirst : null,
-    wish.trim() ? `“${wish.trim().slice(0, 40)}”` : null,
+    wish.includes.length ? wish.includes.map(key => INGREDIENT_FACTS[key]?.en || key).join(" + ") : null,
+    wish.raw && !wish.includes.length ? `“${wish.raw.slice(0, 30)}”` : null,
   ].filter(Boolean).join(" · ");
 
   const generateIdea = async () => {
@@ -98,11 +106,15 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
       ...(idea ? [idea.name?.en] : []),
     ].filter(Boolean);
     try {
-      const draft = await app.generateIdea({ slot, target, filters, seed, excludeNames, notes: wish.trim() });
+      const draft = await app.generateIdea({ slot, target, filters, seed, excludeNames, notes: wishText.trim(), wish, avoidKeys: usedKeys });
       if (!draft) {
         app.notify(t.ideaFailed, "error");
       } else {
         setIdea(draft);
+        setUsedKeys(previous => [...new Set([
+          ...previous,
+          ...(draft.ingredients || []).map(item => item.key).filter(Boolean),
+        ])].slice(-24));
       }
     } catch {
       app.notify(t.ideaFailed, "error");
@@ -270,12 +282,26 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
             <input
               className="input"
               type="text"
-              value={wish}
+              value={wishText}
               maxLength={120}
               placeholder={t.ideaWishPlaceholder}
-              onChange={event => setWish(event.target.value)}
+              onChange={event => setWishText(event.target.value)}
             />
           </Field>
+          {(wish.includes.length > 0 || wish.excludes.length > 0) && (
+            <div className="row" style={{ gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+              {wish.includes.map(key => (
+                <span key={`in-${key}`} className="stock-badge" style={{ borderColor: C.leaf, color: C.leaf }}>
+                  ✓ {INGREDIENT_FACTS[key]?.en || key}
+                </span>
+              ))}
+              {wish.excludes.map(key => (
+                <span key={`out-${key}`} className="stock-badge" style={{ textDecoration: "line-through" }}>
+                  ✕ {INGREDIENT_FACTS[key]?.en || key}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         <div style={{ marginTop: 12 }}>

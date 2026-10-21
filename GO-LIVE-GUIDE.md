@@ -268,11 +268,21 @@ Optional extras, same screen: `AI_MODEL` = `gpt-4o-mini`, `AI_BASE_URL` =
 
 ### 7c-bis. Keeping it fresh
 
-If you already deployed the functions before this version of the app, paste
-`recipe-ai` once more (Deploy a new function → Via editor → **Deploy updates**).
-The new code accepts the **“Anything you feel like?”** line — chickpeas, no onion,
-20 minutes — and passes it to the model. Without the update that box is simply ignored;
-everything else keeps working.
+The functions change as the app does. If you deployed them before, paste `recipe-ai`
+once more: **Edge Functions → recipe-ai → edit → select all → paste the file from
+`main` → Deploy updates**.
+
+What the new version adds:
+
+- the **“Anything you feel like?”** line is sent to the model and treated as a hard
+  requirement — ask for curd and it must be in the ingredients;
+- if the model ignores it, the function asks again once, and the app falls back to the
+  built-in engine, which is now guaranteed to include the ingredient you named;
+- rerolling also avoids the ingredients of the last few ideas, so you stop getting the
+  same dish with one vegetable swapped.
+
+Without the update the app still works: it notices the model ignored your wish and
+answers with the offline engine instead — so you get your curd either way.
 
 ### 7d. Prove it works
 
