@@ -4,18 +4,42 @@ import { C, TAG_LABELS } from "../theme.js";
 import { tagLabel } from "../lib/labels.js";
 import { fmtNum } from "../lib/format.js";
 
+
+/**
+ * Locks the page behind a sheet or a dialog.
+ *
+ * `overflow: hidden` alone stops a mouse wheel but not iOS rubber-banding: the
+ * page behind still slides and can be dragged sideways. The class carries
+ * `touch-action: none` and `overscroll-behavior: none`, and the scroll
+ * position is kept so closing the sheet does not jump the page.
+ */
+const SCROLL_LOCK_STYLE = { touchAction: "pan-y", overscrollBehavior: "contain", overflowX: "hidden" };
+
+function useBodyLock(open) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const body = document.body;
+    const scrollY = window.scrollY || 0;
+    body.classList.add("is-locked");
+    body.style.overflow = "hidden";
+    return () => {
+      body.classList.remove("is-locked");
+      body.style.overflow = "";
+      // Only touch the scroll position if the page actually moved; otherwise
+      // this would fight the browser (and jsdom has no implementation).
+      if ((window.scrollY || 0) !== scrollY) window.scrollTo(0, scrollY);
+    };
+  }, [open]);
+}
+
 export function Sheet({ open, onClose, title, subtitle, children, footer, labelledBy = "sheet-title" }) {
   useEffect(() => {
     if (!open) return undefined;
     const onKey = event => { if (event.key === "Escape") onClose?.(); };
     document.addEventListener("keydown", onKey);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previous;
-    };
+    return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+  useBodyLock(open);
 
   if (!open) return null;
   return createPortal(
@@ -31,7 +55,7 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, labell
             <button type="button" className="close-btn" onClick={onClose} aria-label="Close">✕</button>
           </div>
         )}
-        <div className="sheet-body">{children}</div>
+        <div className="sheet-body" style={SCROLL_LOCK_STYLE}>{children}</div>
         {footer && <div className="sheet-foot">{footer}</div>}
       </div>
     </div>,
@@ -44,13 +68,9 @@ export function Modal({ open, onClose, title, subtitle, children, footer, labell
     if (!open) return undefined;
     const onKey = event => { if (event.key === "Escape") onClose?.(); };
     document.addEventListener("keydown", onKey);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previous;
-    };
+    return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+  useBodyLock(open);
 
   if (!open) return null;
   return createPortal(
@@ -65,7 +85,7 @@ export function Modal({ open, onClose, title, subtitle, children, footer, labell
             <button type="button" className="close-btn" onClick={onClose} aria-label="Close">✕</button>
           </div>
         )}
-        <div className="modal-body">{children}</div>
+        <div className="modal-body" style={SCROLL_LOCK_STYLE}>{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
       </div>
     </div>,

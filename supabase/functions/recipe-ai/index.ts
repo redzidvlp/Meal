@@ -46,7 +46,7 @@ const prompt = input => [
   "Use metric amounts in g, ml or vnt. Exact Lithuanian translations are welcome.",
   'Schema: {"name_en":string,"name_lt":string,"emoji":string,"slot":string,"course":"sweet"|"savoury","kcal":number,"protein":number,"carbs":number,"fat":number,"prep_minutes":number,"ingredients":[{"en":string,"lt":string,"amount":number,"unit":"g"|"ml"|"vnt"}],"method_en":string,"method_lt":string,"tags":string[]}',
   `Slot: ${input.slot}. Target per person: ${input.target.kcal} kcal, ${input.target.protein} g protein, ${input.target.carbs} g carbs, ${input.target.fat} g fat.`,
-  `Filters: ${input.filters.lowFodmap ? "low-FODMAP" : "no FODMAP restriction"}, ${input.filters.quick ? "ready in 15 minutes or less" : "any prep time"}, ${input.filters.highProtein ? "high protein" : "normal protein"}.`,
+  `Filters: ${input.filters.lowFodmap ? "low-FODMAP" : "no FODMAP restriction"}, ${input.maxMinutes ? `ready in ${input.maxMinutes} minutes or less` : input.filters.quick ? "ready in 15 minutes or less" : "any prep time"}, ${input.filters.highProtein ? "high protein" : "normal protein"}.`,
   (input.must || []).length
     ? `HARD REQUIREMENT: the recipe MUST contain ${input.must.join(" and ")} as a real ingredient with a metric amount. These are at least as important as the calorie target.`
     : "",
@@ -107,6 +107,7 @@ Deno.serve(async request => {
     quick: payload?.filters?.quick === true,
     highProtein: payload?.filters?.highProtein === true,
   };
+  const maxMinutes = clampNumber(payload?.filters?.maxMinutes, 0, 240);
   const pantry = (Array.isArray(payload?.pantry) ? payload.pantry : [])
     .map(item => clean(item, 40)).filter(Boolean).slice(0, 20);
   const avoid = (Array.isArray(payload?.avoid) ? payload.avoid : [])
@@ -151,7 +152,7 @@ Deno.serve(async request => {
     }
   }
 
-  const basePrompt = prompt({ slot, target, filters, pantry, avoid, notes, must, banned, variety, wish, course, modifiers });
+  const basePrompt = prompt({ slot, target, filters, pantry, avoid, notes, must, banned, variety, wish, course, modifiers, maxMinutes });
   let attempt = await ask([{ role: "user", content: basePrompt }]);
   if (attempt.error) {
     return json({ available: true, error: attempt.error === "upstream_failed" ? "upstream_failed" : "unreadable_result" }, 502, origin);
@@ -216,13 +217,23 @@ Deno.serve(async request => {
     ? computedKcal
     : statedKcal;
 
+  // The model sometimes writes "Dessert" or "sweet dish"; only the canonical
+  // word is used, and when it says nothing the course that was asked for wins.
+  const courseWord = String(parsed.course ?? "").toLowerCase();
+  const modelCourse = /sweet|dessert|pudding|cake|pastry/.test(courseWord)
+    ? "sweet"
+    : /savoury|savory|main|meal/.test(courseWord)
+      ? "savoury"
+      : "";
+  const answerCourse = modelCourse || course || "savoury";
+
   const allowedTags = ["vegan", "dairy-free", "low-fodmap", "gluten-free", "high-protein", "quick", "meal-prep"];
   const tags = [...new Set((Array.isArray(parsed.tags) ? parsed.tags : []).filter(tag => allowedTags.includes(tag)))];
 
   return json({
     available: true,
     recipe: {
-      course: parsed.course === "sweet" ? "sweet" : "savoury",
+      course: answerCourse,
       name: { en: nameEn, lt: nameLt },
       emoji: clean(parsed.emoji, 6) || "🍽️",
       slot,

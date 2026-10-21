@@ -48,7 +48,9 @@ function fromAi(recipe, seed) {
     isDraft: true,
     generated: true,
     ai: true,
-    course: recipe?.course === "sweet" ? "sweet" : "savoury",
+    // Unknown course stays unknown: an older deployed function does not send
+    // it, and guessing "savoury" silently rejected every dessert it wrote.
+    course: recipe?.course === "sweet" ? "sweet" : recipe?.course === "savoury" ? "savoury" : null,
     seed,
   };
 }
@@ -74,14 +76,24 @@ export async function requestRecipeIdea({
   notes = "",
   wish = null,
   avoidKeys = [],
+  maxMinutes = 0,
   pantry = [],
 }) {
   const parsed = wish || parseWish(notes);
-  const merged = { ...filters, quick: filters.quick || !!parsed.quick };
+  const minutes = Number(maxMinutes) || 0;
+  const merged = { ...filters, quick: filters.quick || !!parsed.quick || (minutes > 0 && minutes <= 15), maxMinutes: minutes };
   const mustInclude = wishIngredientNames(parsed);
   const mustAvoid = excludedNames(parsed);
-  const hasWish = (parsed.includes?.length || parsed.excludes?.length || parsed.quick) > 0;
+  const hasWish = Boolean(
+    parsed.includes?.length
+    || parsed.excludes?.length
+    || parsed.quick
+    || parsed.course
+    || parsed.modifiers?.lactoseFree
+    || parsed.modifiers?.dairyFree,
+  );
 
+  let aiNote = "unavailable";
   if (api?.generateRecipe) {
     try {
       const result = await api.generateRecipe({
@@ -91,6 +103,7 @@ export async function requestRecipeIdea({
           quick: !!merged.quick,
           lowFodmap: !!merged.lowFodmap,
           highProtein: !!merged.highProtein,
+          maxMinutes: minutes,
         },
         avoid: excludeNames.slice(0, 20),
         notes: String(notes || "").replace(/[<>{}]/g, "").trim().slice(0, 160),
@@ -110,17 +123,21 @@ export async function requestRecipeIdea({
         const cleanOfBans = draft && containsExcluded(draft, parsed).length === 0;
         // A sweet wish answered with a savoury dish is a miss, however good it
         // sounds: the offline engine can build the dessert instead.
-        const wrongCourse = draft && parsed.course && draft.course && draft.course !== parsed.course;
+        const wrongCourse = draft && parsed.course && draft.course !== parsed.course;
         if (draft && keepsWish && cleanOfBans && !wrongCourse) return draft;
         // The model ignored the request (or slipped in a banned ingredient):
         // fall through to the engine, which is built to honour it.
+        aiNote = "ignored";
+      } else {
+        aiNote = "unavailable";
       }
     } catch {
+      aiNote = "failed";
       // A missing function, quota error or offline network all fall through to
       // the local engine — generating an idea must never dead-end.
     }
   }
 
   const draft = offlineIdea({ slot, target, filters: merged, seed, excludeNames, wish: hasWish ? parsed : null, avoidKeys });
-  return draft ? { ...draft, ai: false } : null;
+  return draft ? { ...draft, ai: false, aiNote } : null;
 }

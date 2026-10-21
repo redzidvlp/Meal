@@ -668,6 +668,86 @@ test("a savoury AI answer is thrown away when a dessert was asked for", async ()
   assert.equal(sweet.name.en, "Curd pudding");
 });
 
+test("a broken or old AI function is explained, not silently swapped", async () => {
+  const wish = parseWish("curd sweet");
+  const base = {
+    slot: "lunch",
+    target: { kcal: 430, protein: 22, carbs: 45, fat: 18 },
+    seed: 5,
+    notes: "curd sweet",
+    wish,
+  };
+  const offline = (label, draft) => {
+    assert.equal(draft.ai, false, label);
+    assert.equal(draft.course, "sweet", `${label} still answers the wish`);
+    assert.ok(draft.ingredients.some(item => item.key === "curd"), `${label} contains curd`);
+  };
+
+  // No function deployed at all.
+  offline("no function", await requestRecipeIdea({ ...base, api: {} }));
+  // The function fails or times out.
+  offline("function throws", await requestRecipeIdea({
+    ...base,
+    api: { generateRecipe: async () => { throw new Error("boom"); } },
+  }));
+  // An older deployment that does not know about `course`: the answer cannot be
+  // verified, so it is ignored rather than trusted.
+  const legacy = await requestRecipeIdea({
+    ...base,
+    api: {
+      generateRecipe: async () => ({
+        available: true,
+        recipe: {
+          name: { en: "Curd pasta", lt: "Varškės makaronai" },
+          emoji: "🍝", slot: "lunch", kcal: 420, protein: 20, carbs: 40, fat: 18,
+          prepMinutes: 20,
+          ingredients: [{ en: "Curd cheese", lt: "Varškė", amount: 150, unit: "g" }],
+          method: { en: "Bake.", lt: "Kepkite." },
+          tags: [],
+        },
+      }),
+    },
+  });
+  assert.equal(legacy.ai, false, "a draft without a course cannot prove it is a dessert");
+  assert.equal(legacy.aiNote, "ignored", "the reason is reported to the card");
+  assert.equal(legacy.course, "sweet");
+
+  // And a proper answer is accepted, so the AI badge can appear again.
+  const good = await requestRecipeIdea({
+    ...base,
+    api: {
+      generateRecipe: async () => ({
+        available: true,
+        recipe: {
+          name: { en: "Curd pudding", lt: "Varškės pudingas" },
+          emoji: "🍮", slot: "lunch", kcal: 420, protein: 20, carbs: 40, fat: 18,
+          prepMinutes: 20, course: "sweet",
+          ingredients: [{ en: "Curd cheese", lt: "Varškė", amount: 150, unit: "g" }],
+          method: { en: "Bake.", lt: "Kepkite." },
+          tags: [],
+        },
+      }),
+    },
+  });
+  assert.equal(good.ai, true, "AI recipe accepted");
+  assert.equal(good.aiNote, undefined, "no warning when the AI answered properly");
+});
+
+test("the time budget reaches both layers", async () => {
+  let seen = null;
+  const draft = await requestRecipeIdea({
+    api: { generateRecipe: async payload => { seen = payload; return { available: false }; } },
+    slot: "dinner",
+    target: { kcal: 560, protein: 28, carbs: 50, fat: 22 },
+    seed: 9,
+    notes: "mushrooms",
+    wish: parseWish("mushrooms"),
+    maxMinutes: 20,
+  });
+  assert.equal(seen.filters.maxMinutes, 20, "the function is told about the time budget");
+  assert.ok(draft.prepMinutes <= 20, `offline engine respects it (${draft.prepMinutes})`);
+});
+
 test("rerolling changes the dish, not just the garnish", () => {
   const wish = parseWish("curd");
   let used = [];

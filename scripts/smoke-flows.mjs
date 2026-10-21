@@ -218,6 +218,18 @@ const qtyBeforeEdit = qtyOf(rowBeforeEdit);
 await nav("Plan");
 await click(document.querySelector(".meal-card .meal-name-btn"), 450);
 assert(sheet()?.textContent.includes(firstMealName), "recipe viewer opened");
+// An open recipe card is a fixed surface: no pinch, no sideways drag, no page
+// bounce behind it. This is the complaint that the plan was fixed earlier.
+assert(document.body.classList.contains("is-locked"), "open recipe locks the page");
+const recipeBody = sheet().querySelector(".sheet-body");
+assert(recipeBody.style.touchAction === "pan-y", `recipe scroll body allows vertical pan only (${recipeBody.style.touchAction})`);
+assert(recipeBody.style.overscrollBehavior === "contain", "recipe scroll body does not bounce the page");
+assert(recipeBody.style.overflowX === "hidden", "recipe body cannot scroll sideways");
+const recipeBackdrop = document.querySelector(".modal-backdrop");
+// `touch-action: none` on an ancestor would also stop the recipe from
+// scrolling, so the backdrop must stay neutral.
+assert(!recipeBackdrop.style.touchAction || recipeBackdrop.style.touchAction === "auto", "backdrop leaves the sheet's own scrolling alone");
+assert(document.querySelector(".recipe-hero"), "recipe hero is inside the locked sheet");
 await click(button("Edit", sheet()), 450);
 assert(document.querySelector(".sheet .card-soft input[type=number]"), "editor opened");
 const qtyInputs = [...document.querySelectorAll(".sheet .card-soft input[type=number]")];
@@ -226,6 +238,7 @@ const editorSheet = [...document.querySelectorAll(".sheet")].at(-1);
 await click(button("Save", editorSheet.querySelector(".sheet-foot")), 1000);
 const openClose = document.querySelector(".sheet .close-btn");
 if (openClose) await click(openClose, 300);
+assert(!document.body.classList.contains("is-locked"), "closing the recipe unlocks the page");
 const activeDay = eatenRow?.day ?? 0;
 const updatedPlanRow = state().assignments.find(row => row.day === activeDay && row.slot === "breakfast");
 const updatedRecipe = state().recipes.find(recipe => recipe.id === updatedPlanRow.recipeId);
@@ -433,28 +446,42 @@ console.log("SECTIONS: hide and restore a whole meal section");
 
 // 7d. Generate a brand-new recipe idea and reroll it.
 await nav("Sous-chef");
-await click(document.querySelector(".idea-card .btn-primary"), 900);
-assert(document.querySelector(".idea-preview"), "idea preview appears");
+// One composer: the wish, the time budget, the meal type and the rules all sit
+// in the same card as the Generate button. Nothing here edits a chosen recipe.
+const composer = document.querySelector(".sous-card");
+assert(composer, "the sous-chef composer is one card");
+assert(composer.querySelector("[data-action='generate']"), "Generate lives in that card");
+assert(composer.querySelector("[data-field='wish']"), "the wish box lives in that card");
+assert(/Ready in/i.test(composer.textContent), "the time budget is offered next to it");
+assert(/Meal type|Type/i.test(composer.textContent), "the meal type is offered next to it");
+assert(/Rules|Filters/i.test(composer.textContent), "the rules are offered next to it");
+const basePicker = composer.querySelector("select");
+assert(!basePicker || basePicker.closest("details")?.open === false, "a base meal is optional and starts collapsed");
+assert(!composer.querySelector("[data-action='generate']").disabled, "Generate works with nothing selected");
+await click(document.querySelector("[data-action='generate']"), 900);
+assert(document.querySelector(".idea-card"), "idea preview appears");
 const firstIdea = document.querySelector(".idea-name")?.textContent?.trim();
 assert(firstIdea && firstIdea.length > 3, `idea has a name (${firstIdea})`);
-const reroll = [...document.querySelectorAll(".idea-preview button")].find(el => el.textContent.includes("🎲"));
+const reroll = document.querySelector("[data-action='reroll']");
 assert(reroll, "reroll control in the idea preview");
 await click(reroll, 900);
 const secondIdea = document.querySelector(".idea-name")?.textContent?.trim();
 assert(secondIdea && secondIdea !== firstIdea, `reroll gives a new idea (${firstIdea} → ${secondIdea})`);
 // A wish written as a sentence, not just an ingredient: "curd sweet" has to
 // come back as something sweet that actually contains curd.
-const wishInput = document.querySelector("input[placeholder*='chickpeas']");
+const wishInput = document.querySelector("[data-field='wish']");
 assert(wishInput, "the wish box is on screen");
 await setInput(wishInput, "lactose free curd sweet");
 const wishChipText = [...document.querySelectorAll(".stock-badge")].map(el => el.textContent).join(" ");
 assert(wishChipText.includes("Sweet"), `the app understood "sweet" (${wishChipText.trim()})`);
-await click(document.querySelector(".idea-card .btn-primary"), 1000);
-const sweetIdea = document.querySelector(".idea-preview");
+await click(document.querySelector("[data-action='generate']"), 1000);
+const sweetIdea = document.querySelector(".idea-card");
 assert(sweetIdea, "a sweet idea appears");
 assert(sweetIdea.textContent.includes("Sweet"), `the idea is marked sweet (${sweetIdea.querySelector(".opt-meta")?.textContent})`);
 const ideaIngredients = sweetIdea.querySelector(".idea-ingredients")?.textContent || "";
 assert(/curd/i.test(ideaIngredients), `the idea really contains curd (${ideaIngredients.slice(0, 80)})`);
+// When the AI layer cannot answer, the card says so instead of looking broken.
+assert(sweetIdea.querySelector(".ai-note-line"), "the card explains the fallback");
 console.log(`WISH: "lactose free curd sweet" → ${sweetIdea.querySelector(".idea-name")?.textContent}`);
 
 await click(button("Review & save"), 500);

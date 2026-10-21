@@ -1,102 +1,93 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { C, SLOT_META, SLOTS, TAG_LABELS } from "../theme.js";
-import { allPlannedRecipes } from "../engine/plan.js";
 import { plannedIds, suggestRecipes, targetFromRecipe } from "../engine/recommend.js";
 import { parseWish, wishChips } from "../lib/wishes.js";
 import { INGREDIENT_FACTS } from "../data/ingredientFacts.js";
 import { fmtNum, interpolate, todayIndex } from "../lib/format.js";
-import { tagLabel } from "../lib/labels.js";
-import { Chip, EmptyState, Field, Modal, NumberInput, Segmented } from "./ui.jsx";
+import { allPlannedRecipes } from "../engine/plan.js";
+import { Chip, EmptyState, Field, Modal, NumberInput } from "./ui.jsx";
+
+const TAG_LABEL = (lang, tag) => TAG_LABELS[lang]?.[tag] || tag;
 
 function reasonText(reason, t, lang) {
   switch (reason.key) {
     case "reasonKcal": return interpolate(t.reasonKcal, reason.values);
     case "reasonPantry": return interpolate(t.reasonPantry, reason.values);
     case "reasonShared": return interpolate(t.reasonShared, reason.values);
-    case "reasonTag": return interpolate(t.reasonTag, { tag: TAG_LABELS[lang]?.[reason.values?.tag] || reason.values?.tag });
+    case "reasonTag": return interpolate(t.reasonTag, { tag: TAG_LABEL(lang, reason.values?.tag) });
     default: return t[reason.key] || "";
   }
 }
 
+const COURSE_CHOICES = [
+  { value: null, label: "courseAny", icon: "🍽️" },
+  { value: "sweet", label: "courseSweet", icon: "🍰" },
+  { value: "savoury", label: "courseSavoury", icon: "🥘" },
+];
+
+const TIME_CHOICES = [0, 15, 20, 30];
+
 export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRecipe, onReviewIdea }) {
-  const [source, setSource] = useState("plan");
-  const [refKey, setRefKey] = useState("");
+  // One card holds everything the recipe is built from. There is deliberately
+  // no "pick a meal first" step: the sous-chef writes from your words.
+  const [wishText, setWishText] = useState("");
+  const [course, setCourse] = useState(null);
   const [slot, setSlot] = useState("lunch");
+  const [maxMinutes, setMaxMinutes] = useState(0);
   const [target, setTarget] = useState({ kcal: 500, protein: 25, carbs: 45, fat: 22 });
-  const [filters, setFilters] = useState({ highProtein: false, quick: false, lowFodmap: false, pantryFirst: true, excludeRecent: true });
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [filters, setFilters] = useState({ highProtein: false, lowFodmap: false, pantryFirst: true, excludeRecent: true });
+  const [baseKey, setBaseKey] = useState("");
+  const [baseOpen, setBaseOpen] = useState(false);
   const [addRecipe, setAddRecipe] = useState(null);
   const [addDay, setAddDay] = useState(todayIndex());
   const [addSlot, setAddSlot] = useState("lunch");
-  const [wishText, setWishText] = useState("");
   const [idea, setIdea] = useState(null);
-  // Ingredients used by the last few ideas, so a reroll changes the dish rather
-  // than the garnish.
-  const [usedKeys, setUsedKeys] = useState([]);
   const [ideaBusy, setIdeaBusy] = useState(false);
+  // Ingredients used by recent ideas, so a reroll changes the dish.
+  const [usedKeys, setUsedKeys] = useState([]);
   const seedRef = useRef(1 + Math.floor(Math.random() * 90000));
+  const ideaRef = useRef(null);
 
-  const refs = useMemo(() => allPlannedRecipes(app.plan).map(item => ({
+  const parsedWish = useMemo(() => parseWish(wishText), [wishText]);
+  const wish = useMemo(
+    () => (course ? { ...parsedWish, course } : parsedWish),
+    [parsedWish, course],
+  );
+  const chips = wishChips(wish);
+
+  const plannedRefs = useMemo(() => allPlannedRecipes(app.plan).map(item => ({
     ...item,
     key: `${item.day}:${item.slot}:${item.person}`,
     label: `${t.dayNames[item.day]} · ${SLOT_META[item.slot][lang]} · ${item.recipe.name?.[lang] || item.recipe.name?.en}`,
   })), [app.plan, lang, t]);
-
-  useEffect(() => {
-    if (!refs.length) { setRefKey(""); return; }
-    if (!refs.some(ref => ref.key === refKey)) {
-      setRefKey(refs[0].key);
-      setTarget(targetFromRecipe(refs[0].recipe));
-      setSlot(refs[0].slot);
-    }
-  }, [refs, refKey]);
-
-  const reference = refs.find(ref => ref.key === refKey) || null;
-
-  useEffect(() => {
-    if (!refs.length && source === "plan") setSource("target");
-  }, [refs.length, source]);
-
-  const chooseReference = key => {
-    setRefKey(key);
-    const ref = refs.find(item => item.key === key);
-    if (ref) {
-      setTarget(targetFromRecipe(ref.recipe));
-      setSlot(ref.slot);
-    }
-  };
+  const baseMeal = plannedRefs.find(ref => ref.key === baseKey) || null;
 
   const recentIds = useMemo(() => plannedIds(app.plan), [app.plan]);
 
+  // The list below is a different feature: scoring recipes you already own.
   const suggestions = useMemo(() => suggestRecipes({
     recipes: app.recipes,
     plan: app.plan,
-    reference: source === "plan" ? reference?.recipe || null : null,
+    reference: baseMeal?.recipe || null,
     target,
     slot,
     pantry: app.pantry,
     recentIds,
-    filters,
+    filters: { ...filters, quick: maxMinutes > 0 && maxMinutes <= 15 },
     limit: 8,
-  }), [app.recipes, app.plan, source, reference, target, slot, app.pantry, recentIds, filters]);
+  }), [app.recipes, app.plan, baseMeal, target, slot, app.pantry, recentIds, filters, maxMinutes]);
 
   const toggleFilter = key => setFilters(previous => ({ ...previous, [key]: !previous[key] }));
 
-  const wish = useMemo(() => parseWish(wishText), [wishText]);
-
-  // The controls sit below the Generate button, so the button used to look like
-  // it had no inputs. This line says, in words, what pressing it will make.
-  const chips = wishChips(wish);
   const ideaSummary = [
-    wish.course === "sweet" ? `🍰 ${t.ideaSweet || "Sweet"}` : (SLOT_META[slot]?.[lang] || slot),
+    wish.course === "sweet" ? `🍰 ${t.courseSweet}` : wish.course === "savoury" ? `🥘 ${t.courseSavoury}` : (SLOT_META[slot]?.[lang] || slot),
     `${fmtNum(target.kcal)} ${t.kcal}`,
-    wish.modifiers?.lactoseFree ? (t.ideaLactoseFree || "Lactose-free") : null,
-    wish.modifiers?.dairyFree ? (t.ideaDairyFree || "No dairy") : null,
-    filters.highProtein ? t.highProtein : null,
-    filters.quick ? t.quickOnly : null,
-    filters.lowFodmap ? t.onlyFodmap : null,
-    filters.pantryFirst ? t.pantryFirst : null,
+    maxMinutes ? `${maxMinutes} ${t.minutes}` : t.anyTime,
     wish.includes.length ? wish.includes.map(key => INGREDIENT_FACTS[key]?.en || key).join(" + ") : null,
-    wish.raw && !wish.includes.length ? `“${wish.raw.slice(0, 30)}”` : null,
+    wish.excludes.length ? `✕ ${wish.excludes.map(key => INGREDIENT_FACTS[key]?.en || key).join(", ")}` : null,
+    filters.highProtein ? t.highProtein : null,
+    filters.lowFodmap ? t.onlyFodmap : null,
   ].filter(Boolean).join(" · ");
 
   const generateIdea = async () => {
@@ -105,11 +96,13 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
     seedRef.current += 37;
     const excludeNames = [
       ...app.recipes.map(recipe => recipe.name?.en).filter(Boolean),
-      ...suggestions.map(item => item.recipe.name?.en).filter(Boolean),
       ...(idea ? [idea.name?.en] : []),
     ].filter(Boolean);
     try {
-      const draft = await app.generateIdea({ slot, target, filters, seed, excludeNames, notes: wishText.trim(), wish, avoidKeys: usedKeys });
+      const draft = await app.generateIdea({
+        slot, target, filters, seed, excludeNames,
+        notes: wishText.trim(), wish, avoidKeys: usedKeys, maxMinutes,
+      });
       if (!draft) {
         app.notify(t.ideaFailed, "error");
       } else {
@@ -118,12 +111,21 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
           ...previous,
           ...(draft.ingredients || []).map(item => item.key).filter(Boolean),
         ])].slice(-24));
+        requestAnimationFrame(() => ideaRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" }));
       }
     } catch {
       app.notify(t.ideaFailed, "error");
     } finally {
       setIdeaBusy(false);
     }
+  };
+
+  const useBaseMeal = key => {
+    setBaseKey(key);
+    const ref = plannedRefs.find(item => item.key === key);
+    if (!ref) return;
+    setTarget(targetFromRecipe(ref.recipe));
+    setSlot(ref.slot);
   };
 
   const openAdd = recipe => {
@@ -143,179 +145,67 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
     }
   };
 
+  const aiNoteKey = idea?.aiNote === "ignored"
+    ? "aiNoteIgnored"
+    : idea?.aiNote === "failed"
+      ? "aiNoteFailed"
+      : idea?.aiNote === "unavailable"
+        ? "aiNoteUnavailable"
+        : null;
+
   return (
     <div className="fade-in">
       <div className="eyebrow">🤖 {t.navSuggest}</div>
       <h1 className="page-title">{t.suggestTitle}</h1>
       <p className="page-sub">{t.suggestSub}</p>
 
-      <div className="ai-note">
-        <span style={{ fontSize: 18 }} aria-hidden="true">🧠</span>
-        <span style={{ flex: 1 }}>
-          <b>{t.aiTitle}</b><br />
-          {t.aiBody}
-        </span>
-        {idea && (
-          <span className={`tag ${idea.ai ? "ok" : ""}`} style={{ alignSelf: "flex-start", whiteSpace: "nowrap" }}>
-            {idea.ai ? `🤖 ${t.ideaAi}` : `✨ ${t.ideaOffline}`}
-          </span>
-        )}
-      </div>
+      <div className="card card-pad sous-card">
+        <Field label={t.ideaWish} hint={t.ideaWishHint}>
+          <textarea
+            className="textarea"
+            data-field="wish"
+            rows={2}
+            value={wishText}
+            maxLength={160}
+            placeholder={t.ideaWishPlaceholder}
+            onChange={event => setWishText(event.target.value)}
+          />
+        </Field>
 
-      <details className="ai-explain">
-        <summary>{t.aiExplainTitle}</summary>
-        <p>{t.aiExplainBody}</p>
-        {idea && !idea.ai && (
-          <>
-            <p className="tiny" style={{ marginTop: 6 }}><b>{t.aiNeedsSetupTitle}</b></p>
-            <p className="tiny" style={{ marginTop: 2 }}>{t.aiNeedsSetupBody}</p>
-          </>
-        )}
-      </details>
-
-      <div className="card card-pad idea-card">
-        <div className="row-between" style={{ alignItems: "flex-start", gap: 10 }}>
-          <div style={{ minWidth: 0 }}>
-            <div className="eyebrow">✨ {t.navSuggest}</div>
-            <div className="idea-title">{t.ideaTitle}</div>
-            <p className="caption" style={{ margin: "3px 0 0" }}>{t.ideaSub}</p>
-          </div>
-          <button type="button" className="btn btn-sm btn-primary" onClick={generateIdea} disabled={ideaBusy} style={{ flexShrink: 0 }}>
-            {ideaBusy ? t.generatingIdea : idea ? t.rerollIdea : t.generateIdea}
-          </button>
-        </div>
-        <p className="tiny" style={{ margin: "9px 0 0" }}>
-          <b style={{ color: C.leaf }}>{t.ideaWillMake}:</b> {ideaSummary}
-        </p>
-
-        {idea && (
-          <div className="idea-preview">
-            <div className="row" style={{ gap: 9, alignItems: "flex-start" }}>
-              <span className="idea-emoji" aria-hidden="true">{idea.emoji || "🍽️"}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="idea-name">{idea.name?.[lang] || idea.name?.en}</div>
-                <div className="opt-meta">
-                  {idea.course === "sweet" && <span>🍰 {t.ideaSweet || "Sweet"}</span>}
-                  <span>{SLOT_META[idea.slot]?.[lang]}</span>
-                  <span>🔥 {fmtNum(idea.kcal)}</span>
-                  <span>💪 {fmtNum(idea.protein)}g</span>
-                  <span>🌾 {fmtNum(idea.carbs)}g</span>
-                  <span>🫒 {fmtNum(idea.fat)}g</span>
-                  {idea.prepMinutes ? <span>⏱ {idea.prepMinutes} {t.minutes}</span> : null}
-                </div>
-              </div>
-              <span className={`tag ${idea.ai ? "ok" : ""}`}>{idea.ai ? `🤖 ${t.ideaAi}` : `✨ ${t.ideaOffline}`}</span>
-            </div>
-
-            <div className="row" style={{ gap: 4, flexWrap: "wrap", marginTop: 8 }}>
-              {[...(idea.tags || []), ...(idea.ai ? [] : [])].filter(tag => tag !== "vegetarian").slice(0, 5).map(tag => (
-                <span key={tag} className="stock-badge">{tagLabel(tag, lang, app.labels)}</span>
-              ))}
-            </div>
-
-            <ul className="idea-ingredients">
-              {(idea.ingredients || []).slice(0, 6).map((ingredient, index) => (
-                <li key={`${ingredient.en}-${index}`}>
-                  <span>{ingredient.en || ingredient.key}</span>
-                  <span>{fmtNum(ingredient.amount)} {ingredient.unit}</span>
-                </li>
-              ))}
-            </ul>
-
-            <div className="row" style={{ gap: 6, marginTop: 10 }}>
-              <button type="button" className="btn btn-sm btn-soft" onClick={generateIdea} disabled={ideaBusy}>
-                {ideaBusy ? t.generatingIdea : t.rerollIdea}
-              </button>
-              <button type="button" className="btn btn-sm btn-primary" style={{ flex: 1 }} onClick={() => onReviewIdea(idea)}>
-                {t.ideaEdit}
-              </button>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setIdea(null)} aria-label={t.close}>✕</button>
-            </div>
-            <p className="tiny" style={{ marginTop: 6 }}>{t.ideaSavedHint}</p>
-          </div>
-        )}
-      </div>
-
-      <div className="card card-pad" style={{ marginBottom: 14 }}>
-        <Segmented
-          value={source}
-          onChange={value => { setSource(value); if (value === "plan" && reference) setTarget(targetFromRecipe(reference.recipe)); }}
-          options={[
-            { value: "plan", label: t.chooseReference, icon: "📋" },
-            { value: "target", label: t.adjustTargets, icon: "🎯" },
-          ]}
-        />
-
-        {source === "plan" ? (
-          refs.length ? (
-            <div style={{ marginTop: 12 }}>
-              <Field label={t.chooseReference}>
-                <select className="select" value={refKey} onChange={event => chooseReference(event.target.value)}>
-                  {refs.map(ref => <option key={ref.key} value={ref.key}>{ref.label}</option>)}
-                </select>
-              </Field>
-            </div>
-          ) : (
-            <p className="caption" style={{ marginTop: 12 }}>{t.noReference}</p>
-          )
-        ) : (
-          <div style={{ marginTop: 12 }}>
-            <div className="form-grid">
-              <Field label={`${t.kcal} 🔥`}>
-                <NumberInput value={target.kcal} min={100} max={2000} ariaLabel={t.kcal}
-                  onChange={value => setTarget({ ...target, kcal: Number(value) || 0 })} />
-              </Field>
-              <Field label={`${t.protein} 💪`}>
-                <NumberInput value={target.protein} min={0} max={120} ariaLabel={t.protein}
-                  onChange={value => setTarget({ ...target, protein: Number(value) || 0 })} />
-              </Field>
-              <Field label={`${t.carbs} 🌾`}>
-                <NumberInput value={target.carbs} min={0} max={200} ariaLabel={t.carbs}
-                  onChange={value => setTarget({ ...target, carbs: Number(value) || 0 })} />
-              </Field>
-              <Field label={`${t.fat} 🫒`}>
-                <NumberInput value={target.fat} min={0} max={150} ariaLabel={t.fat}
-                  onChange={value => setTarget({ ...target, fat: Number(value) || 0 })} />
-              </Field>
-            </div>
+        {(wish.includes.length > 0 || wish.excludes.length > 0 || chips.length > 0) && (
+          <div className="row" style={{ gap: 4, flexWrap: "wrap", marginTop: 7 }}>
+            {chips.map(chip => (
+              <span key={chip.key} className="stock-badge" style={{ borderColor: C.leaf, color: C.leaf, fontWeight: 700 }}>
+                {chip.key === "course-sweet" ? "🍰" : chip.key === "quick" ? "⚡" : chip.key === "lactose-free" ? "🥛" : "🌿"} {chip.label}
+              </span>
+            ))}
+            {wish.includes.map(key => (
+              <span key={`in-${key}`} className="stock-badge" style={{ borderColor: C.leaf, color: C.leaf }}>
+                ✓ {INGREDIENT_FACTS[key]?.en || key}
+              </span>
+            ))}
+            {wish.excludes.map(key => (
+              <span key={`out-${key}`} className="stock-badge" style={{ textDecoration: "line-through" }}>
+                ✕ {INGREDIENT_FACTS[key]?.en || key}
+              </span>
+            ))}
           </div>
         )}
 
-        <div style={{ marginTop: 12 }}>
-          <Field label={t.ideaWish}>
-            <input
-              className="input"
-              type="text"
-              value={wishText}
-              maxLength={120}
-              placeholder={t.ideaWishPlaceholder}
-              onChange={event => setWishText(event.target.value)}
-            />
-          </Field>
-          {(wish.includes.length > 0 || wish.excludes.length > 0 || chips.length > 0) && (
-            <div className="row" style={{ gap: 4, flexWrap: "wrap", marginTop: 6 }}>
-              {chips.map(chip => (
-                <span key={chip.key} className="stock-badge" style={{ borderColor: C.leaf, color: C.leaf, fontWeight: 700 }}>
-                  {chip.key === "course-sweet" ? "🍰" : chip.key === "quick" ? "⚡" : chip.key === "lactose-free" ? "🥛" : "🌿"} {chip.label}
-                </span>
-              ))}
-              {wish.includes.map(key => (
-                <span key={`in-${key}`} className="stock-badge" style={{ borderColor: C.leaf, color: C.leaf }}>
-                  ✓ {INGREDIENT_FACTS[key]?.en || key}
-                </span>
-              ))}
-              {wish.excludes.map(key => (
-                <span key={`out-${key}`} className="stock-badge" style={{ textDecoration: "line-through" }}>
-                  ✕ {INGREDIENT_FACTS[key]?.en || key}
-                </span>
-              ))}
-            </div>
-          )}
+        <div className="sous-row">
+          <div className="eyebrow">{t.readyIn}</div>
+          <div className="row" style={{ gap: 5, flexWrap: "wrap" }}>
+            {TIME_CHOICES.map(minutes => (
+              <Chip key={minutes} active={maxMinutes === minutes} onClick={() => setMaxMinutes(minutes)} tone={maxMinutes === minutes ? "" : "sage"}>
+                {minutes ? `${minutes} ${t.minutes}` : t.anyTime}
+              </Chip>
+            ))}
+          </div>
         </div>
 
-        <div style={{ marginTop: 12 }}>
-          <div className="eyebrow" style={{ marginBottom: 6 }}>{t.slot}</div>
-          <div className="row" style={{ gap: 5, overflowX: "auto", paddingBottom: 2 }}>
+        <div className="sous-row">
+          <div className="eyebrow">{t.slot}</div>
+          <div className="row" style={{ gap: 5, flexWrap: "wrap" }}>
             {SLOTS.map(slotKey => (
               <Chip key={slotKey} active={slot === slotKey} onClick={() => setSlot(slotKey)}>
                 {SLOT_META[slotKey].icon} {SLOT_META[slotKey][lang]}
@@ -324,30 +214,142 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
           </div>
         </div>
 
-        <div style={{ marginTop: 12 }}>
-          <div className="eyebrow" style={{ marginBottom: 6 }}>{t.filters}</div>
+        <div className="sous-row">
+          <div className="eyebrow">{t.courseLabel}</div>
+          <div className="row" style={{ gap: 5, flexWrap: "wrap" }}>
+            {COURSE_CHOICES.map(choice => (
+              <Chip key={choice.label} active={course === choice.value} onClick={() => setCourse(choice.value)} tone={course === choice.value ? "" : "sky"}>
+                {choice.icon} {t[choice.label]}
+              </Chip>
+            ))}
+          </div>
+        </div>
+
+        <div className="sous-row">
+          <div className="eyebrow">{t.filters}</div>
           <div className="row" style={{ gap: 5, flexWrap: "wrap" }}>
             <Chip active={filters.highProtein} onClick={() => toggleFilter("highProtein")} tone={filters.highProtein ? "" : "sky"}>💪 {t.highProtein}</Chip>
-            <Chip active={filters.quick} onClick={() => toggleFilter("quick")} tone={filters.quick ? "" : "sage"}>⚡ {t.quickOnly}</Chip>
             <Chip active={filters.lowFodmap} onClick={() => toggleFilter("lowFodmap")} tone={filters.lowFodmap ? "" : "sage"}>🌿 {t.onlyFodmap}</Chip>
             <Chip active={filters.pantryFirst} onClick={() => toggleFilter("pantryFirst")} tone={filters.pantryFirst ? "" : "amber"}>🥫 {t.pantryFirst}</Chip>
             <Chip active={filters.excludeRecent} onClick={() => toggleFilter("excludeRecent")} tone={filters.excludeRecent ? "" : "amber"}>🔁 {t.excludeRecent}</Chip>
           </div>
         </div>
 
-        <div className="divider" />
-        <div className="row-between">
-          <span className="tiny">{t.targetNutrition}</span>
-          <span className="row" style={{ gap: 8 }}>
-            <span className="tiny">🔥 {fmtNum(target.kcal)}</span>
-            <span className="tiny">💪 {fmtNum(target.protein)}g</span>
-            <span className="tiny">🌾 {fmtNum(target.carbs)}g</span>
-            <span className="tiny">🫒 {fmtNum(target.fat)}g</span>
-          </span>
+        <div className="sous-row">
+          <Field label={`🔥 ${t.caloriesPerPortion}`}>
+            <NumberInput
+              value={target.kcal}
+              min={150}
+              max={1500}
+              ariaLabel={t.caloriesPerPortion}
+              onChange={value => setTarget({ ...target, kcal: Number(value) || 0 })}
+            />
+          </Field>
         </div>
+
+        <button type="button" className="btn btn-link" style={{ padding: "6px 0", alignSelf: "flex-start", color: C.muted, fontSize: 11 }} onClick={() => setMoreOpen(open => !open)}>
+          {moreOpen ? "−" : "+"} {t.moreNutrition}
+        </button>
+        {moreOpen && (
+          <div className="form-grid-3" style={{ marginBottom: 8 }}>
+            <Field label={`${t.protein} 💪`}>
+              <NumberInput value={target.protein} min={0} max={120} ariaLabel={t.protein}
+                onChange={value => setTarget({ ...target, protein: Number(value) || 0 })} />
+            </Field>
+            <Field label={`${t.carbs} 🌾`}>
+              <NumberInput value={target.carbs} min={0} max={200} ariaLabel={t.carbs}
+                onChange={value => setTarget({ ...target, carbs: Number(value) || 0 })} />
+            </Field>
+            <Field label={`${t.fat} 🫒`}>
+              <NumberInput value={target.fat} min={0} max={150} ariaLabel={t.fat}
+                onChange={value => setTarget({ ...target, fat: Number(value) || 0 })} />
+            </Field>
+          </div>
+        )}
+
+        <div className="divider" />
+
+        <button type="button" className="btn btn-primary btn-block" data-action="generate" onClick={generateIdea} disabled={ideaBusy}>
+          {ideaBusy ? t.generatingIdea : t.generateIdea}
+        </button>
+        <p className="tiny" style={{ margin: "9px 0 0" }}>
+          <b style={{ color: C.leaf }}>{t.ideaWillMake}:</b> {ideaSummary}
+        </p>
+
+        <details className="ai-explain" style={{ margin: "12px 0 0" }} open={baseOpen} onToggle={event => setBaseOpen(event.target.open)}>
+          <summary>{t.baseOnMeal}</summary>
+          {plannedRefs.length ? (
+            <div style={{ marginTop: 8 }}>
+              <select className="select" value={baseKey} onChange={event => useBaseMeal(event.target.value)}>
+                <option value="">{t.baseOnNone}</option>
+                {plannedRefs.map(ref => <option key={ref.key} value={ref.key}>{ref.label}</option>)}
+              </select>
+              <p className="tiny" style={{ marginTop: 6 }}>{t.baseOnMealHint}</p>
+            </div>
+          ) : (
+            <p className="tiny" style={{ marginTop: 6 }}>{t.noReference}</p>
+          )}
+        </details>
       </div>
 
-      <div className="section-title">
+      {idea && (
+        <div className="card card-pad idea-card" ref={ideaRef}>
+          <div className="row-between" style={{ alignItems: "flex-start", gap: 8 }}>
+            <div className="row" style={{ gap: 9, alignItems: "flex-start", flex: 1, minWidth: 0 }}>
+              <span className="idea-emoji" aria-hidden="true">{idea.emoji || "🍽️"}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="idea-name">{idea.name?.[lang] || idea.name?.en}</div>
+                <div className="opt-meta">
+                  {idea.course === "sweet" && <span>🍰 {t.courseSweet}</span>}
+                  <span>{SLOT_META[idea.slot]?.[lang]}</span>
+                  <span>🔥 {fmtNum(idea.kcal)}</span>
+                  <span>💪 {fmtNum(idea.protein)}g</span>
+                  <span>🌾 {fmtNum(idea.carbs)}g</span>
+                  <span>🫒 {fmtNum(idea.fat)}g</span>
+                  {idea.prepMinutes ? <span>⏱ {idea.prepMinutes} {t.minutes}</span> : null}
+                </div>
+              </div>
+            </div>
+            <span className={`tag ${idea.ai ? "ok" : ""}`} style={{ whiteSpace: "nowrap" }}>
+              {idea.ai ? `🤖 ${t.ideaAi}` : `✨ ${t.ideaOffline}`}
+            </span>
+          </div>
+
+          {(idea.tags || []).length > 0 && (
+            <div className="row" style={{ gap: 4, flexWrap: "wrap", marginTop: 8 }}>
+              {(idea.tags || []).filter(tag => tag !== "vegetarian").slice(0, 5).map(tag => (
+                <span key={tag} className="stock-badge">{tagLabelSafe(tag, lang, app.labels)}</span>
+              ))}
+            </div>
+          )}
+
+          <ul className="idea-ingredients">
+            {(idea.ingredients || []).slice(0, 8).map((ingredient, index) => (
+              <li key={`${ingredient.en}-${index}`}>
+                <span>{ingredient.en || ingredient.key}</span>
+                <span>{fmtNum(ingredient.amount)} {ingredient.unit}</span>
+              </li>
+            ))}
+          </ul>
+
+          {aiNoteKey && (
+            <p className="ai-note-line">{t[aiNoteKey]}</p>
+          )}
+
+          <div className="row" style={{ gap: 6, marginTop: 10 }}>
+            <button type="button" className="btn btn-sm btn-soft" data-action="reroll" onClick={generateIdea} disabled={ideaBusy}>
+              {ideaBusy ? t.generatingIdea : t.rerollIdea}
+            </button>
+            <button type="button" className="btn btn-sm btn-primary" data-action="review" style={{ flex: 1 }} onClick={() => onReviewIdea(idea)}>
+              {t.ideaEdit}
+            </button>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => setIdea(null)} aria-label={t.close}>✕</button>
+          </div>
+          <p className="tiny" style={{ marginTop: 6 }}>{t.ideaSavedHint}</p>
+        </div>
+      )}
+
+      <div className="section-title" style={{ marginTop: 20 }}>
         <span>{t.scoreLabel}</span>
         <span className="tiny">{suggestions.length}</span>
       </div>
@@ -435,4 +437,11 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
       </Modal>
     </div>
   );
+}
+
+// Custom labels live alongside built-in tags; a missing key must not throw.
+function tagLabelSafe(tag, lang, labels) {
+  const custom = (labels || []).find(label => `x-${label.key}` === tag);
+  if (custom) return custom.label;
+  return TAG_LABEL(lang, tag);
 }

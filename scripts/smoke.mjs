@@ -79,11 +79,25 @@ if (recipeButton) {
   });
   if (!text().includes("Ingredients")) throw new Error("Recipe modal did not open");
   console.log("RECIPE MODAL: ok");
+
+  // An open recipe card must be as unpannable as the rest of the app: the page
+  // behind is locked, and only vertical scrolling inside the sheet is allowed.
+  if (!document.body.classList.contains("is-locked")) throw new Error("Open recipe did not lock the page");
+  const sheetBody = document.querySelector(".sheet-body") || document.querySelector(".modal-body");
+  if (!sheetBody) throw new Error("Recipe sheet has no scroll body");
+  if (sheetBody.style.touchAction !== "pan-y") throw new Error(`Sheet allows sideways touch (${sheetBody.style.touchAction || "none"})`);
+  if (sheetBody.style.overscrollBehavior !== "contain") throw new Error("Sheet rubber-bands into the page");
+  const backdrop = document.querySelector(".modal-backdrop");
+  if (backdrop && backdrop.style.touchAction === "none") throw new Error("Backdrop blocks the sheet's own scrolling");
+  console.log("RECIPE PAN LOCK: ok");
+
   const close = [...document.querySelectorAll("button")].find(button => button.getAttribute("aria-label") === "Close");
   await act(async () => {
     close.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
     await new Promise(resolve => setTimeout(resolve, 80));
   });
+  if (document.body.classList.contains("is-locked")) throw new Error("Page stayed locked after closing the recipe");
+  console.log("RECIPE CLOSE UNLOCKS: ok");
 }
 
 // Pantry: press a + stepper.

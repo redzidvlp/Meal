@@ -362,6 +362,7 @@ once more: <strong>Edge Functions → recipe-ai → edit → select all → past
 <ul>
 <li>the <strong>“Anything you feel like?”</strong> line is sent to the model and treated as a hard
 requirement — ask for curd and it must be in the ingredients;</li>
+<li>a <strong>Ready in</strong> budget is passed through as “ready in N minutes or less”;</li>
 <li>if the model ignores it, the function asks again once, and the app falls back to the
 built-in engine, which is now guaranteed to include the ingredient you named;</li>
 <li>rerolling also avoids the ingredients of the last few ideas, so you stop getting the
@@ -369,11 +370,28 @@ same dish with one vegetable swapped.</li>
 </ul>
 <p>Without the update the app still works: it notices the model ignored your wish and
 answers with the offline engine instead — so you get your curd either way.</p>
-<h3>7c-ter. What the sous-chef can be asked for</h3>
+<h3>7c-ter. How the sous-chef is laid out</h3>
+<p>The whole page is one card, read top to bottom:</p>
+<ol>
+<li><strong>Anything you feel like?</strong> — type a few ingredients, or a sentence.</li>
+<li><strong>Ready in</strong> — <em>Any time</em>, 15, 20 or 30 minutes.</li>
+<li><strong>Meal type</strong> — breakfast, lunch, snack or dinner.</li>
+<li><strong>Course</strong> — either, sweet or savoury.</li>
+<li><strong>Rules</strong> — high protein, low-FODMAP, prefer what is in the pantry, skip repeats.</li>
+<li><strong>✨ Generate recipe</strong>, with <strong>Will make:</strong> directly underneath.</li>
+</ol>
+<p>Nothing on this page changes a recipe you already have. The result appears as its own card
+below; <strong>Review &amp; save</strong> is the only thing that puts it into your recipe book. The
+<strong>Start from a meal I already planned</strong> line at the bottom is optional and starts closed —
+it only copies calories and meal type, never the dish.</p>
+<p>Under the Generate button, the “From your own recipe book” list is a separate thing: it
+scores recipes you already own against the same targets, for the nights you would rather
+reuse something.</p>
+<h3>7c-quater. What the sous-chef can be asked for</h3>
 <p>Type into <strong>“Anything you feel like?”</strong> the way you would say it out loud:</p>
 <ul>
 <li>an ingredient — <code>curd</code>, <code>chickpeas</code>, <code>varškė</code> (it must end up in the recipe)</li>
-<li>something to leave out — <code>no avocado</code>, <code>be svogūnų</code></li>
+<li>something to leave out — <code>no mushrooms</code>, <code>be svogūnų</code></li>
 <li>a kind of dish — <code>sweet</code>, <code>dessert</code> (builds a dessert, not a savoury plate)</li>
 <li>a modifier — <code>lactose free</code>, <code>quick</code>, <code>high protein</code></li>
 </ul>
@@ -384,9 +402,18 @@ what it recognised, it does not guess silently.</p>
 your curd and asks for the lactose-free version of it rather than swapping it out.</p>
 <h3>7d. Prove it works</h3>
 <ol>
-<li>Open the app → <strong>✨ Sous-chef</strong> → press <strong>Generate</strong>.</li>
+<li>Open the app → <strong>✨ Sous-chef</strong> → press <strong>✨ Generate recipe</strong>.</li>
 <li>The small badge on the idea card must read <strong>🤖 AI recipe</strong>.
-If it says <strong>✨ Offline idea engine</strong>, something in 7a–7c is missing.</li>
+If it says <strong>✨ Offline idea engine</strong>, the card now says why, in one line:<ul>
+<li><em>“The AI function is not set up…”</em> → step 7a–7c was skipped (no function, or no key).</li>
+<li><em>“The AI function did not answer…”</em> → the key is wrong, quota is empty, or the
+function was updated but not redeployed.</li>
+<li><em>“The model’s answer did not match what you asked for…”</em> → the function is running,
+but it produced something the app refused (missing your ingredient, or a savoury
+dish when you asked for sweet). Reroll; the offline engine is already giving you a
+correct recipe in the meantime.</li>
+</ul>
+</li>
 <li>Press <strong>🎲 Reroll</strong> — a different dish must appear.</li>
 <li>Plan tab → <strong>📷</strong> → photograph a nutrition label → it fills calories and macros.</li>
 </ol>
