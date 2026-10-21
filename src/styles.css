@@ -644,7 +644,17 @@ img { max-width: 100%; }
 .meal-name-btn:active { opacity: .7; }
 .meal-card-icons { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
 .meal-card-icons .icon-btn { width: 30px; height: 30px; border-radius: 10px; box-shadow: none; font-size: 13px; }
-.meal-grip { color: var(--muted); cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
+.meal-grip {
+  color: var(--muted); cursor: grab; touch-action: none;
+  -webkit-user-select: none; user-select: none;
+  /* A 30px handle is hard to hit with a thumb; the dot stays small. */
+  width: 34px !important; height: 34px !important;
+  font-size: 15px !important;
+}
+/* While a card is being dragged the sticky header would swallow every drop
+   near the top of the screen. */
+body.is-dragging-meal .app-header { pointer-events: none; }
+body.is-dragging-meal { cursor: grabbing; }
 .meal-grip:active { cursor: grabbing; background: var(--sage-soft); }
 .meal-delete { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--line-soft)); }
 .meal-delete:active { background: var(--coral-soft); }

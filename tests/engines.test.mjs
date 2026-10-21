@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { sanitizeRecipe, sanitizePantryItem, sanitizeInviteCode, isInviteCode, sanitizeNote, sanitizeMenu, sanitizePhotoPayload, sanitizeLabel } from "../src/lib/validate.js";
 import { ingredientKey, findForbiddenIngredients } from "../src/lib/ingredients.js";
 import { buildPlan, mealFactor, eatenTotals } from "../src/engine/plan.js";
-import { buildShoppingList } from "../src/engine/shopping.js";
+import { buildShoppingList, slotPortions } from "../src/engine/shopping.js";
 import { applyDeltas, applyDeltasTracked, consumptionForRecipe, isLow, lowItems, pantryCoverage } from "../src/engine/pantry.js";
 import { suggestRecipes, isVegetarianSafe } from "../src/engine/recommend.js";
 import { PRESET_RECIPES, PRESET_MENUS } from "../src/data/presets.js";
@@ -239,6 +239,54 @@ test("shopping list changes when the meal changes (the old bug)", () => {
   });
   assert.ok(!after.some(row => row.ingredientKey === "natural-tofu"));
   assert.equal(after.find(row => row.ingredientKey === "tomato").total, 400);
+});
+
+test("extra portions are whole numbers, never halves", () => {
+  assert.deepEqual(slotPortions({ mode: "both", eaters: 2, extraPortions: 0 }), [2]);
+  assert.deepEqual(slotPortions({ mode: "both", eaters: 2, extraPortions: 3 }), [5]);
+  // A split dish feeds one person, so it is bought once — not twice.
+  assert.deepEqual(slotPortions({ mode: "split", eaters: 2, extraPortions: 0 }), [1, 1]);
+  for (const extra of [1, 2, 3, 5, 8]) {
+    for (const day of [0, 1, 2, 3]) {
+      const portions = slotPortions({ mode: "split", eaters: 2, extraPortions: extra, day });
+      assert.equal(portions.length, 2);
+      assert.ok(portions.every(value => Number.isInteger(value) && value >= 1), `extra ${extra}, day ${day}: ${portions}`);
+      assert.equal(portions.reduce((sum, value) => sum + value, 0), 2 + extra, "totals always match the setting");
+    }
+  }
+  // Odd days hand the first extra portion to the other person, so a week balances.
+  assert.deepEqual(slotPortions({ mode: "split", eaters: 2, extraPortions: 1, day: 0 }), [2, 1]);
+  assert.deepEqual(slotPortions({ mode: "split", eaters: 2, extraPortions: 1, day: 1 }), [1, 2]);
+  // Only one of the two has a dish in a split slot: all extras land on it.
+  assert.deepEqual(slotPortions({ mode: "split", eaters: 1, extraPortions: 2, day: 0 }), [3]);
+});
+
+test("a split day does not double both dishes when extras are set", () => {
+  const mine = makeRecipe({
+    id: "mine",
+    ingredients: [{ key: "natural-tofu", en: "Natural tofu", lt: "Tofu", amount: 100, unit: "g" }],
+  });
+  const hers = makeRecipe({
+    id: "hers",
+    ingredients: [{ key: "eggs", en: "Eggs", lt: "Kiaušiniai", amount: 2, unit: "vnt" }],
+  });
+  const map = new Map([[mine.id, mine], [hers.id, hers]]);
+  const plan = buildPlan([
+    { day: 0, slot: "dinner", personKey: "R", recipeId: "mine" },
+    { day: 0, slot: "dinner", personKey: "I", recipeId: "hers" },
+  ], map);
+
+  const none = buildShoppingList({ plan, days: [0], lang: "en" });
+  assert.equal(none.find(row => row.ingredientKey === "natural-tofu").total, 100);
+  assert.equal(none.find(row => row.ingredientKey === "eggs").total, 2);
+
+  const oneExtra = buildShoppingList({ plan, days: [0], extraPortions: 1, lang: "en" });
+  assert.equal(oneExtra.find(row => row.ingredientKey === "natural-tofu").total, 200); // 2 portions
+  assert.equal(oneExtra.find(row => row.ingredientKey === "eggs").total, 2); // 1 portion
+
+  const twoExtra = buildShoppingList({ plan, days: [0], extraPortions: 2, lang: "en" });
+  assert.equal(twoExtra.find(row => row.ingredientKey === "natural-tofu").total, 200);
+  assert.equal(twoExtra.find(row => row.ingredientKey === "eggs").total, 4);
 });
 
 test("shopping list handles extra portions, selected days and pantry stock", () => {

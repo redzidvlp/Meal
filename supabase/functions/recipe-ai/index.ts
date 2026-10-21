@@ -47,6 +47,7 @@ const prompt = input => [
   'Schema: {"name_en":string,"name_lt":string,"emoji":string,"slot":string,"kcal":number,"protein":number,"carbs":number,"fat":number,"prep_minutes":number,"ingredients":[{"en":string,"lt":string,"amount":number,"unit":"g"|"ml"|"vnt"}],"method_en":string,"method_lt":string,"tags":string[]}',
   `Slot: ${input.slot}. Target per person: ${input.target.kcal} kcal, ${input.target.protein} g protein, ${input.target.carbs} g carbs, ${input.target.fat} g fat.`,
   `Filters: ${input.filters.lowFodmap ? "low-FODMAP" : "no FODMAP restriction"}, ${input.filters.quick ? "ready in 15 minutes or less" : "any prep time"}, ${input.filters.highProtein ? "high protein" : "normal protein"}.`,
+  input.notes ? `The cook would like: ${input.notes}` : "",
   input.pantry.length ? `Already in the pantry: ${input.pantry.join(", ")}. Try to use some of it.` : "",
   input.avoid.length ? `Do not repeat these dishes: ${input.avoid.join("; ")}.` : "",
   "Keep the method to 3–5 short sentences. Use 4–8 ingredients. Tags may only be: vegan, dairy-free, low-fodmap, gluten-free, high-protein, quick, meal-prep.",
@@ -97,6 +98,9 @@ Deno.serve(async request => {
     .map(item => clean(item, 40)).filter(Boolean).slice(0, 20);
   const avoid = (Array.isArray(payload?.avoid) ? payload.avoid : [])
     .map(item => clean(item, 90)).filter(Boolean).slice(0, 20);
+  // Free-text wish ("chickpeas, no onion, 20 min"). Treated as a hint only:
+  // the vegetarian check below still runs on whatever comes back.
+  const notes = clean(payload?.notes, 120);
 
   const baseUrl = (Deno.env.get("AI_BASE_URL") || "https://api.openai.com/v1").replace(/\/$/, "");
   const model = Deno.env.get("AI_MODEL") || "gpt-4o-mini";
@@ -111,7 +115,7 @@ Deno.serve(async request => {
         temperature: 0.9,
         max_tokens: 900,
         response_format: { type: "json_object" },
-        messages: [{ role: "user", content: prompt({ slot, target, filters, pantry, avoid }) }],
+        messages: [{ role: "user", content: prompt({ slot, target, filters, pantry, avoid, notes }) }],
       }),
     });
   } catch {

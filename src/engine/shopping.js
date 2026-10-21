@@ -7,6 +7,28 @@ export function shoppingItemKey(ingredient) {
 }
 
 /**
+ * How many portions of each dish to buy for one slot.
+ *
+ * A shared dish is cooked once for both of you, so it starts at 2. A split slot
+ * is two different dishes eaten by one person each, so each dish starts at 1 —
+ * setting "3 portions" must not double both of them.
+ *
+ * Extra portions are whole: they are handed out one at a time, never split into
+ * halves. On a split day they rotate between the two dishes (starting with a
+ * different person on odd days) so a week of leftovers stays fair.
+ */
+export function slotPortions({ mode, eaters, extraPortions = 0, day = 0 }) {
+  if (mode === "both") return [2 + extraPortions];
+  if (!eaters) return [];
+  if (!extraPortions) return new Array(eaters).fill(1);
+  const start = day % eaters;
+  return Array.from({ length: eaters }, (_, index) => {
+    const offset = (index - start + eaters) % eaters;
+    return 1 + Math.floor(extraPortions / eaters) + (offset < extraPortions % eaters ? 1 : 0);
+  });
+}
+
+/**
  * Builds the shopping list straight from the live plan. Any meal change,
  * split, or portion change is reflected on the next render — nothing is
  * cached, which is why the old "list never updates" bug cannot happen.
@@ -27,15 +49,21 @@ export function buildShoppingList({
     for (const slot of SLOTS) {
       const entry = dayPlan[slot];
       if (!entry || entry.mode === "empty") continue;
-      const persons = entry.mode === "both" ? ["both"] : ["R", "I"];
-      const eaters = entry.mode === "both"
-        ? 2
-        : ["R", "I"].filter(person => !!entry.recipes[person]).length;
+      const persons = entry.mode === "both"
+        ? ["both"]
+        : ["R", "I"].filter(person => !!entry.recipes[person]);
+      if (!persons.length) continue;
+      const portions = slotPortions({
+        mode: entry.mode,
+        eaters: persons.length,
+        extraPortions,
+        day,
+      });
 
-      for (const person of persons) {
+      persons.forEach((person, index) => {
         const recipe = person === "both" ? entry.recipes.R : entry.recipes[person];
-        if (!recipe) continue;
-        const factor = person === "both" ? 2 + extraPortions : 1 + extraPortions / Math.max(eaters, 1);
+        if (!recipe) return;
+        const factor = portions[index] ?? 0;
 
         for (const ing of recipe.ingredients || []) {
           const key = shoppingItemKey(ing);
@@ -65,7 +93,7 @@ export function buildShoppingList({
             amount,
           });
         }
-      }
+      });
     }
   });
 

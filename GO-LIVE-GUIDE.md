@@ -266,6 +266,14 @@ Optional extras, same screen: `AI_MODEL` = `gpt-4o-mini`, `AI_BASE_URL` =
    `https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/functions/nutrition-scan/index.ts`.
 5. Leave **Verify JWT** ON for both (the app sends the signed-in user’s token).
 
+### 7c-bis. Keeping it fresh
+
+If you already deployed the functions before this version of the app, paste
+`recipe-ai` once more (Deploy a new function → Via editor → **Deploy updates**).
+The new code accepts the **“Anything you feel like?”** line — chickpeas, no onion,
+20 minutes — and passes it to the model. Without the update that box is simply ignored;
+everything else keeps working.
+
 ### 7d. Prove it works
 
 1. Open the app → **✨ Sous-chef** → press **Generate**.

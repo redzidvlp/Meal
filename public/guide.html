@@ -354,6 +354,12 @@ Edge Functions → Secrets).</li>
 <code>https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/functions/nutrition-scan/index.ts</code>.</li>
 <li>Leave <strong>Verify JWT</strong> ON for both (the app sends the signed-in user’s token).</li>
 </ol>
+<h3>7c-bis. Keeping it fresh</h3>
+<p>If you already deployed the functions before this version of the app, paste
+<code>recipe-ai</code> once more (Deploy a new function → Via editor → <strong>Deploy updates</strong>).
+The new code accepts the <strong>“Anything you feel like?”</strong> line — chickpeas, no onion,
+20 minutes — and passes it to the model. Without the update that box is simply ignored;
+everything else keeps working.</p>
 <h3>7d. Prove it works</h3>
 <ol>
 <li>Open the app → <strong>✨ Sous-chef</strong> → press <strong>Generate</strong>.</li>

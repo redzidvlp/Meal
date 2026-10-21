@@ -90,6 +90,17 @@ async function seedOldApp(db, { withHouseholds = true, withNames = true, withInv
 const one = async (db, text) => (await db.query(text)).rows[0];
 const doctorRows = async db =>
   (await db.query(readSql("doctor.sql"))).rows.filter(row => row.section === "table");
+
+// Every table reachable through the public API must have RLS on. Supabase's
+// linter warns about this at paste time, but a fresh install has no linter.
+const expectRlsEverywhere = async (db, label) => {
+  const rows = (await db.query(`
+    select tablename, rowsecurity from pg_tables where schemaname = 'public' order by tablename
+  `)).rows;
+  assert.ok(rows.length >= 12, `${label}: public tables present`);
+  const open = rows.filter(row => !row.rowsecurity).map(row => row.tablename);
+  assert.deepEqual(open, [], `${label}: tables without RLS`);
+};
 const count = async (db, table) => Number((await one(db, `select count(*)::int as n from public.${table}`)).n);
 
 async function expectUpgraded(db, label) {
@@ -142,6 +153,7 @@ await scenario("fresh project: schema + seed, run twice", async () => {
   await db.exec(seed);
   await db.exec(schema);
   await db.exec(seed);
+  await expectRlsEverywhere(db, "fresh install");
   const doctor = await doctorRows(db);
   assert.ok(doctor.every(row => row.status === "ok" && row.detail === "—"));
   assert.equal(Number((await one(db, `select count(*)::int as n from public.recipes where household_id is null`)).n), 38);
@@ -154,6 +166,7 @@ await scenario("old project: one-paste upgrade keeps logins and the week", async
   await seedOldApp(db);
   await db.exec(readSql("upgrade-existing-project.sql"));
   await expectUpgraded(db, "first run");
+  await expectRlsEverywhere(db, "upgrade");
   await db.exec(readSql("upgrade-existing-project.sql"));
   await expectUpgraded(db, "second run (idempotent)");
   const legacy = await one(db, `select count(*)::int as n from legacy.plan`);

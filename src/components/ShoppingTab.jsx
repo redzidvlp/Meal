@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { C, SLOT_META } from "../theme.js";
+import { C, HOUSEHOLD_SIZE, SLOT_META } from "../theme.js";
 import { fmtNum, interpolate } from "../lib/format.js";
 import { Chip, EmptyState, PersonBadge } from "./ui.jsx";
 
@@ -25,8 +25,10 @@ export default function ShoppingTab({ app, lang, t, onGoPantry }) {
   const checkedItems = items.filter(item => app.checksMap[item.key]);
   const toggleDay = index => setDays(previous => previous.includes(index) ? previous.filter(value => value !== index) : [...previous, index].sort((a, b) => a - b));
 
-  const changePortions = value => {
-    const next = Math.max(0, Math.min(8, value));
+  // The stepper shows what you are actually buying: 2 = one each, 3 = one
+  // extra for leftovers. Storage keeps only the extra part.
+  const changePortions = total => {
+    const next = Math.max(0, Math.min(8, total - HOUSEHOLD_SIZE));
     setPortionDraft(next);
     app.updateHousehold({ extraPortions: next });
   };
@@ -118,7 +120,7 @@ export default function ShoppingTab({ app, lang, t, onGoPantry }) {
           </div>
           <div className="stepper">
             <button type="button" onClick={() => changePortions(portionDraft - 1)} aria-label="Decrease">−</button>
-            <span className="qty-value">{portionDraft}</span>
+            <span className="qty-value">{HOUSEHOLD_SIZE + portionDraft}</span>
             <button type="button" onClick={() => changePortions(portionDraft + 1)} aria-label="Increase">+</button>
           </div>
         </div>

@@ -25,6 +25,7 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
   const [addRecipe, setAddRecipe] = useState(null);
   const [addDay, setAddDay] = useState(todayIndex());
   const [addSlot, setAddSlot] = useState("lunch");
+  const [wish, setWish] = useState("");
   const [idea, setIdea] = useState(null);
   const [ideaBusy, setIdeaBusy] = useState(false);
   const seedRef = useRef(1 + Math.floor(Math.random() * 90000));
@@ -75,6 +76,18 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
 
   const toggleFilter = key => setFilters(previous => ({ ...previous, [key]: !previous[key] }));
 
+  // The controls sit below the Generate button, so the button used to look like
+  // it had no inputs. This line says, in words, what pressing it will make.
+  const ideaSummary = [
+    SLOT_META[slot]?.[lang] || slot,
+    `${fmtNum(target.kcal)} ${t.kcal}`,
+    filters.highProtein ? t.highProtein : null,
+    filters.quick ? t.quickOnly : null,
+    filters.lowFodmap ? t.onlyFodmap : null,
+    filters.pantryFirst ? t.pantryFirst : null,
+    wish.trim() ? `“${wish.trim().slice(0, 40)}”` : null,
+  ].filter(Boolean).join(" · ");
+
   const generateIdea = async () => {
     setIdeaBusy(true);
     const seed = seedRef.current;
@@ -85,7 +98,7 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
       ...(idea ? [idea.name?.en] : []),
     ].filter(Boolean);
     try {
-      const draft = await app.generateIdea({ slot, target, filters, seed, excludeNames });
+      const draft = await app.generateIdea({ slot, target, filters, seed, excludeNames, notes: wish.trim() });
       if (!draft) {
         app.notify(t.ideaFailed, "error");
       } else {
@@ -156,6 +169,9 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
             {ideaBusy ? t.generatingIdea : idea ? t.rerollIdea : t.generateIdea}
           </button>
         </div>
+        <p className="tiny" style={{ margin: "9px 0 0" }}>
+          <b style={{ color: C.leaf }}>{t.ideaWillMake}:</b> {ideaSummary}
+        </p>
 
         {idea && (
           <div className="idea-preview">
@@ -248,6 +264,19 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
             </div>
           </div>
         )}
+
+        <div style={{ marginTop: 12 }}>
+          <Field label={t.ideaWish}>
+            <input
+              className="input"
+              type="text"
+              value={wish}
+              maxLength={120}
+              placeholder={t.ideaWishPlaceholder}
+              onChange={event => setWish(event.target.value)}
+            />
+          </Field>
+        </div>
 
         <div style={{ marginTop: 12 }}>
           <div className="eyebrow" style={{ marginBottom: 6 }}>{t.slot}</div>

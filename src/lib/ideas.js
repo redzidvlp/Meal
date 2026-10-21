@@ -46,6 +46,7 @@ export async function requestRecipeIdea({
   filters = {},
   seed = 1,
   excludeNames = [],
+  notes = "",
   pantry = [],
 }) {
   if (api?.generateRecipe) {
@@ -59,6 +60,7 @@ export async function requestRecipeIdea({
           highProtein: !!filters.highProtein,
         },
         avoid: excludeNames.slice(0, 20),
+        notes: String(notes || "").replace(/[<>{}]/g, "").trim().slice(0, 120),
         pantry: pantry.map(item => (typeof item === "string" ? item : item?.nameEn || item?.key)).filter(Boolean).slice(0, 20),
       });
       if (result?.available && result.recipe) {
