@@ -13,6 +13,7 @@ import { mergeMenus, menuTotals, menuItemsFromDay } from "../src/lib/menus.js";
 import { customTag, isCustomTag, tagLabel, tagsInUse, labelKey } from "../src/lib/labels.js";
 import { generateRecipeDraft } from "../src/engine/generate.js";
 import { offlineIdea } from "../src/lib/ideas.js";
+import { parseWish, wishSatisfied, containsExcluded } from "../src/lib/wishes.js";
 
 const makeRecipe = (overrides = {}) => ({
   id: "test-a",
@@ -557,6 +558,61 @@ test("rerolling an idea returns new names even across many taps", () => {
     seen.push(draft.name.en);
   }
   assert.equal(new Set(seen).size, 6);
+});
+
+test("a wish is understood in English and Lithuanian", () => {
+  assert.deepEqual(parseWish("curd").includes, ["curd"]);
+  assert.deepEqual(parseWish("I really want curd").includes, ["curd"]);
+  assert.deepEqual(parseWish("varškės").includes, ["curd"]);
+  assert.deepEqual(parseWish("curd, no avocado").excludes, ["avocado"]);
+  assert.deepEqual(parseWish("be avokado").excludes, ["avocado"]);
+  assert.equal(parseWish("something quick").quick, true);
+  assert.deepEqual(parseWish("").includes, []);
+});
+
+test("asking for an ingredient actually produces it", () => {
+  const wish = parseWish("curd, no avocado");
+  for (const slot of ["breakfast", "lunch", "dinner", "snack"]) {
+    for (let seed = 1; seed <= 4; seed += 1) {
+      const draft = generateRecipeDraft({
+        slot,
+        target: { kcal: 520, protein: 26, carbs: 48, fat: 22 },
+        seed,
+        wish,
+      });
+      assert.ok(draft, `${slot} ${seed}`);
+      const keys = draft.ingredients.map(item => item.key);
+      assert.ok(keys.includes("curd"), `${slot} ${seed} has curd: ${keys.join(",")}`);
+      assert.ok(!keys.includes("avocado"), `${slot} ${seed} has no avocado`);
+      assert.equal(wishSatisfied(draft, wish), true);
+      assert.deepEqual(containsExcluded(draft, wish), []);
+    }
+  }
+});
+
+test("rerolling changes the dish, not just the garnish", () => {
+  const wish = parseWish("curd");
+  let used = [];
+  const seen = [];
+  const mains = [];
+  for (let index = 0; index < 6; index += 1) {
+    const draft = offlineIdea({
+      slot: "dinner",
+      target: { kcal: 560, protein: 28, carbs: 50, fat: 22 },
+      seed: 13 + index * 37,
+      excludeNames: seen,
+      wish,
+      avoidKeys: used,
+    });
+    assert.ok(draft, `idea ${index}`);
+    assert.ok(draft.ingredients.some(item => item.key === "curd"), `idea ${index} still honours the wish`);
+    seen.push(draft.name.en);
+    used = [...new Set([...used, ...draft.ingredients.map(item => item.key)])];
+    mains.push(draft.ingredients.find(item => item.key !== "curd")?.key);
+  }
+  assert.equal(new Set(mains).size >= 3, true, `main ingredients vary: ${mains.join(",")}`);
+  // Avocado may come back eventually, but not in every single idea.
+  assert.ok(mains.filter(key => key === "avocado").length <= 2, mains.join(","));
 });
 
 test("quick ideas really are quick and never reuse a name", () => {

@@ -64,6 +64,14 @@ export const INGREDIENT_FACTS = {
   "tomato-sauce": { en: "Tomato sauce", lt: "Pomidorų padažas", kcal: 29, protein: 1.6, carbs: 5, fat: 0.3, unit: "g", group: "flavor", vegan: true, glutenFree: true, fodmap: true },
   "coconut-cream": { ltIn: "kokoso kremu", en: "Coconut cream", lt: "Kokoso kremas", kcal: 230, protein: 2.3, carbs: 6, fat: 23, unit: "g", group: "fat", vegan: true, glutenFree: true, fodmap: true },
   "dark-chocolate": { ltIn: "juodu šokoladu", en: "Dark chocolate", lt: "Juodas šokoladas", kcal: 598, protein: 8, carbs: 46, fat: 43, unit: "g", group: "fat", vegan: true, glutenFree: true, fodmap: true },
+  // Ingredients people actually ask for by name. Without a fact the generator
+  // cannot build with them at all, which is why "I want curd" used to come back
+  // as a recipe without any curd in it.
+  curd: { ltIn: "varške", shortEn: "Curd", shortLt: "Varškė", en: "Curd cheese", lt: "Varškė", kcal: 98, protein: 11, carbs: 3.5, fat: 4.5, unit: "g", group: "protein", vegan: false, glutenFree: true, fodmap: true },
+  "feta": { ltIn: "fetos sūriu", shortEn: "Feta", shortLt: "Feta", en: "Feta cheese", lt: "Fetos sūris", kcal: 264, protein: 14, carbs: 4, fat: 21, unit: "g", group: "protein", vegan: false, glutenFree: true, fodmap: true },
+  mushrooms: { ltIn: "pievagrybiais", shortEn: "Mushrooms", shortLt: "Pievagrybiai", en: "Mushrooms", lt: "Pievagrybiai", kcal: 22, protein: 3.1, carbs: 3.3, fat: 0.3, unit: "g", group: "veg", vegan: true, glutenFree: true, fodmap: false },
+  potato: { ltIn: "bulvėmis", shortEn: "Potato", shortLt: "Bulvės", en: "Potato", lt: "Bulvės", kcal: 77, protein: 2, carbs: 17, fat: 0.1, unit: "g", group: "carb", vegan: true, glutenFree: true, fodmap: true },
+  "sweet-potato": { ltIn: "batatais", shortEn: "Sweet potato", shortLt: "Batatai", en: "Sweet potato", lt: "Batatai", kcal: 86, protein: 1.6, carbs: 20, fat: 0.1, unit: "g", group: "carb", vegan: true, glutenFree: true, fodmap: true },
 };
 
 export const GENERATOR_GROUPS = {

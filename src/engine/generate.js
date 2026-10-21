@@ -257,6 +257,8 @@ export function generateRecipeDraft({
   filters = {},
   seed = 1,
   excludeNames = [],
+  wish = null,
+  avoidKeys = [],
 } = {}) {
   const safeSlot = SLOTS.includes(slot) ? slot : "lunch";
   let templates = TEMPLATES[safeSlot];
@@ -271,7 +273,32 @@ export function generateRecipeDraft({
     const mixed = Math.imul((Number(seed) || 1) ^ 0x9e3779b9, 2654435761) + Math.imul(attempt + 1, 40503);
     const random = mulberry32(mixed >>> 0);
     const template = pick(random, templates);
-    const keys = template.pickSet(random);
+    let keys = template.pickSet(random);
+
+    // Rerolling used to hand back the same template with one vegetable swapped,
+    // so every idea had avocado in it. Anything used by a recent idea is out
+    // unless the person asked for it by name.
+    // Only enforced for the first dozen attempts: after a long reroll streak
+    // everything is "recent", and a repeated ingredient beats no idea at all.
+    const fresh = attempt < 12
+      ? (avoidKeys || []).filter(key => !(wish?.includes || []).includes(key))
+      : [];
+    if (fresh.length && Object.values(keys).some(key => fresh.includes(key))) continue;
+
+    // Honour an explicit "I want curd / no avocado": swap the matching role for
+    // the requested ingredient and refuse any template that insists on a banned
+    // one.
+    if (wish) {
+      const banned = wish.excludes || [];
+      if (Object.values(keys).some(key => banned.includes(key))) continue;
+      const next = { ...keys };
+      for (const key of wish.includes || []) {
+        const fact = INGREDIENT_FACTS[key];
+        if (!fact) continue;
+        if (fact.group in next) next[fact.group] = key;
+      }
+      keys = next;
+    }
 
     if (filters.lowFodmap) {
       const ok = Object.entries(keys).every(([role, key]) => role === "carb" || INGREDIENT_FACTS[key]?.fodmap);

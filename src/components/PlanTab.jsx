@@ -57,6 +57,19 @@ function PersonTotals({ personKey, name, full, eaten, meals, eatenMeals, t }) {
   );
 }
 
+function MoveHereButton({ slot, onClick, lang, t }) {
+  return (
+    <button
+      type="button"
+      className="move-here"
+      onClick={event => { event.stopPropagation(); onClick(); }}
+      aria-label={`${t.moveHere}: ${SLOT_META[slot][lang]}`}
+    >
+      <span aria-hidden="true">↔</span> {t.moveHere}
+    </button>
+  );
+}
+
 export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRecipe, onPick, onOpenMenu, onScan }) {
   const dayPlan = app.plan[day];
   const [remove, setRemove] = useState(null);
@@ -151,6 +164,26 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
 
   const openMove = slot => setMove({ slot });
 
+  const clearPick = () => {
+    dragRef.current = null;
+    setDrag(null);
+  };
+
+  const confirmPick = slot => {
+    if (!drag) return;
+    const from = drag.slot;
+    clearPick();
+    performMove(from, slot);
+  };
+
+  useEffect(() => {
+    if (!drag) return undefined;
+    const onKey = event => { if (event.key === "Escape") clearPick(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!drag]);
+
   useEffect(() => {
     if (!drag) return undefined;
 
@@ -213,20 +246,28 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
 
     const onUp = event => {
       const state = dragRef.current;
-      dragRef.current = null;
-      setDrag(null);
       if (!state) return;
-      if (!state.active) {
-        openMove(state.slot);
+      const target = state.active ? (state.hover || slotAt(event)) : null;
+      if (target && target !== state.slot) {
+        dragRef.current = null;
+        setDrag(null);
+        performMove(state.slot, target);
         return;
       }
-      const target = state.hover || slotAt(event);
-      if (target && target !== state.slot) performMove(state.slot, target);
+      // Dropped on nothing (or simply tapped): stay picked up and let the person
+      // tap a slot. Ending here is what made a failed drag look like a dead
+      // button — especially on a phone, where most slots are off screen.
+      dragRef.current = { ...state, active: false, hover: null };
+      setDrag(previous => (previous ? { ...previous, active: false, hover: null } : previous));
     };
 
+    // A browser-initiated cancel (the page started scrolling) is not a failure:
+    // keep the meal picked up so tapping a target still completes the move.
     const onCancel = () => {
-      dragRef.current = null;
-      setDrag(null);
+      const state = dragRef.current;
+      if (!state) return;
+      dragRef.current = { ...state, active: false, hover: null };
+      setDrag(previous => (previous ? { ...previous, active: false, hover: null } : previous));
     };
 
     window.addEventListener("pointermove", onMove, { passive: true });
@@ -375,7 +416,8 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
 
       {visibleSlots.map(slot => {
         const entry = dayPlan[slot];
-        const dropClass = `${drag ? "drop-target" : ""} ${drag?.hover === slot && drag.slot !== slot ? "drop-hover" : ""}`;
+        const dropClass = `${drag ? "drop-target" : ""} ${drag?.hover === slot && drag.slot !== slot ? "drop-hover" : ""} ${drag?.slot === slot ? "is-picked" : ""}`;
+        const pickTarget = !!drag && drag.slot !== slot;
 
         if (entry.mode === "empty") {
           return (
@@ -389,10 +431,10 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
               <button
                 type="button"
                 className="empty-slot"
-                onClick={() => onPick({ day, slot, mode: "empty", person: null })}
+                onClick={() => (pickTarget ? confirmPick(slot) : onPick({ day, slot, mode: "empty", person: null }))}
               >
                 <span style={{ width: 26, height: 26, borderRadius: 8, background: C.surface, border: `1px solid ${C.line}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: C.leaf }} aria-hidden="true">+</span>
-                {t.addMeal}
+                {pickTarget ? `↔ ${t.moveHere}` : t.addMeal}
               </button>
             </div>
           );
@@ -401,7 +443,7 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
         if (entry.mode === "both") {
           const recipe = entry.recipes.R;
           return (
-            <div key={slot} data-drop-slot={slot} className={`slot-zone ${dropClass}`} style={{ marginBottom: 9 }}>
+            <div key={slot} data-drop-slot={slot} className={`slot-zone ${dropClass} ${pickTarget ? "pick-target" : ""}`} style={{ marginBottom: 9 }}>
               <SlotHead
                 slot={slot}
                 lang={lang}
@@ -410,12 +452,13 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
                 extra={<span className="tiny">{t.sameForBoth}</span>}
               />
               <MealCard {...cardProps(slot)} />
+              {pickTarget && <MoveHereButton slot={slot} onClick={() => confirmPick(slot)} lang={lang} t={t} />}
             </div>
           );
         }
 
         return (
-          <div key={slot} data-drop-slot={slot} className={`slot-zone ${dropClass}`} style={{ marginBottom: 9 }}>
+          <div key={slot} data-drop-slot={slot} className={`slot-zone ${dropClass} ${pickTarget ? "pick-target" : ""}`} style={{ marginBottom: 9 }}>
             <SlotHead
               slot={slot}
               lang={lang}
@@ -446,6 +489,7 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
               }
               return <MealCard key={person} {...cardProps(slot, person)} />;
             })}
+            {pickTarget && <MoveHereButton slot={slot} onClick={() => confirmPick(slot)} lang={lang} t={t} />}
           </div>
         );
       })}
@@ -579,6 +623,15 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
           aria-hidden="true"
         >
           ✥ {drag.hover ? `${t.moveTo}: ${SLOT_META[drag.hover][lang]}` : t.moveMeal}
+        </div>
+      )}
+
+      {drag && !drag.active && (
+        <div className="pick-bar" role="status">
+          <span style={{ flex: 1 }}>
+            <b>{SLOT_META[drag.slot][lang]}</b> · {t.movePickHint}
+          </span>
+          <button type="button" className="btn btn-xs btn-soft" onClick={clearPick}>{t.cancel}</button>
         </div>
       )}
 

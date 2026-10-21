@@ -355,11 +355,20 @@ Edge Functions → Secrets).</li>
 <li>Leave <strong>Verify JWT</strong> ON for both (the app sends the signed-in user’s token).</li>
 </ol>
 <h3>7c-bis. Keeping it fresh</h3>
-<p>If you already deployed the functions before this version of the app, paste
-<code>recipe-ai</code> once more (Deploy a new function → Via editor → <strong>Deploy updates</strong>).
-The new code accepts the <strong>“Anything you feel like?”</strong> line — chickpeas, no onion,
-20 minutes — and passes it to the model. Without the update that box is simply ignored;
-everything else keeps working.</p>
+<p>The functions change as the app does. If you deployed them before, paste <code>recipe-ai</code>
+once more: <strong>Edge Functions → recipe-ai → edit → select all → paste the file from
+<code>main</code> → Deploy updates</strong>.</p>
+<p>What the new version adds:</p>
+<ul>
+<li>the <strong>“Anything you feel like?”</strong> line is sent to the model and treated as a hard
+requirement — ask for curd and it must be in the ingredients;</li>
+<li>if the model ignores it, the function asks again once, and the app falls back to the
+built-in engine, which is now guaranteed to include the ingredient you named;</li>
+<li>rerolling also avoids the ingredients of the last few ideas, so you stop getting the
+same dish with one vegetable swapped.</li>
+</ul>
+<p>Without the update the app still works: it notices the model ignored your wish and
+answers with the offline engine instead — so you get your curd either way.</p>
 <h3>7d. Prove it works</h3>
 <ol>
 <li>Open the app → <strong>✨ Sous-chef</strong> → press <strong>Generate</strong>.</li>

@@ -47,7 +47,12 @@ const prompt = input => [
   'Schema: {"name_en":string,"name_lt":string,"emoji":string,"slot":string,"kcal":number,"protein":number,"carbs":number,"fat":number,"prep_minutes":number,"ingredients":[{"en":string,"lt":string,"amount":number,"unit":"g"|"ml"|"vnt"}],"method_en":string,"method_lt":string,"tags":string[]}',
   `Slot: ${input.slot}. Target per person: ${input.target.kcal} kcal, ${input.target.protein} g protein, ${input.target.carbs} g carbs, ${input.target.fat} g fat.`,
   `Filters: ${input.filters.lowFodmap ? "low-FODMAP" : "no FODMAP restriction"}, ${input.filters.quick ? "ready in 15 minutes or less" : "any prep time"}, ${input.filters.highProtein ? "high protein" : "normal protein"}.`,
-  input.notes ? `The cook would like: ${input.notes}` : "",
+  (input.must || []).length
+    ? `HARD REQUIREMENT: the recipe MUST contain ${input.must.join(" and ")} as a real ingredient with a metric amount. These are at least as important as the calorie target.`
+    : "",
+  (input.banned || []).length ? `Never use: ${input.banned.join(", ")}.` : "",
+  input.notes ? `The cook asked for: ${input.notes}` : "",
+  input.variety ? `This is idea number ${input.variety}: pick a different cuisine and a different main ingredient from the obvious one.` : "",
   input.pantry.length ? `Already in the pantry: ${input.pantry.join(", ")}. Try to use some of it.` : "",
   input.avoid.length ? `Do not repeat these dishes: ${input.avoid.join("; ")}.` : "",
   "Keep the method to 3–5 short sentences. Use 4–8 ingredients. Tags may only be: vegan, dairy-free, low-fodmap, gluten-free, high-protein, quick, meal-prep.",
@@ -101,38 +106,68 @@ Deno.serve(async request => {
   // Free-text wish ("chickpeas, no onion, 20 min"). Treated as a hint only:
   // the vegetarian check below still runs on whatever comes back.
   const notes = clean(payload?.notes, 120);
+  // What the person asked for, as plain English ingredient names. Checked below.
+  const must = (Array.isArray(payload?.mustInclude) ? payload.mustInclude : [])
+    .map(item => clean(item, 40)).filter(Boolean).slice(0, 5);
+  const banned = (Array.isArray(payload?.avoidIngredients) ? payload.avoidIngredients : [])
+    .map(item => clean(item, 40)).filter(Boolean).slice(0, 5);
+  const variety = Number.isFinite(Number(payload?.seed)) ? Number(payload.seed) : 0;
 
   const baseUrl = (Deno.env.get("AI_BASE_URL") || "https://api.openai.com/v1").replace(/\/$/, "");
   const model = Deno.env.get("AI_MODEL") || "gpt-4o-mini";
 
-  let response;
-  try {
-    response = await fetch(`${baseUrl}/chat/completions`, {
+  async function ask(messages) {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model,
-        temperature: 0.9,
+        temperature: messages.length > 1 ? 0.5 : 0.9,
         max_tokens: 900,
         response_format: { type: "json_object" },
-        messages: [{ role: "user", content: prompt({ slot, target, filters, pantry, avoid, notes }) }],
+        messages,
       }),
     });
-  } catch {
-    return json({ available: true, error: "upstream_unreachable" }, 502, origin);
+    if (!response.ok) return { error: "upstream_failed" };
+    try {
+      const data = await response.json();
+      return { parsed: JSON.parse(data?.choices?.[0]?.message?.content || "{}") };
+    } catch {
+      return { error: "unreadable_result" };
+    }
   }
 
-  if (!response.ok) {
-    return json({ available: true, error: "upstream_failed" }, 502, origin);
+  const basePrompt = prompt({ slot, target, filters, pantry, avoid, notes, must, banned, variety });
+  let attempt = await ask([{ role: "user", content: basePrompt }]);
+  if (attempt.error) {
+    return json({ available: true, error: attempt.error === "upstream_failed" ? "upstream_failed" : "unreadable_result" }, 502, origin);
   }
 
-  let parsed;
-  try {
-    const data = await response.json();
-    parsed = JSON.parse(data?.choices?.[0]?.message?.content || "{}");
-  } catch {
-    return json({ available: true, error: "unreadable_result" }, 502, origin);
+  // Did it actually include what was asked for? If not, say so plainly and ask
+  // once more; a second failure is caught by the app, which falls back to the
+  // offline engine that can guarantee the ingredient.
+  const lower = value => String(value ?? "").toLowerCase();
+  const recipeText = parsed => [
+    parsed?.name_en, parsed?.name_lt,
+    ...(Array.isArray(parsed?.ingredients) ? parsed.ingredients.flatMap(item => [item?.en, item?.lt]) : []),
+  ].map(lower).join(" | ");
+  const missingFrom = parsed => must.filter(item => !recipeText(parsed).includes(lower(item)));
+
+  if (must.length && missingFrom(attempt.parsed).length) {
+    attempt = await ask([
+      { role: "user", content: basePrompt },
+      { role: "assistant", content: JSON.stringify(attempt.parsed ?? {}).slice(0, 3000) },
+      {
+        role: "user",
+        content: `That recipe did not contain ${missingFrom(attempt.parsed).join(" or ")}. Return the whole JSON again, and this time ${missingFrom(attempt.parsed).join(" and ")} must be one of the ingredients with a metric amount.`,
+      },
+    ]);
+    if (attempt.error) {
+      return json({ available: true, error: "unreadable_result" }, 502, origin);
+    }
   }
+
+  let parsed = attempt.parsed;
 
   const nameEn = clean(parsed.name_en, 90);
   const nameLt = clean(parsed.name_lt, 90) || nameEn;

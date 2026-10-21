@@ -1,16 +1,33 @@
 import { generateRecipeDraft } from "../engine/generate.js";
 import { sanitizeRecipe } from "./validate.js";
+import { INGREDIENT_FACTS } from "../data/ingredientFacts.js";
+import { parseWish, wishSatisfied, containsExcluded, wishIngredientNames } from "./wishes.js";
 
 /**
  * Walks forward through deterministic seeds until one draft avoids every name
  * already on screen. This is what makes "Reroll" feel fresh rather than random.
  */
-export function offlineIdea({ slot, target, filters = {}, seed = 1, excludeNames = [] }) {
-  for (let step = 0; step < 18; step += 1) {
+export function offlineIdea({ slot, target, filters = {}, seed = 1, excludeNames = [], wish = null, avoidKeys = [] }) {
+  const merged = { ...filters, quick: filters.quick || !!wish?.quick };
+  for (let step = 0; step < 24; step += 1) {
     const draft = generateRecipeDraft({
       slot,
       target,
-      filters,
+      filters: merged,
+      seed: seed + step,
+      excludeNames,
+      wish,
+      avoidKeys,
+    });
+    if (draft) return draft;
+  }
+  // The wish may be impossible for this slot (nobody wants curd in a smoothie).
+  // Better a recipe without the wish than no recipe at all.
+  for (let step = 0; step < 24; step += 1) {
+    const draft = generateRecipeDraft({
+      slot,
+      target,
+      filters: merged,
       seed: seed + step,
       excludeNames,
     });
@@ -35,9 +52,16 @@ function fromAi(recipe, seed) {
   };
 }
 
+const excludedNames = wish =>
+  (wish?.excludes || []).map(key => INGREDIENT_FACTS[key]?.en || key.replace(/-/g, " "));
+
 /**
  * Asks the configured AI function first, then falls back to the offline engine.
  * Both paths return the same draft shape, so the editor does not care which ran.
+ *
+ * Whatever the model writes, the result is checked against the person's own
+ * words: if they asked for curd and got avocado, that draft is thrown away
+ * rather than shown as if it had listened.
  */
 export async function requestRecipeIdea({
   api,
@@ -47,25 +71,40 @@ export async function requestRecipeIdea({
   seed = 1,
   excludeNames = [],
   notes = "",
+  wish = null,
+  avoidKeys = [],
   pantry = [],
 }) {
+  const parsed = wish || parseWish(notes);
+  const merged = { ...filters, quick: filters.quick || !!parsed.quick };
+  const mustInclude = wishIngredientNames(parsed);
+  const mustAvoid = excludedNames(parsed);
+  const hasWish = (parsed.includes?.length || parsed.excludes?.length || parsed.quick) > 0;
+
   if (api?.generateRecipe) {
     try {
       const result = await api.generateRecipe({
         slot,
         target,
         filters: {
-          quick: !!filters.quick,
-          lowFodmap: !!filters.lowFodmap,
-          highProtein: !!filters.highProtein,
+          quick: !!merged.quick,
+          lowFodmap: !!merged.lowFodmap,
+          highProtein: !!merged.highProtein,
         },
         avoid: excludeNames.slice(0, 20),
         notes: String(notes || "").replace(/[<>{}]/g, "").trim().slice(0, 120),
+        mustInclude,
+        avoidIngredients: mustAvoid,
+        seed: Number(seed) || 1,
         pantry: pantry.map(item => (typeof item === "string" ? item : item?.nameEn || item?.key)).filter(Boolean).slice(0, 20),
       });
       if (result?.available && result.recipe) {
         const draft = fromAi(result.recipe, seed);
-        if (draft) return draft;
+        const keepsWish = draft && wishSatisfied(draft, parsed);
+        const cleanOfBans = draft && containsExcluded(draft, parsed).length === 0;
+        if (draft && keepsWish && cleanOfBans) return draft;
+        // The model ignored the request (or slipped in a banned ingredient):
+        // fall through to the engine, which is built to honour it.
       }
     } catch {
       // A missing function, quota error or offline network all fall through to
@@ -73,6 +112,6 @@ export async function requestRecipeIdea({
     }
   }
 
-  const draft = offlineIdea({ slot, target, filters, seed, excludeNames });
+  const draft = offlineIdea({ slot, target, filters: merged, seed, excludeNames, wish: hasWish ? parsed : null, avoidKeys });
   return draft ? { ...draft, ai: false } : null;
 }
