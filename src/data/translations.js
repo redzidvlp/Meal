@@ -422,6 +422,9 @@ export const T = {
     dragHandle: "Move meal",
 
     // AI idea generator
+    ideaSweet: "Sweet",
+    ideaLactoseFree: "Lactose-free",
+    ideaDairyFree: "No dairy",
     moveHere: "Move here",
     movePickHint: "Tap the slot it should go to",
     ideaWish: "Anything you feel like?",
@@ -869,6 +872,9 @@ export const T = {
     dragHandle: "Perkelti patiekalą",
 
     // AI idea generator
+    ideaSweet: "Saldus",
+    ideaLactoseFree: "Be laktozės",
+    ideaDairyFree: "Be pieno",
     moveHere: "Perkelti čia",
     movePickHint: "Bakstelėkite, kur perkelti",
     ideaWish: "Ko norėtumėte?",

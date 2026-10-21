@@ -1,7 +1,7 @@
 import { generateRecipeDraft } from "../engine/generate.js";
 import { sanitizeRecipe } from "./validate.js";
 import { INGREDIENT_FACTS } from "../data/ingredientFacts.js";
-import { parseWish, wishSatisfied, containsExcluded, wishIngredientNames } from "./wishes.js";
+import { parseWish, wishSatisfied, containsExcluded, wishIngredientNames, wishSummary } from "./wishes.js";
 
 /**
  * Walks forward through deterministic seeds until one draft avoids every name
@@ -48,6 +48,7 @@ function fromAi(recipe, seed) {
     isDraft: true,
     generated: true,
     ai: true,
+    course: recipe?.course === "sweet" ? "sweet" : "savoury",
     seed,
   };
 }
@@ -92,7 +93,12 @@ export async function requestRecipeIdea({
           highProtein: !!merged.highProtein,
         },
         avoid: excludeNames.slice(0, 20),
-        notes: String(notes || "").replace(/[<>{}]/g, "").trim().slice(0, 120),
+        notes: String(notes || "").replace(/[<>{}]/g, "").trim().slice(0, 160),
+        // The model gets the wish as a sentence, not only a list of keys:
+        // "lactose free curd sweet" reads as a dessert built on curd.
+        wish: wishSummary(parsed).slice(0, 400),
+        course: parsed.course,
+        modifiers: parsed.modifiers,
         mustInclude,
         avoidIngredients: mustAvoid,
         seed: Number(seed) || 1,
@@ -102,7 +108,10 @@ export async function requestRecipeIdea({
         const draft = fromAi(result.recipe, seed);
         const keepsWish = draft && wishSatisfied(draft, parsed);
         const cleanOfBans = draft && containsExcluded(draft, parsed).length === 0;
-        if (draft && keepsWish && cleanOfBans) return draft;
+        // A sweet wish answered with a savoury dish is a miss, however good it
+        // sounds: the offline engine can build the dessert instead.
+        const wrongCourse = draft && parsed.course && draft.course && draft.course !== parsed.course;
+        if (draft && keepsWish && cleanOfBans && !wrongCourse) return draft;
         // The model ignored the request (or slipped in a banned ingredient):
         // fall through to the engine, which is built to honour it.
       }

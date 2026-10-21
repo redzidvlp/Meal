@@ -44,13 +44,21 @@ const prompt = input => [
   "The recipe must be strictly vegetarian (no meat, no fish, no seafood, no gelatin).",
   "Prefer low-FODMAP ingredients when the filter says so; keep it gluten-free unless told otherwise.",
   "Use metric amounts in g, ml or vnt. Exact Lithuanian translations are welcome.",
-  'Schema: {"name_en":string,"name_lt":string,"emoji":string,"slot":string,"kcal":number,"protein":number,"carbs":number,"fat":number,"prep_minutes":number,"ingredients":[{"en":string,"lt":string,"amount":number,"unit":"g"|"ml"|"vnt"}],"method_en":string,"method_lt":string,"tags":string[]}',
+  'Schema: {"name_en":string,"name_lt":string,"emoji":string,"slot":string,"course":"sweet"|"savoury","kcal":number,"protein":number,"carbs":number,"fat":number,"prep_minutes":number,"ingredients":[{"en":string,"lt":string,"amount":number,"unit":"g"|"ml"|"vnt"}],"method_en":string,"method_lt":string,"tags":string[]}',
   `Slot: ${input.slot}. Target per person: ${input.target.kcal} kcal, ${input.target.protein} g protein, ${input.target.carbs} g carbs, ${input.target.fat} g fat.`,
   `Filters: ${input.filters.lowFodmap ? "low-FODMAP" : "no FODMAP restriction"}, ${input.filters.quick ? "ready in 15 minutes or less" : "any prep time"}, ${input.filters.highProtein ? "high protein" : "normal protein"}.`,
   (input.must || []).length
     ? `HARD REQUIREMENT: the recipe MUST contain ${input.must.join(" and ")} as a real ingredient with a metric amount. These are at least as important as the calorie target.`
     : "",
   (input.banned || []).length ? `Never use: ${input.banned.join(", ")}.` : "",
+  input.wish ? `What the cook asked for, in their words: ${input.wish}` : "",
+  input.course === "sweet"
+    ? "This must be a SWEET dish (dessert style: pudding, mousse, pancakes, baked curd). It is not a savoury meal."
+    : input.course === "savoury"
+      ? "This must be a savoury dish, not a dessert."
+      : "",
+  input.modifiers && input.modifiers.lactoseFree ? "Every dairy ingredient must be the lactose-free version (e.g. lactose-free curd or yogurt)." : "",
+  input.modifiers && input.modifiers.dairyFree ? "Use no dairy at all." : "",
   input.notes ? `The cook asked for: ${input.notes}` : "",
   input.variety ? `This is idea number ${input.variety}: pick a different cuisine and a different main ingredient from the obvious one.` : "",
   input.pantry.length ? `Already in the pantry: ${input.pantry.join(", ")}. Try to use some of it.` : "",
@@ -112,6 +120,12 @@ Deno.serve(async request => {
   const banned = (Array.isArray(payload?.avoidIngredients) ? payload.avoidIngredients : [])
     .map(item => clean(item, 40)).filter(Boolean).slice(0, 5);
   const variety = Number.isFinite(Number(payload?.seed)) ? Number(payload.seed) : 0;
+  const wish = clean(payload?.wish, 400);
+  const course = payload?.course === "sweet" ? "sweet" : payload?.course === "savoury" ? "savoury" : "";
+  const modifiers = {
+    lactoseFree: payload?.modifiers?.lactoseFree === true,
+    dairyFree: payload?.modifiers?.dairyFree === true,
+  };
 
   const baseUrl = (Deno.env.get("AI_BASE_URL") || "https://api.openai.com/v1").replace(/\/$/, "");
   const model = Deno.env.get("AI_MODEL") || "gpt-4o-mini";
@@ -137,7 +151,7 @@ Deno.serve(async request => {
     }
   }
 
-  const basePrompt = prompt({ slot, target, filters, pantry, avoid, notes, must, banned, variety });
+  const basePrompt = prompt({ slot, target, filters, pantry, avoid, notes, must, banned, variety, wish, course, modifiers });
   let attempt = await ask([{ role: "user", content: basePrompt }]);
   if (attempt.error) {
     return json({ available: true, error: attempt.error === "upstream_failed" ? "upstream_failed" : "unreadable_result" }, 502, origin);
@@ -208,6 +222,7 @@ Deno.serve(async request => {
   return json({
     available: true,
     recipe: {
+      course: parsed.course === "sweet" ? "sweet" : "savoury",
       name: { en: nameEn, lt: nameLt },
       emoji: clean(parsed.emoji, 6) || "🍽️",
       slot,

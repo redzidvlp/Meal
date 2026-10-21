@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { C, SLOT_META, SLOTS, TAG_LABELS } from "../theme.js";
 import { allPlannedRecipes } from "../engine/plan.js";
 import { plannedIds, suggestRecipes, targetFromRecipe } from "../engine/recommend.js";
-import { parseWish } from "../lib/wishes.js";
+import { parseWish, wishChips } from "../lib/wishes.js";
 import { INGREDIENT_FACTS } from "../data/ingredientFacts.js";
 import { fmtNum, interpolate, todayIndex } from "../lib/format.js";
 import { tagLabel } from "../lib/labels.js";
@@ -85,9 +85,12 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
 
   // The controls sit below the Generate button, so the button used to look like
   // it had no inputs. This line says, in words, what pressing it will make.
+  const chips = wishChips(wish);
   const ideaSummary = [
-    SLOT_META[slot]?.[lang] || slot,
+    wish.course === "sweet" ? `🍰 ${t.ideaSweet || "Sweet"}` : (SLOT_META[slot]?.[lang] || slot),
     `${fmtNum(target.kcal)} ${t.kcal}`,
+    wish.modifiers?.lactoseFree ? (t.ideaLactoseFree || "Lactose-free") : null,
+    wish.modifiers?.dairyFree ? (t.ideaDairyFree || "No dairy") : null,
     filters.highProtein ? t.highProtein : null,
     filters.quick ? t.quickOnly : null,
     filters.lowFodmap ? t.onlyFodmap : null,
@@ -192,6 +195,7 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="idea-name">{idea.name?.[lang] || idea.name?.en}</div>
                 <div className="opt-meta">
+                  {idea.course === "sweet" && <span>🍰 {t.ideaSweet || "Sweet"}</span>}
                   <span>{SLOT_META[idea.slot]?.[lang]}</span>
                   <span>🔥 {fmtNum(idea.kcal)}</span>
                   <span>💪 {fmtNum(idea.protein)}g</span>
@@ -288,8 +292,13 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
               onChange={event => setWishText(event.target.value)}
             />
           </Field>
-          {(wish.includes.length > 0 || wish.excludes.length > 0) && (
+          {(wish.includes.length > 0 || wish.excludes.length > 0 || chips.length > 0) && (
             <div className="row" style={{ gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+              {chips.map(chip => (
+                <span key={chip.key} className="stock-badge" style={{ borderColor: C.leaf, color: C.leaf, fontWeight: 700 }}>
+                  {chip.key === "course-sweet" ? "🍰" : chip.key === "quick" ? "⚡" : chip.key === "lactose-free" ? "🥛" : "🌿"} {chip.label}
+                </span>
+              ))}
               {wish.includes.map(key => (
                 <span key={`in-${key}`} className="stock-badge" style={{ borderColor: C.leaf, color: C.leaf }}>
                   ✓ {INGREDIENT_FACTS[key]?.en || key}

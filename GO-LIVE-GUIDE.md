@@ -284,6 +284,22 @@ What the new version adds:
 Without the update the app still works: it notices the model ignored your wish and
 answers with the offline engine instead — so you get your curd either way.
 
+### 7c-ter. What the sous-chef can be asked for
+
+Type into **“Anything you feel like?”** the way you would say it out loud:
+
+- an ingredient — `curd`, `chickpeas`, `varškė` (it must end up in the recipe)
+- something to leave out — `no avocado`, `be svogūnų`
+- a kind of dish — `sweet`, `dessert` (builds a dessert, not a savoury plate)
+- a modifier — `lactose free`, `quick`, `high protein`
+
+The chips under the box show what it understood, and **Will make:** under the Generate
+button says what will be cooked. If a chip is wrong, change a word — the app only acts on
+what it recognised, it does not guess silently.
+
+`lactose free curd` is the one combination worth knowing: curd is dairy, so the app keeps
+your curd and asks for the lactose-free version of it rather than swapping it out.
+
 ### 7d. Prove it works
 
 1. Open the app → **✨ Sous-chef** → press **Generate**.

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { C, HOUSEHOLD_SIZE, SLOT_META } from "../theme.js";
-import { fmtNum, interpolate } from "../lib/format.js";
+import { debounce, fmtNum, interpolate } from "../lib/format.js";
 import { Chip, EmptyState, PersonBadge } from "./ui.jsx";
 
 const defaultThreshold = (total, unit) => {
@@ -27,10 +27,25 @@ export default function ShoppingTab({ app, lang, t, onGoPantry }) {
 
   // The stepper shows what you are actually buying: 2 = one each, 3 = one
   // extra for leftovers. Storage keeps only the extra part.
+  //
+  // The buttons used to pass the extra count into this function, which expects
+  // a total, so "+" computed -1 and clamped to 0: the control never moved.
+  // Taps land instantly in the draft; the database is written once, half a
+  // second after the last tap, instead of once per tap.
+  const appRef = useRef(app);
+  appRef.current = app;
+  const savePortions = useRef(null);
+  if (!savePortions.current) {
+    savePortions.current = debounce(value => {
+      appRef.current.updateHousehold({ extraPortions: value }).catch(() => {});
+    }, 500);
+  }
+  useEffect(() => () => savePortions.current?.flush(), []);
+
   const changePortions = total => {
     const next = Math.max(0, Math.min(8, total - HOUSEHOLD_SIZE));
     setPortionDraft(next);
-    app.updateHousehold({ extraPortions: next });
+    savePortions.current(next);
   };
 
   const stockPayload = item => ({
@@ -119,9 +134,9 @@ export default function ShoppingTab({ app, lang, t, onGoPantry }) {
             <div className="tiny">{t.extraPortionsHint}</div>
           </div>
           <div className="stepper">
-            <button type="button" onClick={() => changePortions(portionDraft - 1)} aria-label="Decrease">−</button>
+            <button type="button" onClick={() => changePortions(HOUSEHOLD_SIZE + portionDraft - 1)} aria-label={t.decrease || "Decrease"}>−</button>
             <span className="qty-value">{HOUSEHOLD_SIZE + portionDraft}</span>
-            <button type="button" onClick={() => changePortions(portionDraft + 1)} aria-label="Increase">+</button>
+            <button type="button" onClick={() => changePortions(HOUSEHOLD_SIZE + portionDraft + 1)} aria-label={t.increase || "Increase"}>+</button>
           </div>
         </div>
       </div>

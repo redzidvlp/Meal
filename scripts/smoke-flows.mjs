@@ -175,6 +175,31 @@ const pantrySumAfter = state().pantry.reduce((sum, item) => sum + item.quantity,
 assert(pantrySumAfter > pantrySumBefore, `ticking restocks pantry (${pantrySumBefore} → ${pantrySumAfter})`);
 console.log("SHOPPING: ticking a bought item stocks the pantry");
 
+// 3a-bis. The portion stepper must move, and the list must follow it.
+// (+ used to compute -1 and clamp to 0, so the control was frozen at 2.)
+const portionsValue = () => Number(document.querySelector(".stepper .qty-value")?.textContent || 0);
+const firstQty = () => Number((document.querySelector(".shop-qty")?.textContent || "").replace(/[^0-9.,]/g, "").replace(",", "."));
+assert(portionsValue() === 2, `portions start at one each (${portionsValue()})`);
+const qtyAtTwoPortions = firstQty();
+await click([...document.querySelectorAll(".stepper button")].at(-1), 250);
+assert(portionsValue() === 3, `plus moves the counter (${portionsValue()})`);
+await click([...document.querySelectorAll(".stepper button")].at(-1), 250);
+assert(portionsValue() === 4, `and again (${portionsValue()})`);
+await act(async () => { await sleep(700); });
+assert(firstQty() > qtyAtTwoPortions, `shopping quantity follows the portions (${qtyAtTwoPortions} → ${firstQty()})`);
+await click(document.querySelectorAll(".stepper button")[0], 250);
+assert(portionsValue() === 3, `minus moves it back (${portionsValue()})`);
+await nav("Plan");
+await nav("Shopping");
+await act(async () => { await sleep(700); });
+assert(portionsValue() === 3, "the value survives leaving and returning to the tab");
+const storedPortions = state().household?.extraPortions;
+assert(storedPortions === 1, `only the extra part is stored (${storedPortions})`);
+// Back to 2 for the rest of the script.
+await click(document.querySelectorAll(".stepper button")[0], 900);
+assert(portionsValue() === 2, "reset to one each");
+console.log("PORTIONS: stepper moves, shopping follows, value persists");
+
 // 3b. Editing a recipe updates the plan and the shopping quantities.
 await nav("Plan");
 const firstCard = document.querySelector(".meal-card");
@@ -417,6 +442,21 @@ assert(reroll, "reroll control in the idea preview");
 await click(reroll, 900);
 const secondIdea = document.querySelector(".idea-name")?.textContent?.trim();
 assert(secondIdea && secondIdea !== firstIdea, `reroll gives a new idea (${firstIdea} → ${secondIdea})`);
+// A wish written as a sentence, not just an ingredient: "curd sweet" has to
+// come back as something sweet that actually contains curd.
+const wishInput = document.querySelector("input[placeholder*='chickpeas']");
+assert(wishInput, "the wish box is on screen");
+await setInput(wishInput, "lactose free curd sweet");
+const wishChipText = [...document.querySelectorAll(".stock-badge")].map(el => el.textContent).join(" ");
+assert(wishChipText.includes("Sweet"), `the app understood "sweet" (${wishChipText.trim()})`);
+await click(document.querySelector(".idea-card .btn-primary"), 1000);
+const sweetIdea = document.querySelector(".idea-preview");
+assert(sweetIdea, "a sweet idea appears");
+assert(sweetIdea.textContent.includes("Sweet"), `the idea is marked sweet (${sweetIdea.querySelector(".opt-meta")?.textContent})`);
+const ideaIngredients = sweetIdea.querySelector(".idea-ingredients")?.textContent || "";
+assert(/curd/i.test(ideaIngredients), `the idea really contains curd (${ideaIngredients.slice(0, 80)})`);
+console.log(`WISH: "lactose free curd sweet" → ${sweetIdea.querySelector(".idea-name")?.textContent}`);
+
 await click(button("Review & save"), 500);
 assert(text().includes("Offline idea engine"), "generated draft opens in the editor for review");
 assert([...document.querySelectorAll(".sheet-title")].some(el => el.textContent.includes("New recipe")), "draft uses the new-recipe editor");
