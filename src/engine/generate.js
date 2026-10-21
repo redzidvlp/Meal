@@ -346,8 +346,9 @@ export function generateRecipeDraft({
   const wantsSweet = wish?.course === "sweet" || filters.sweet === true;
   // A dessert can land in any slot; only the savoury list is slot-specific.
   let templates = wantsSweet ? SWEET_TEMPLATES : TEMPLATES[safeSlot];
-  if (filters.quick) {
-    const fast = templates.filter(template => template.prepMinutes <= 15);
+  const maxMinutes = Number(filters.maxMinutes) > 0 ? Number(filters.maxMinutes) : (filters.quick ? 15 : 0);
+  if (maxMinutes) {
+    const fast = templates.filter(template => template.prepMinutes <= maxMinutes);
     if (fast.length) templates = fast;
   }
 

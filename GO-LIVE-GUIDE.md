@@ -276,6 +276,7 @@ What the new version adds:
 
 - the **“Anything you feel like?”** line is sent to the model and treated as a hard
   requirement — ask for curd and it must be in the ingredients;
+- a **Ready in** budget is passed through as “ready in N minutes or less”;
 - if the model ignores it, the function asks again once, and the app falls back to the
   built-in engine, which is now guaranteed to include the ingredient you named;
 - rerolling also avoids the ingredients of the last few ideas, so you stop getting the
@@ -284,12 +285,32 @@ What the new version adds:
 Without the update the app still works: it notices the model ignored your wish and
 answers with the offline engine instead — so you get your curd either way.
 
-### 7c-ter. What the sous-chef can be asked for
+### 7c-ter. How the sous-chef is laid out
+
+The whole page is one card, read top to bottom:
+
+1. **Anything you feel like?** — type a few ingredients, or a sentence.
+2. **Ready in** — *Any time*, 15, 20 or 30 minutes.
+3. **Meal type** — breakfast, lunch, snack or dinner.
+4. **Course** — either, sweet or savoury.
+5. **Rules** — high protein, low-FODMAP, prefer what is in the pantry, skip repeats.
+6. **✨ Generate recipe**, with **Will make:** directly underneath.
+
+Nothing on this page changes a recipe you already have. The result appears as its own card
+below; **Review & save** is the only thing that puts it into your recipe book. The
+**Start from a meal I already planned** line at the bottom is optional and starts closed —
+it only copies calories and meal type, never the dish.
+
+Under the Generate button, the “From your own recipe book” list is a separate thing: it
+scores recipes you already own against the same targets, for the nights you would rather
+reuse something.
+
+### 7c-quater. What the sous-chef can be asked for
 
 Type into **“Anything you feel like?”** the way you would say it out loud:
 
 - an ingredient — `curd`, `chickpeas`, `varškė` (it must end up in the recipe)
-- something to leave out — `no avocado`, `be svogūnų`
+- something to leave out — `no mushrooms`, `be svogūnų`
 - a kind of dish — `sweet`, `dessert` (builds a dessert, not a savoury plate)
 - a modifier — `lactose free`, `quick`, `high protein`
 
@@ -302,9 +323,16 @@ your curd and asks for the lactose-free version of it rather than swapping it ou
 
 ### 7d. Prove it works
 
-1. Open the app → **✨ Sous-chef** → press **Generate**.
+1. Open the app → **✨ Sous-chef** → press **✨ Generate recipe**.
 2. The small badge on the idea card must read **🤖 AI recipe**.
-   If it says **✨ Offline idea engine**, something in 7a–7c is missing.
+   If it says **✨ Offline idea engine**, the card now says why, in one line:
+   - *“The AI function is not set up…”* → step 7a–7c was skipped (no function, or no key).
+   - *“The AI function did not answer…”* → the key is wrong, quota is empty, or the
+     function was updated but not redeployed.
+   - *“The model’s answer did not match what you asked for…”* → the function is running,
+     but it produced something the app refused (missing your ingredient, or a savoury
+     dish when you asked for sweet). Reroll; the offline engine is already giving you a
+     correct recipe in the meantime.
 3. Press **🎲 Reroll** — a different dish must appear.
 4. Plan tab → **📷** → photograph a nutrition label → it fills calories and macros.
 

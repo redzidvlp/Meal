@@ -40,7 +40,7 @@ export default function RecipeModal({ recipe, lang, t, labels = [], onClose, onE
         </>
       )}
     >
-      <div className="recipe-hero" style={{ margin: "-16px -18px 16px", borderBottom: `1px solid ${C.line}` }}>
+      <div className="recipe-hero" style={{ margin: "-15px -16px 16px", borderBottom: `1px solid ${C.line}` }}>
         <div className="recipe-emoji" aria-hidden="true">{recipe.emoji}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
