@@ -1,13 +1,30 @@
 name: Deploy to GitHub Pages
 
+# The one and only publisher of the phone link.
+#
+# There used to be a second workflow ("Preview build (demo mode)") that also
+# deployed to Pages. Both ran on every push to main, so whichever finished last
+# decided what the phone saw — on 2026-10-21 the demo build won and the real
+# kitchen disappeared from the link. One workflow, one deploy.
+#
+# It builds against Supabase whenever the two repository secrets exist and
+# falls back to the labelled demo household when they do not, so the link
+# always opens. No repository variable is involved.
+
 on:
   push:
     branches: ["main"]
+  workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
+
+# Never let two publishes race each other; a newer push wins.
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
   build-and-deploy:
@@ -18,31 +35,55 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          
+          node-version: "20"
+          cache: "npm"
+
       - name: Install dependencies
-        run: npm install
-        
-      - name: Fix Permissions and Build
+        run: npm ci
+
+      # Half a configuration is worse than none: it would build a demo link
+      # while looking like a real one. Say clearly which mode this is.
+      - name: Check the Supabase configuration
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
-          chmod +x node_modules/.bin/vite
-          npx vite build
+          if [ -n "$SUPABASE_URL" ] && [ -z "$SUPABASE_KEY" ]; then
+            echo "::error::VITE_SUPABASE_URL is set but VITE_SUPABASE_ANON_KEY is missing. Add both (guide Phase 4a)."
+            exit 1
+          fi
+          if [ -z "$SUPABASE_URL" ] && [ -n "$SUPABASE_KEY" ]; then
+            echo "::error::VITE_SUPABASE_ANON_KEY is set but VITE_SUPABASE_URL is missing. Add both (guide Phase 4a)."
+            exit 1
+          fi
+          if [ -z "$SUPABASE_URL" ]; then
+            echo "::warning::No Supabase secrets found — this deploy will be the DEMO version."
+            echo "### Demo build" >> "$GITHUB_STEP_SUMMARY"
+            echo "No Supabase secrets are configured, so the phone link will show the labelled **Local demo** household." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Building against Supabase at $SUPABASE_URL"
+            echo "### Real kitchen" >> "$GITHUB_STEP_SUMMARY"
+            echo "Built against Supabase — the phone link will ask you to sign in." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Build
+        run: npx vite build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
-        
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './dist'
-          
+          path: "./dist"
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

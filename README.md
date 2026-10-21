@@ -134,17 +134,19 @@ Never put the `service_role` key in the client.
 
 ### Publishing the phone preview
 
-Pushing `arena/7c386ed8-meal` deploys to GitHub Pages through
-`.github/workflows/preview.yml`, at `https://<owner>.github.io/Meal/`.
+Every push to `main` deploys to GitHub Pages through
+`.github/workflows/deploy.yml`, at `https://<owner>.github.io/Meal/`. It is the only
+workflow that publishes that link — two publishers used to race on every merge, and the
+demo build could win.
 
-The link runs the labelled **demo household by default** so it always opens on a phone,
-even while the database is being set up. Switch it to your project only when
-`doctor.sql` reports every table as `ok`:
+The link runs your **real Supabase household** as soon as the two secrets exist, and the
+labelled **demo household** when they do not:
 
 1. Settings → Secrets and variables → Actions → **Secrets**: `VITE_SUPABASE_URL`,
-   `VITE_SUPABASE_ANON_KEY`.
-2. The same screen → **Variables**: `USE_SUPABASE` = `true`.
-3. Re-run the workflow (or push). Remove the variable to fall back to demo instantly.
+   `VITE_SUPABASE_ANON_KEY` (both or neither).
+2. Re-run **Deploy to GitHub Pages** (or push). The run's **Check the Supabase
+   configuration** step states which of the two you are getting.
+3. Remove both secrets to fall back to demo instantly.
 
 ### Keeping the database in sync with GitHub
 
@@ -181,9 +183,9 @@ integration off and paste `supabase/upgrade-existing-project.sql` into the SQL e
    `upgrade-existing-project.sql` once (or `upgrade-from-legacy.sql` → `schema.sql` →
    `seed.sql` → `migrate-legacy-data.sql`). Finish with `doctor.sql`; every table must
    read `ok`. `npm run test:db` proves all of it on a real Postgres engine first.
-2. **Phone link** — repository secrets `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
-   then the repository variable `USE_SUPABASE=true`. Re-run the preview workflow. Remove
-   the variable at any time to fall back to the demo kitchen.
+2. **Phone link** — repository secrets `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+   Re-run the **Deploy to GitHub Pages** workflow. Remove both secrets at any time to fall
+   back to the demo kitchen.
 3. **Household** — after an in-place upgrade, sign in with the **old** email and password
    and the kitchen is already there. Otherwise *Create kitchen*, open Settings and share
    the invite code; your partner signs up and chooses *Join kitchen*.

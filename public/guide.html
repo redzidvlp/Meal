@@ -108,13 +108,13 @@ can plan meals for real:</p>
 </tr>
 <tr>
 <td>4</td>
-<td>The “use the real database” switch</td>
-<td>GitHub → <strong>Variables</strong> → <code>USE_SUPABASE=true</code></td>
-<td>already set</td>
+<td><em>(nothing else — the two secrets ARE the switch)</em></td>
+<td>—</td>
+<td>—</td>
 </tr>
 <tr>
 <td>5</td>
-<td>A build that contains 2–4</td>
+<td>A build that contains 2–3</td>
 <td>GitHub → Actions</td>
 <td>done</td>
 </tr>
@@ -250,8 +250,10 @@ block your partner’s registration.</p>
 “Account created. Confirm your email” and never receive the mail.</p>
 <hr>
 <h2>Phase 4 — Teach GitHub where the database is (8 min)</h2>
-<p>The site is built by GitHub Actions from <code>.github/workflows/preview.yml</code>. It is deliberately
-set to <strong>demo mode</strong> until you flip the switch below, so the public link can never break.</p>
+<p>The site is built by GitHub Actions from <code>.github/workflows/deploy.yml</code> — the only workflow
+that publishes the phone link. It builds against Supabase whenever the two secrets below
+exist, and falls back to the labelled demo household when they do not, so the link always
+opens.</p>
 <h3>4a. The two secrets</h3>
 <ol>
 <li>Open your repo: <code>https://github.com/redzidvlp/Meal</code></li>
@@ -265,23 +267,23 @@ set to <strong>demo mode</strong> until you flip the switch below, so the public
 </li>
 </ol>
 <p>Names must match exactly, including the <code>VITE_</code> prefix and capitals.</p>
-<h3>4b. The switch</h3>
-<ol>
-<li>Same screen → <strong>Variables</strong> tab → <strong>New repository variable</strong>.</li>
-<li>Name: <code>USE_SUPABASE</code> → Value: <code>true</code> → <strong>Add variable</strong>.</li>
-<li>Delete this variable at any time to put the site back into the safe demo kitchen.</li>
-</ol>
+<h3>4b. There is no switch any more</h3>
+<p>Two secrets are the whole configuration. If both exist, the deploy builds against Supabase;
+if neither exists, it builds the safe demo. To go back to demo for a while, delete both
+secrets — but never keep only one of them: the workflow stops with an error instead of
+publishing a broken link.</p>
 <h3>4c. Build and publish</h3>
 <ol>
-<li>Repo → <strong>Actions</strong> tab → left column <strong>Preview build (demo mode)</strong>.</li>
+<li>Repo → <strong>Actions</strong> tab → left column <strong>Deploy to GitHub Pages</strong>.</li>
 <li><strong>Run workflow</strong> (right side) → branch <code>main</code> → <strong>Run workflow</strong>.
 (If the button is missing, the workflow has not reached <code>main</code> yet — use the link instead.)</li>
-<li>Wait ~1 minute for a green tick. Open the run and confirm <strong>Deploy to GitHub Pages</strong> is green.</li>
+<li>Wait ~1 minute for a green tick. Open the run: the step <strong>Check the Supabase configuration</strong>
+says either <em>“Building against Supabase at …”</em> or <em>“No Supabase secrets found — DEMO”</em>.</li>
 </ol>
 <blockquote>
 <p><strong>You should see:</strong> the site at <strong><a href="https://redzidvlp.github.io/Meal/">https://redzidvlp.github.io/Meal/</a></strong> opens with a sign-in
-screen and <strong>no</strong> yellow “Local demo” banner. If the banner is still there, <code>USE_SUPABASE</code>
-is missing or the workflow was not re-run.</p>
+screen and <strong>no</strong> yellow “Local demo” banner. If the banner is still there, open the run and
+read that check step — it names the reason.</p>
 </blockquote>
 <hr>
 <h2>Phase 5 — Open the kitchen with your old login (5 min)</h2>
@@ -491,8 +493,13 @@ SQL by hand — and it only does something when <code>main</code> contains a <co
 </tr>
 <tr>
 <td>Yellow <strong>Local demo</strong> banner after going live</td>
-<td><code>USE_SUPABASE</code> variable missing, or workflow not re-run</td>
-<td>Do 4b and 4c again</td>
+<td>the deploy built without the Supabase secrets (check the <strong>Check the Supabase configuration</strong> step)</td>
+<td>Do 4a, then 4c again</td>
+</tr>
+<tr>
+<td>Your phone shows demo data but the site works on a laptop</td>
+<td>the installed app kept an older demo build in its cache</td>
+<td>close the app fully and reopen it; if the yellow banner stays, remove the home-screen icon and add it again</td>
 </tr>
 <tr>
 <td><code>syntax error at or near &quot;upgrade&quot;</code></td>
@@ -539,7 +546,7 @@ SQL by hand — and it only does something when <code>main</code> contains a <co
 </tr>
 <tr>
 <td>“Use the real database” switch</td>
-<td>GitHub → same screen → <strong>Variables</strong> (<code>USE_SUPABASE=true</code>)</td>
+<td>none — the two <strong>Secrets</strong> are the switch</td>
 <td>—</td>
 </tr>
 <tr>
