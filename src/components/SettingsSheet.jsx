@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { C } from "../theme.js";
+import { C, HOUSEHOLD_SIZE } from "../theme.js";
 import { Chip, ConfirmDialog, Segmented, Sheet, Stepper, useCopy } from "./ui.jsx";
 import { setOverrideDemo } from "../lib/errors.js";
 import { currentBuildId } from "../lib/build.js";
@@ -109,11 +109,11 @@ export default function SettingsSheet({ open, onClose, app, lang, setLang, t, pw
               <div className="settings-hint">{t.extraPortionsHint}</div>
             </div>
             <Stepper
-              value={app.extraPortions}
-              min={0}
-              max={8}
+              value={HOUSEHOLD_SIZE + app.extraPortions}
+              min={HOUSEHOLD_SIZE}
+              max={HOUSEHOLD_SIZE + 8}
               label={t.extraPortionsSetting}
-              onChange={value => app.updateHousehold({ extraPortions: value }).catch(() => {})}
+              onChange={total => app.updateHousehold({ extraPortions: total - HOUSEHOLD_SIZE }).catch(() => {})}
             />
           </div>
         </section>

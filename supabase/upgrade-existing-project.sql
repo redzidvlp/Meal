@@ -1086,6 +1086,8 @@ alter table public.recipe_notes enable row level security;
 alter table public.shopping_checks enable row level security;
 alter table public.menus enable row level security;
 alter table public.pantry enable row level security;
+alter table public.labels enable row level security;
+alter table public.day_sections enable row level security;
 
 -- households: members read; members may rename / change extra portions only.
 drop policy if exists households_select on public.households;

@@ -29,6 +29,10 @@ export const SLOT_META = {
 export const SLOTS = ["breakfast", "lunch", "snack", "dinner"];
 export const UNITS = ["g", "ml", "vnt"];
 
+// The app is built for exactly two people, so "portions" shown to the user is
+// always one each plus whatever they add for leftovers.
+export const HOUSEHOLD_SIZE = 2;
+
 export const TAG_LABELS = {
   en: {
     vegetarian: "Vegetarian",

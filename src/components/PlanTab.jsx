@@ -145,13 +145,33 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
     setDrag({ slot, active: false, hover: null, x: start.x, y: start.y });
   };
 
+  // Tapping the handle without dragging opens the slot picker instead. On a
+  // phone that is the reliable way to move a meal out of view: no finger
+  // gymnastics, and it works however long the day is.
+
   const openMove = slot => setMove({ slot });
 
   useEffect(() => {
     if (!drag) return undefined;
+
+    // Whatever is under the finger. Falls back to the nearest card, because the
+    // sticky header and the 9px gaps between cards return no slot at all —
+    // which used to make a drop silently do nothing.
     const slotAt = event => {
       const element = document.elementFromPoint?.(event.clientX, event.clientY);
-      return element?.closest?.("[data-drop-slot]")?.getAttribute("data-drop-slot") || null;
+      const direct = element?.closest?.("[data-drop-slot]")?.getAttribute("data-drop-slot");
+      if (direct) return direct;
+      let best = null;
+      document.querySelectorAll("[data-drop-slot]").forEach(zone => {
+        const rect = zone.getBoundingClientRect();
+        const dx = Math.max(rect.left - event.clientX, event.clientX - rect.right, 0);
+        const dy = Math.max(rect.top - event.clientY, event.clientY - rect.bottom, 0);
+        const distance = Math.hypot(dx, dy);
+        if (distance <= 44 && (!best || distance < best.distance)) {
+          best = { slot: zone.getAttribute("data-drop-slot"), distance };
+        }
+      });
+      return best?.slot || null;
     };
 
     const onMove = event => {
@@ -160,9 +180,35 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
       const distance = Math.hypot(event.clientX - state.start.x, event.clientY - state.start.y);
       if (!state.active && distance < 8) return;
       state.active = true;
+      state.x = event.clientX;
+      state.y = event.clientY;
       const hover = slotAt(event);
       state.hover = hover;
       setDrag(previous => (previous ? { ...previous, active: true, hover, x: event.clientX, y: event.clientY } : previous));
+    };
+
+    // A phone screen fits about one card, so without this you could only ever
+    // drop onto the slot you started from. Running off the top or bottom edge
+    // scrolls the page while the finger stays down.
+    const EDGE = 110;
+    let frame = 0;
+    let last = 0;
+    const autoScroll = time => {
+      frame = requestAnimationFrame(autoScroll);
+      const state = dragRef.current;
+      if (!state?.active || time - last < 16) return;
+      last = time;
+      const viewport = window.innerHeight || 0;
+      let delta = 0;
+      if (state.y < EDGE) delta = -Math.ceil((EDGE - state.y) / 5);
+      else if (state.y > viewport - EDGE) delta = Math.ceil((state.y - (viewport - EDGE)) / 5);
+      if (!delta) return;
+      const before = window.scrollY;
+      window.scrollBy(0, Math.max(-40, Math.min(40, delta)));
+      if (window.scrollY === before) return;
+      const hover = slotAt({ clientX: state.x, clientY: state.y });
+      state.hover = hover;
+      setDrag(previous => (previous ? { ...previous, active: true, hover } : previous));
     };
 
     const onUp = event => {
@@ -186,10 +232,15 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
     window.addEventListener("pointermove", onMove, { passive: true });
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
+    // The header sits on top of the list and would eat every drop near the top.
+    document.body.classList.add("is-dragging-meal");
+    frame = requestAnimationFrame(autoScroll);
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
+      document.body.classList.remove("is-dragging-meal");
+      cancelAnimationFrame(frame);
     };
     // The listeners only need to follow the slot being dragged.
     // eslint-disable-next-line react-hooks/exhaustive-deps
