@@ -13,7 +13,8 @@ import { mergeMenus, menuTotals, menuItemsFromDay } from "../src/lib/menus.js";
 import { customTag, isCustomTag, tagLabel, tagsInUse, labelKey } from "../src/lib/labels.js";
 import { generateRecipeDraft } from "../src/engine/generate.js";
 import { offlineIdea } from "../src/lib/ideas.js";
-import { parseWish, wishSatisfied, containsExcluded } from "../src/lib/wishes.js";
+import { parseWish, wishSatisfied, containsExcluded, wishChips } from "../src/lib/wishes.js";
+import { requestRecipeIdea } from "../src/lib/ideas.js";
 
 const makeRecipe = (overrides = {}) => ({
   id: "test-a",
@@ -588,6 +589,83 @@ test("asking for an ingredient actually produces it", () => {
       assert.deepEqual(containsExcluded(draft, wish), []);
     }
   }
+});
+
+test("a wish is a sentence: 'lactose free curd sweet' is a dessert", () => {
+  const wish = parseWish("lactose free curd sweet");
+  assert.equal(wish.course, "sweet");
+  assert.deepEqual(wish.includes, ["curd"]);
+  assert.equal(wish.modifiers.lactoseFree, true);
+  assert.deepEqual(wishChips(wish).map(chip => chip.label), ["Sweet", "Lactose-free"]);
+
+  // "sweet potato" is a vegetable, not a pudding.
+  const potato = parseWish("sweet potato curry");
+  assert.equal(potato.course, null);
+  assert.deepEqual(potato.includes, ["sweet-potato"]);
+});
+
+test("asking for something sweet and curd gives a dessert with curd in it", () => {
+  const wish = parseWish("lactose free curd sweet");
+  for (const slot of ["breakfast", "lunch", "snack", "dinner"]) {
+    for (let seed = 1; seed <= 5; seed += 1) {
+      const draft = generateRecipeDraft({
+        slot,
+        target: { kcal: 430, protein: 22, carbs: 45, fat: 18 },
+        seed,
+        wish,
+      });
+      assert.ok(draft, `${slot} ${seed}`);
+      assert.equal(draft.course, "sweet", `${slot} ${seed} course`);
+      assert.ok(draft.ingredients.some(item => item.key === "curd"), `${slot} ${seed} contains curd`);
+      assert.equal(draft.vegetarian, true);
+      assert.ok(draft.kcal >= 430 * 0.7 && draft.kcal <= 430 * 1.3, `${slot} ${seed} kcal ${draft.kcal}`);
+    }
+  }
+});
+
+test("a savoury AI answer is thrown away when a dessert was asked for", async () => {
+  const wish = parseWish("lactose free curd sweet");
+  const curd = [{ en: "Curd cheese", lt: "Varškė", amount: 150, unit: "g" }];
+  const reply = (name, course) => ({
+    available: true,
+    recipe: {
+      name: { en: name, lt: name },
+      emoji: "🍮",
+      slot: "lunch",
+      kcal: 420,
+      protein: 20,
+      carbs: 40,
+      fat: 18,
+      prepMinutes: 20,
+      ingredients: curd,
+      method: { en: "Bake.", lt: "Kepkite." },
+      tags: [],
+      course,
+    },
+  });
+
+  const savoury = await requestRecipeIdea({
+    api: { generateRecipe: async () => reply("Curd pasta", "savoury") },
+    slot: "lunch",
+    target: { kcal: 430, protein: 22, carbs: 45, fat: 18 },
+    seed: 3,
+    notes: "lactose free curd sweet",
+    wish,
+  });
+  assert.equal(savoury.ai, false, "savoury draft replaced by the engine");
+  assert.equal(savoury.course, "sweet");
+  assert.ok(savoury.ingredients.some(item => item.key === "curd"));
+
+  const sweet = await requestRecipeIdea({
+    api: { generateRecipe: async () => reply("Curd pudding", "sweet") },
+    slot: "lunch",
+    target: { kcal: 430, protein: 22, carbs: 45, fat: 18 },
+    seed: 3,
+    notes: "lactose free curd sweet",
+    wish,
+  });
+  assert.equal(sweet.ai, true, "a dessert that contains curd is accepted");
+  assert.equal(sweet.name.en, "Curd pudding");
 });
 
 test("rerolling changes the dish, not just the garnish", () => {

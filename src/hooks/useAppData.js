@@ -40,6 +40,9 @@ export function useAppData(t = {}) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [data, setData] = useState(EMPTY);
+  // Used to roll a failed optimistic write back without reloading everything.
+  const householdRef = useRef(null);
+  householdRef.current = data.household;
   const [authLoading, setAuthLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState(null);
@@ -484,9 +487,38 @@ export function useAppData(t = {}) {
     await guarded(() => api.stockPantry(items), t.addedToPantry || `${items.length} items added to the pantry`);
   }, [guarded, t.addedToPantry]);
 
+  // Renaming the kitchen or changing portions used to reload the whole kitchen
+  // — twelve queries — on every tap, which is why the stepper felt laggy and
+  // rubber-banded while old responses landed. The screen now updates at once,
+  // the row is written in the background, and only that row is merged back.
   const updateHousehold = useCallback(async patch => {
-    await guarded(() => api.updateHousehold(patch));
-  }, [guarded]);
+    const before = householdRef.current;
+    const optimistic = {};
+    if (patch?.name !== undefined) optimistic.name = String(patch.name).slice(0, 80);
+    if (patch?.extraPortions !== undefined) {
+      optimistic.extraPortions = Math.max(0, Math.min(8, Math.round(Number(patch.extraPortions) || 0)));
+    }
+    if (before && Object.keys(optimistic).length) {
+      setData(previous => previous.household
+        ? { ...previous, household: { ...previous.household, ...optimistic } }
+        : previous);
+    }
+
+    try {
+      const updated = await api.updateHousehold(patch);
+      if (updated) {
+        setData(previous => previous.household
+          ? { ...previous, household: { ...previous.household, ...updated } }
+          : previous);
+      }
+      return updated;
+    } catch (error) {
+      if (before) setData(previous => ({ ...previous, household: before }));
+      console.error(error);
+      notify(error?.userMessage || t.savingFailed || "Could not save. Check your connection and try again.", "error");
+      throw error;
+    }
+  }, [notify, t]);
 
   const resetWeek = useCallback(async () => {
     await guarded(() => api.resetWeek(), t.weekCleared || "Week cleared");

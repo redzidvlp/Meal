@@ -217,6 +217,88 @@ const TEMPLATES = {
   ],
 };
 
+// Sweet dishes. The slot list only knows breakfast/lunch/snack/dinner, so a
+// dessert is a property of the recipe, not a place in the day — ask for
+// "something sweet" and these are used instead of the savoury templates.
+// Every one has a protein (curd by default) so a named ingredient can be
+// swapped straight in.
+const SWEET_TEMPLATES = [
+  {
+    id: "curd-bake",
+    emoji: "🍮",
+    sweet: true,
+    en: ({ protein, fruit }) => `Baked ${label(protein).toLowerCase()} pudding with ${label(fruit).toLowerCase()}`,
+    lt: ({ protein, fruit }) => `Keptas pudingas su ${labelLtIn(protein)} ir ${labelLtIn(fruit)}`,
+    methodEn: parts => `Mash the ${parts.protein} with the oats and a spoon of honey, fold in the ${parts.fruit}, bake at 180 °C for 20 minutes and scatter the ${parts.fat} on top.`,
+    methodLt: parts => `Sumaišykite ${parts.proteinLt} su avižomis ir šaukštu medaus, įmaišykite ${parts.fruitLt}, kepkite 180 °C temperatūroje 20 min. ir pabarstykite ${parts.fatIn}.`,
+    pickSet: random => ({ protein: "curd", carb: "gf-rolled-oats", fruit: pickFruit(random), fat: pick(random, ["walnuts", "dark-chocolate"]) }),
+    amounts: { protein: 180, carb: 35, fruit: 100, fat: 14 },
+    prepMinutes: 25,
+  },
+  {
+    id: "curd-mousse",
+    emoji: "🍧",
+    sweet: true,
+    en: ({ protein, fruit }) => `Whipped ${label(protein).toLowerCase()} mousse with ${label(fruit).toLowerCase()}`,
+    lt: ({ protein, fruit }) => `Saldus kremas su ${labelLtIn(protein)} ir ${labelLtIn(fruit)}`,
+    methodEn: parts => `Whip the ${parts.protein} with honey until fluffy, fold through the ${parts.fruit} and chill for 15 minutes. Grate the ${parts.fat} over the top.`,
+    methodLt: parts => `Išplakite ${parts.proteinLt} su medumi iki purumo, įmaišykite ${parts.fruitLt} ir atvėsinkite 15 min. Pabarstykite ${parts.fatIn}.`,
+    pickSet: random => ({ protein: "curd", fruit: pickFruit(random), fat: "dark-chocolate" }),
+    amounts: { protein: 200, fruit: 120, fat: 12 },
+    prepMinutes: 15,
+  },
+  {
+    id: "curd-pancakes",
+    emoji: "🥞",
+    sweet: true,
+    en: ({ protein, fruit }) => `${label(protein)} pancakes with ${label(fruit).toLowerCase()}`,
+    lt: ({ protein, fruit }) => `Blyneliai su ${labelLtIn(protein)} ir ${labelLtIn(fruit)}`,
+    methodEn: parts => `Whisk the ${parts.protein} with the oats and one egg into a batter, fry small pancakes for 2 minutes a side and serve with the ${parts.fruit}.`,
+    methodLt: parts => `Išplakite ${parts.proteinLt} su avižomis ir kiaušiniu, kepkite nedidelius blynelius po 2 min. iš abiejų pusių ir patiekite su ${parts.fruitLt}.`,
+    pickSet: random => ({ protein: "curd", carb: "gf-rolled-oats", fruit: pickFruit(random), fat: "nut-butter" }),
+    amounts: { protein: 170, carb: 40, fruit: 90, fat: 10 },
+    prepMinutes: 20,
+  },
+  {
+    id: "curd-glass",
+    emoji: "🍨",
+    sweet: true,
+    en: ({ protein, fruit }) => `Layered ${label(protein).toLowerCase()} & ${label(fruit).toLowerCase()} glass`,
+    lt: ({ protein, fruit }) => `Sluoksniuotas desertas su ${labelLtIn(protein)} ir ${labelLtIn(fruit)}`,
+    methodEn: parts => `Layer the ${parts.protein}, crushed ${parts.carb} and ${parts.fruit} in a glass, then finish with the ${parts.fat}.`,
+    methodLt: parts => `Sluoksniuokite ${parts.proteinLt}, sutrupintus ${parts.carbLt} ir ${parts.fruitLt} stiklinėje, užbaikite ${parts.fatIn}.`,
+    pickSet: random => ({ protein: "curd", carb: "gf-rolled-oats", fruit: pickFruit(random), fat: pick(random, ["walnuts", "dark-chocolate"]) }),
+    amounts: { protein: 180, carb: 30, fruit: 110, fat: 12 },
+    prepMinutes: 10,
+  },
+  {
+    id: "curd-toast",
+    emoji: "🍞",
+    sweet: true,
+    en: ({ protein, fruit }) => `Sweet ${label(protein).toLowerCase()} toast with ${label(fruit).toLowerCase()}`,
+    lt: ({ protein, fruit }) => `Saldi duona su ${labelLtIn(protein)} ir ${labelLtIn(fruit)}`,
+    methodEn: parts => `Toast the bread, spread the ${parts.protein} with honey, add sliced ${parts.fruit} and finish with the ${parts.fat}.`,
+    methodLt: parts => `Paskrudinkite duoną, užtepkite ${parts.proteinLt} su medumi, sudėkite ${parts.fruitLt} ir pabarstykite ${parts.fatIn}.`,
+    pickSet: random => ({ protein: "curd", carb: "gf-bread", fruit: pickFruit(random), fat: "nut-butter" }),
+    amounts: { protein: 150, carb: 55, fruit: 90, fat: 12 },
+    prepMinutes: 8,
+  },
+  {
+    id: "sweet-porridge",
+    emoji: "🥣",
+    sweet: true,
+    en: ({ carb, protein, fruit }) => `Creamy ${label(carb).toLowerCase()} with ${label(protein).toLowerCase()} & ${label(fruit).toLowerCase()}`,
+    lt: ({ carb, protein, fruit }) => `Kreminės ${label(carb, "lt").toLowerCase()} su ${labelLtIn(protein)} ir ${labelLtIn(fruit)}`,
+    methodEn: parts => `Simmer the ${parts.carb} in plant milk, stir in the ${parts.protein} off the heat, then top with the ${parts.fruit} and the ${parts.fat}.`,
+    methodLt: parts => `Virkite ${parts.carbLt} augaliniame piene, nukėlę nuo ugnies įmaišykite ${parts.proteinLt}, pabarstykite ${parts.fruitLt} ir ${parts.fatIn}.`,
+    pickSet: random => ({ protein: "curd", carb: "gf-rolled-oats", fruit: pickFruit(random), fat: pick(random, ["walnuts", "chia-seeds"]) }),
+    amounts: { protein: 160, carb: 50, fruit: 100, fat: 12 },
+    prepMinutes: 12,
+  },
+];
+
+const pickFruit = random => pick(random, FACT_GROUPS.fruit.filter(key => INGREDIENT_FACTS[key].fodmap));
+
 function macrosFor(ingredients) {
   const total = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
   for (const ingredient of ingredients) {
@@ -261,7 +343,9 @@ export function generateRecipeDraft({
   avoidKeys = [],
 } = {}) {
   const safeSlot = SLOTS.includes(slot) ? slot : "lunch";
-  let templates = TEMPLATES[safeSlot];
+  const wantsSweet = wish?.course === "sweet" || filters.sweet === true;
+  // A dessert can land in any slot; only the savoury list is slot-specific.
+  let templates = wantsSweet ? SWEET_TEMPLATES : TEMPLATES[safeSlot];
   if (filters.quick) {
     const fast = templates.filter(template => template.prepMinutes <= 15);
     if (fast.length) templates = fast;
@@ -396,6 +480,7 @@ export function generateRecipeDraft({
         lt: template.methodLt(parts),
       },
       tags: tagsFor(ingredients.map(item => item.key), macros, prepMinutes),
+      course: template.sweet ? "sweet" : "savoury",
       vegetarian: true,
       prepMinutes,
       generated: true,

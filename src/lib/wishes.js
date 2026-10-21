@@ -83,6 +83,12 @@ const ALIAS_PHRASES = [...ALIAS_TO_KEY.keys()].sort((a, b) => b.length - a.lengt
 const EXCLUDE_CUES = ["no ", "without ", "skip ", "avoid ", "not ", "minus ", "be ", "nes ", "be"];
 const QUICK_PATTERN = /\b(quick|fast|speedy|15|20|25)\b|greit|per 20|iki 20/;
 
+// "sweet potato" is a vegetable, not a dessert.
+const SWEET_PATTERN = /\b(sweet|dessert|pudding|cake|mousse|treat|sugary|sald\w*|desert\w*|pyrag\w*)\b/;
+const SAVOURY_PATTERN = /\b(savoury|savory|salty|not sweet|nesald\w*)\b/;
+const LACTOSE_PATTERN = /\b(lactose|lactosefree|be laktozes|laktozes)\b/;
+const DAIRY_FREE_PATTERN = /\b(dairy free|no dairy|be pieno|be pienu|vegan)\b/;
+
 const splitClauses = text => String(text || "")
   .toLowerCase()
   .split(/[,;.]|\band\b|\bwith\b|\bir\b|\bsu\b/)
@@ -97,7 +103,12 @@ const phraseRegex = (phrase, flags = "") => new RegExp(`(^|\\s)${escapeRegExp(ph
  */
 export function parseWish(text) {
   const raw = String(text || "").trim();
-  if (!raw) return { raw, includes: [], excludes: [], quick: false };
+  if (!raw) {
+    return {
+      raw, includes: [], excludes: [], quick: false,
+      course: null, modifiers: { lactoseFree: false, dairyFree: false },
+    };
+  }
 
   const includes = new Set();
   const excludes = new Set();
@@ -107,31 +118,53 @@ export function parseWish(text) {
     // a ban, anything before it is a wish.
     const cueIndexes = [];
     for (const cue of EXCLUDE_CUES) {
-      const word = cue.trim();
-      const regex = phraseRegex(word, "g");
+      const regex = phraseRegex(cue.trim(), "g");
       let match;
       while ((match = regex.exec(clause))) cueIndexes.push(match.index);
     }
 
+    // Longest phrase wins: "sweet potato" must not also count as "potato".
+    const found = [];
     for (const phrase of ALIAS_PHRASES) {
       const key = ALIAS_TO_KEY.get(phrase);
       if (!key) continue;
       const regex = phraseRegex(phrase, "g");
       let match;
       while ((match = regex.exec(clause))) {
-        if (cueIndexes.some(index => index <= match.index)) excludes.add(key);
-        else includes.add(key);
+        found.push({ key, start: match.index, end: match.index + match[0].length, banned: cueIndexes.some(index => index <= match.index) });
       }
+    }
+    found.sort((a, b) => (b.end - b.start) - (a.end - a.start));
+    const kept = [];
+    for (const item of found) {
+      if (kept.some(other => item.start < other.end && other.start < item.end)) continue;
+      kept.push(item);
+    }
+    for (const item of kept) {
+      if (item.banned) excludes.add(item.key);
+      else includes.add(item.key);
     }
   }
 
   for (const key of excludes) includes.delete(key);
 
+  // A wish is a sentence, not just a list of ingredients. "lactose free curd
+  // sweet" means: a dessert, built on curd. Without this the sugar words were
+  // dropped and the app answered with a curd pasta.
+  const plain = ` ${fold(raw).replace(/-/g, " ").replace(/\bsweet potato(es)?\b/g, " potato ")} `;
+  const sweet = SWEET_PATTERN.test(plain);
+  const savoury = !sweet && SAVOURY_PATTERN.test(plain);
+
   return {
     raw,
     includes: [...includes],
     excludes: [...excludes],
-    quick: QUICK_PATTERN.test(raw),
+    quick: QUICK_PATTERN.test(plain),
+    course: sweet ? "sweet" : savoury ? "savoury" : null,
+    modifiers: {
+      lactoseFree: LACTOSE_PATTERN.test(plain),
+      dairyFree: DAIRY_FREE_PATTERN.test(plain),
+    },
   };
 }
 
@@ -177,6 +210,35 @@ export function containsExcluded(recipe, wish) {
     const phrases = KEY_PHRASES.get(key) || [key.replace(/-/g, " ")];
     return phrases.some(phrase => phraseIn(haystack, phrase));
   });
+}
+
+/** Short phrases for the chips under the box. */
+export function wishChips(wish) {
+  if (!wish) return [];
+  const chips = [];
+  if (wish.course === "sweet") chips.push({ key: "course-sweet", label: "Sweet" });
+  if (wish.course === "savoury") chips.push({ key: "course-savoury", label: "Savoury" });
+  if (wish.quick) chips.push({ key: "quick", label: "Quick" });
+  if (wish.modifiers?.lactoseFree) chips.push({ key: "lactose-free", label: "Lactose-free" });
+  if (wish.modifiers?.dairyFree) chips.push({ key: "dairy-free", label: "No dairy" });
+  return chips;
+}
+
+/** One sentence for the model, so it hears the wish in the person's own words. */
+export function wishSummary(wish) {
+  if (!wish?.raw) return "";
+  const bits = [];
+  if (wish.course === "sweet") bits.push("This should be a sweet dish (dessert style)");
+  if (wish.course === "savoury") bits.push("This should be savoury");
+  if (wish.modifiers?.lactoseFree) bits.push("It must be lactose-free");
+  if (wish.modifiers?.dairyFree) bits.push("It must contain no dairy at all");
+  if (wish.includes?.length) {
+    bits.push(`It must contain ${wish.includes.map(key => INGREDIENT_FACTS[key]?.en || key).join(" and ")}`);
+  }
+  if (wish.excludes?.length) {
+    bits.push(`It must not contain ${wish.excludes.map(key => INGREDIENT_FACTS[key]?.en || key).join(" or ")}`);
+  }
+  return bits.join(". ");
 }
 
 export const wishWordList = value => words(value).slice(0, 8);

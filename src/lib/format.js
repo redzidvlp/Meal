@@ -38,13 +38,30 @@ export function createId(prefix = "") {
 
 export function debounce(fn, wait = 350) {
   let timer;
+  let lastArgs = null;
   const debounced = (...args) => {
+    lastArgs = args;
     clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), wait);
+    timer = setTimeout(() => {
+      timer = null;
+      lastArgs = null;
+      fn(...args);
+    }, wait);
   };
+  // Flush sends the value that was waiting, so leaving the screen mid-tap does
+  // not drop the last change. Calling it with no pending work does nothing.
   debounced.flush = (...args) => {
     clearTimeout(timer);
-    fn(...args);
+    timer = null;
+    const pending = args.length ? args : lastArgs;
+    lastArgs = null;
+    if (!pending) return;
+    fn(...pending);
+  };
+  debounced.cancel = () => {
+    clearTimeout(timer);
+    timer = null;
+    lastArgs = null;
   };
   return debounced;
 }
