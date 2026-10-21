@@ -38,8 +38,8 @@ can plan meals for real:
 | 1 | **The database has not been upgraded yet** — the site will sign you in and then say a table is missing | Supabase SQL editor, one paste | **Do Phase 2 now** |
 | 2 | The site's Supabase URL | GitHub → **Secrets** → `VITE_SUPABASE_URL` | already set |
 | 3 | The public database key | GitHub → **Secrets** → `VITE_SUPABASE_ANON_KEY` | already set |
-| 4 | The “use the real database” switch | GitHub → **Variables** → `USE_SUPABASE=true` | already set |
-| 5 | A build that contains 2–4 | GitHub → Actions | done |
+| 4 | *(nothing else — the two secrets ARE the switch)* | — | — |
+| 5 | A build that contains 2–3 | GitHub → Actions | done |
 | 6 | *(optional)* AI provider key, for better recipes and photo reading | Supabase → **Edge Functions → Secrets** → `AI_API_KEY` | optional |
 | 7 | The new build on each phone | Open the link → **Update now** | after Phase 2 |
 
@@ -156,8 +156,10 @@ Without this step, after pressing *Create account* you may see
 
 ## Phase 4 — Teach GitHub where the database is (8 min)
 
-The site is built by GitHub Actions from `.github/workflows/preview.yml`. It is deliberately
-set to **demo mode** until you flip the switch below, so the public link can never break.
+The site is built by GitHub Actions from `.github/workflows/deploy.yml` — the only workflow
+that publishes the phone link. It builds against Supabase whenever the two secrets below
+exist, and falls back to the labelled demo household when they do not, so the link always
+opens.
 
 ### 4a. The two secrets
 
@@ -171,22 +173,24 @@ set to **demo mode** until you flip the switch below, so the public link can nev
 
 Names must match exactly, including the `VITE_` prefix and capitals.
 
-### 4b. The switch
+### 4b. There is no switch any more
 
-1. Same screen → **Variables** tab → **New repository variable**.
-2. Name: `USE_SUPABASE` → Value: `true` → **Add variable**.
-3. Delete this variable at any time to put the site back into the safe demo kitchen.
+Two secrets are the whole configuration. If both exist, the deploy builds against Supabase;
+if neither exists, it builds the safe demo. To go back to demo for a while, delete both
+secrets — but never keep only one of them: the workflow stops with an error instead of
+publishing a broken link.
 
 ### 4c. Build and publish
 
-1. Repo → **Actions** tab → left column **Preview build (demo mode)**.
+1. Repo → **Actions** tab → left column **Deploy to GitHub Pages**.
 2. **Run workflow** (right side) → branch `main` → **Run workflow**.
    (If the button is missing, the workflow has not reached `main` yet — use the link instead.)
-3. Wait ~1 minute for a green tick. Open the run and confirm **Deploy to GitHub Pages** is green.
+3. Wait ~1 minute for a green tick. Open the run: the step **Check the Supabase configuration**
+   says either *“Building against Supabase at …”* or *“No Supabase secrets found — DEMO”*.
 
 > **You should see:** the site at **https://redzidvlp.github.io/Meal/** opens with a sign-in
-> screen and **no** yellow “Local demo” banner. If the banner is still there, `USE_SUPABASE`
-> is missing or the workflow was not re-run.
+> screen and **no** yellow “Local demo” banner. If the banner is still there, open the run and
+> read that check step — it names the reason.
 
 ---
 
@@ -379,7 +383,8 @@ The app names the failure instead of saying “refresh to retry”. Match the ti
 | **The Supabase project is paused or unreachable** | Free projects pause after ~a week idle | Supabase dashboard → Restore project |
 | **No answer from Supabase** | Wi-Fi, VPN, ad-blocker, or the project URL is wrong | Try mobile data; re-check 4a |
 | **The database said no** | Row-level security blocked the account | Confirm the account joined a kitchen; re-run `schema.sql` |
-| Yellow **Local demo** banner after going live | `USE_SUPABASE` variable missing, or workflow not re-run | Do 4b and 4c again |
+| Yellow **Local demo** banner after going live | the deploy built without the Supabase secrets (check the **Check the Supabase configuration** step) | Do 4a, then 4c again |
+| Your phone shows demo data but the site works on a laptop | the installed app kept an older demo build in its cache | close the app fully and reopen it; if the yellow banner stays, remove the home-screen icon and add it again |
 | `syntax error at or near "upgrade"` | The *filename* was run instead of the file’s text | Open the `raw.githubusercontent.com` link → select all → paste |
 | `MISSING TABLE` in Phase 2’s last table | Paste cut short, or an older run stopped halfway | Run the same file again — it is idempotent |
 | “Account created. Confirm your email.” and no email | Confirmation is on / free email limit | Phase 3b: turn Confirm email off, sign in again |
@@ -396,7 +401,7 @@ When asking for help, send: the connection screen with **Details** open, the res
 |---|---|---|
 | Database URL | GitHub → Settings → Secrets and variables → Actions → **Secrets** (`VITE_SUPABASE_URL`) | Supabase → Project Settings → API |
 | Database anon key | GitHub → same **Secrets** (`VITE_SUPABASE_ANON_KEY`) | Supabase → Project Settings → API |
-| “Use the real database” switch | GitHub → same screen → **Variables** (`USE_SUPABASE=true`) | — |
+| “Use the real database” switch | none — the two **Secrets** are the switch | — |
 | AI provider key | Supabase → **Edge Functions → Secrets** (`AI_API_KEY`) | OpenAI / OpenRouter dashboard |
 | Database password | Your password manager only | Not needed day to day |
 | Invite code | Inside the app: Settings (visible to both partners) | — |
