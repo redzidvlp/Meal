@@ -15,7 +15,8 @@ with required(tbl, cols) as (
     ('pantry',           array['household_id', 'ingredient_key', 'item_key', 'quantity', 'low_threshold']),
     ('menus',            array['household_id', 'name_en', 'items']),
     ('day_sections',     array['household_id', 'day_index', 'slot']),
-    ('labels',           array['household_id', 'key', 'label'])
+    ('labels',           array['household_id', 'key', 'label']),
+    ('products',         array['household_id', 'key', 'name_en', 'kcal', 'protein', 'carbs', 'fat'])
 ),
 existing as (
   select table_name

@@ -372,6 +372,65 @@ same dish with one vegetable swapped.</li>
 </ul>
 <p>Without the update the app still works: it notices the model ignored your wish and
 answers with the offline engine instead — so you get your curd either way.</p>
+<h3>7c-sexies. Your own product, straight from the package</h3>
+<p>This is the one that makes the sous-chef cook with <strong>your</strong> vegan ham, not an
+average one.</p>
+<ol>
+<li><strong>⚙️ Sous-chef → ⭐ Must include → ＋ My product.</strong></li>
+<li>Paste the nutrition table from the package (or the shop page) into
+<strong>Paste the label</strong> and press <strong>🔍 Read the label</strong>. It picks out the product
+name, the pack size and the four numbers a meal calculation needs.</li>
+<li>Check them, press <strong>Save product</strong>. It is pinned to the current idea
+straight away, and it stays in <strong>My products</strong> for every later meal.</li>
+</ol>
+<p>Lithuanian and English labels both work, kJ is converted, and a label printed
+“per portion” or “per slice” is scaled to 100 g automatically.</p>
+<p>What is read and what is not:</p>
+<table>
+<thead>
+<tr>
+<th>On the label</th>
+<th>Used?</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Energinė vertė / Energy → kcal (or kJ)</td>
+<td><strong>yes</strong> — this is the calorie number</td>
+</tr>
+<tr>
+<td>Baltymai / Protein</td>
+<td><strong>yes</strong> — this is what the protein target is fitted against</td>
+</tr>
+<tr>
+<td>Angliavandeniai / Carbohydrate</td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>Riebalai / Fat</td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>Sočiosios riebalų rūgštys, Cukrūs, Druska (saturates, sugars, salt)</td>
+<td>no — they do not change the calorie or protein fit</td>
+</tr>
+</tbody></table>
+<p>So of the nine lines on your label, four are needed: <strong>220 kcal, 24.3 g protein,
+8.4 g carbs, 9.5 g fat</strong>, all per 100 g. The pack size (80 g) is kept only to
+remind you what one pack is.</p>
+<p>If the printed energy disagrees with what the macros add up to by more than a
+quarter, the app trusts the macros — that keeps every meal total self-consistent.</p>
+<p>Matching by hand: a product saved as “Vegan ham slices” is found by typing
+<code>vegan ham</code>, <code>my vegan ham</code> or the full name in the wish box. It also appears in
+the suggestion list of the Must include box.</p>
+<p>Nothing is picked at random: a saved product is only used when you ask for it.</p>
+<blockquote>
+<p><strong>First time only:</strong> this adds one table, so the upgrade SQL has to run once
+more. Supabase → SQL editor → paste
+<code>https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/upgrade-existing-project.sql</code>
+→ Run. It is idempotent, keeps every login and every meal, and ends with the
+<code>doctor.sql</code> report where <code>products</code> must say <code>ok</code>. Then reload the app.
+Without it the sheet says <em>“This project has no products table yet”</em>.</p>
+</blockquote>
 <h3>7c-ter. How the sous-chef is laid out</h3>
 <p>The whole page is one card, read top to bottom:</p>
 <ol>
@@ -445,6 +504,7 @@ skyr, ricotta, cheddar and mozzarella.</p>
 <li>something to leave out — <code>no mushrooms</code>, <code>be svogūnų</code></li>
 <li>a kind of dish — <code>sweet</code>, <code>dessert</code> (builds a dessert, not a savoury plate)</li>
 <li>a modifier — <code>lactose free</code>, <code>quick</code>, <code>high protein</code></li>
+<li>a product you saved from its own label — <code>vegan ham</code>, <code>my protein yoghurt</code></li>
 </ul>
 <p>“Vegan meat”, “plant-based steak” and “soy mince” are understood as vegetarian
 products; plain “meat”, “chicken” or “steak” is still refused by the vegetarian guard.</p>
@@ -541,6 +601,11 @@ SQL by hand — and it only does something when <code>main</code> contains a <co
 <td><strong>The database said no</strong></td>
 <td>Row-level security blocked the account</td>
 <td>Confirm the account joined a kitchen; re-run <code>schema.sql</code></td>
+</tr>
+<tr>
+<td><strong>“This project has no products table yet”</strong></td>
+<td>the newer upgrade SQL has not been run</td>
+<td>paste <code>upgrade-existing-project.sql</code> again (Phase 2), then reload</td>
 </tr>
 <tr>
 <td>Yellow <strong>Local demo</strong> banner after going live</td>

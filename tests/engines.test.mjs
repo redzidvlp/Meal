@@ -15,6 +15,8 @@ import { generateRecipeDraft } from "../src/engine/generate.js";
 import { offlineIdea } from "../src/lib/ideas.js";
 import { parseWish, wishSatisfied, containsExcluded, wishChips, resolveIngredient } from "../src/lib/wishes.js";
 import { requestRecipeIdea } from "../src/lib/ideas.js";
+import { parseNutritionLabel, productFact, sanitizeProduct } from "../src/lib/products.js";
+import { registerProductFacts, factFor } from "../src/data/ingredientFacts.js";
 
 const makeRecipe = (overrides = {}) => ({
   id: "test-a",
@@ -841,6 +843,107 @@ test("an unknown ingredient is reported, never silently dropped", async () => {
   assert.equal(sent.mustInclude.includes("grandma's mushroom spread"), true, "the model is told what must be in it");
   assert.equal(withAi.ai, true);
   assert.deepEqual(withAi.missing, []);
+});
+
+// The exact label pasted by the user: a Lithuanian vegan ham product.
+const HAM_LABEL = `**Veganiški pjausniai kumpio stiliaus, 80 g**
+
+**Maistinė vertė (100 g/ml)**
+
+Energinė vertė922.00 kJ / 220.00 Kcal
+
+Riebalai9.50 g
+
+Sočiosios riebalų rūgštys0.80 g
+
+Angliavandeniai8.40 g
+
+Cukrūs2.20 g
+
+Baltymai24.30 g
+
+Druska1.30 g`;
+
+test("a pasted label gives back the four numbers a meal needs", () => {
+  const parsed = parseNutritionLabel(HAM_LABEL);
+  assert.equal(parsed.name, "Veganiški pjausniai kumpio stiliaus");
+  assert.equal(parsed.portionGrams, 80, "the pack size is read, not confused with a nutrient");
+  assert.equal(parsed.kcal, 220, "kcal wins over the kJ figure on the same line");
+  assert.equal(parsed.protein, 24.3);
+  assert.equal(parsed.carbs, 8.4);
+  assert.equal(parsed.fat, 9.5, "total fat, not the saturates line");
+
+  const english = parseNutritionLabel(
+    "Vegan ham slices, 80 g\nNutrition per 100 g\nEnergy 922 kJ / 220 kcal\nFat 9.5 g\n"
+    + "of which saturates 0.8 g\nCarbohydrate 8.4 g\nof which sugars 2.2 g\nProtein 24.3 g\nSalt 1.3 g",
+  );
+  assert.equal(english.kcal, 220);
+  assert.equal(english.protein, 24.3);
+
+  // kJ only, and a label printed per portion: both converted to per 100 g.
+  const kj = parseNutritionLabel("Tempeh\nper 100 g\nEnergy 800 kJ\nFat 11 g\nCarbohydrate 8 g\nProtein 20 g");
+  assert.equal(kj.kcal, 191);
+  const portion = parseNutritionLabel("Protein yoghurt\nPer portion 150 g\nEnergy 90 kcal\nFat 1 g\nCarbohydrate 6 g\nProtein 15 g");
+  assert.equal(portion.kcal, 60, "per-portion energy scaled to 100 g");
+  assert.equal(portion.protein, 10);
+});
+
+test("a saved product behaves like any other ingredient", () => {
+  const { ok, product } = sanitizeProduct({
+    nameEn: "Veganiški pjausniai kumpio stiliaus",
+    kcal: 220, protein: 24.3, carbs: 8.4, fat: 9.5, portionGrams: 80,
+  });
+  assert.equal(ok, true);
+  assert.match(product.key, /^p-veganiski-pjausniai/);
+  assert.match(product.key, /^p-[a-z0-9-]{1,40}$/, "key fits the database rule");
+  const fact = productFact(product);
+  assert.equal(fact.group, "protein", "dense in protein, so it fills the protein slot");
+  assert.equal(fact.kcal, 220);
+
+  // Nothing is saved without a name or without numbers.
+  assert.equal(sanitizeProduct({ nameEn: "", kcal: 200 }).ok, false);
+  assert.equal(sanitizeProduct({ nameEn: "Mystery", kcal: 0, protein: 0, carbs: 0, fat: 0 }).ok, false);
+
+  // The engine cooks with it and still lands in range.
+  registerProductFacts([fact]);
+  assert.ok(factFor(product.key), "registered with the ingredient table");
+  for (const seed of [2, 5, 9, 13]) {
+    const draft = generateRecipeDraft({
+      slot: "lunch",
+      target: { kcal: 500, protein: 30, carbs: 45, fat: 20 },
+      seed,
+      mustInclude: [product.key],
+    });
+    assert.ok(draft, `draft ${seed}`);
+    assert.ok(draft.ingredients.some(item => item.key === product.key), `seed ${seed} uses the product`);
+    assert.ok(draft.kcal >= 360 && draft.kcal <= 625, `seed ${seed} kcal ${draft.kcal}`);
+  }
+  // An optional filter must not veto the ingredient that was asked for.
+  registerProductFacts([fact]);
+  const strict = generateRecipeDraft({
+    slot: "lunch",
+    target: { kcal: 500, protein: 30, carbs: 45, fat: 20 },
+    seed: 6,
+    filters: { lowFodmap: true, highProtein: true },
+    mustInclude: [product.key],
+  });
+  assert.ok(strict, "a pinned product survives the low-FODMAP and high-protein filters");
+  assert.ok(strict.ingredients.some(item => item.key === product.key));
+
+  // It is never chosen at random for a dish nobody asked for.
+  const plain = generateRecipeDraft({ slot: "lunch", target: { kcal: 500, protein: 30, carbs: 45, fat: 20 }, seed: 4 });
+  assert.equal(plain.ingredients.some(item => item.key === product.key), false);
+  registerProductFacts([]);
+});
+
+test("typing the product name in the wish box pins it", () => {
+  const { product } = sanitizeProduct({ nameEn: "Vegan ham slices", kcal: 220, protein: 24.3, carbs: 8.4, fat: 9.5 });
+  registerProductFacts([productFact(product)]);
+  for (const typed of ["vegan ham", "Vegan ham slices"]) {
+    const wish = parseWish(`something with ${typed}`);
+    assert.ok(wish.includes.includes(product.key), `"${typed}" resolved to the saved product`);
+  }
+  registerProductFacts([]);
 });
 
 test("rerolling changes the dish, not just the garnish", () => {

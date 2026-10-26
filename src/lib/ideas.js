@@ -1,6 +1,6 @@
 import { generateRecipeDraft } from "../engine/generate.js";
 import { sanitizeRecipe } from "./validate.js";
-import { INGREDIENT_FACTS } from "../data/ingredientFacts.js";
+import { factFor } from "../data/ingredientFacts.js";
 import { parseWish, wishSatisfied, containsExcluded, wishSummary } from "./wishes.js";
 
 /**
@@ -75,7 +75,7 @@ function fromAi(recipe, seed) {
 }
 
 const excludedNames = wish =>
-  (wish?.excludes || []).map(key => INGREDIENT_FACTS[key]?.en || key.replace(/-/g, " "));
+  (wish?.excludes || []).map(key => factFor(key)?.en || key.replace(/-/g, " "));
 
 /**
  * Asks the configured AI function first, then falls back to the offline engine.
@@ -104,16 +104,16 @@ export async function requestRecipeIdea({
   // Ingredients named explicitly (picker or "must include" box). They are the
   // one thing the recipe may not quietly leave out.
   const pins = [...new Set([...(parsed.includes || []), ...(Array.isArray(mustInclude) ? mustInclude : [])])]
-    .filter(key => INGREDIENT_FACTS[key]);
+    .filter(key => factFor(key));
   const customNames = (Array.isArray(mustNames) ? mustNames : [])
     .map(name => String(name || "").trim())
     .filter(name => name.length > 1)
     .slice(0, 4);
   const pinnedWish = { ...parsed, includes: pins };
-  const requested = [...pins.map(key => INGREDIENT_FACTS[key].en), ...customNames];
+  const requested = [...pins.map(key => factFor(key).en), ...customNames];
   const minutes = Number(maxMinutes) || 0;
   const merged = { ...filters, quick: filters.quick || !!parsed.quick || (minutes > 0 && minutes <= 15), maxMinutes: minutes };
-  const mustForAi = [...new Set([...pins.map(key => INGREDIENT_FACTS[key].en), ...customNames])].slice(0, 5);
+  const mustForAi = [...new Set([...pins.map(key => factFor(key).en), ...customNames])].slice(0, 5);
   const mustAvoid = excludedNames(parsed);
   const hasWish = Boolean(
     pins.length

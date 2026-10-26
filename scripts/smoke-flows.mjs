@@ -505,6 +505,51 @@ console.log(`MUST INCLUDE: "vegan meat" → ${pinnedCard.querySelector(".idea-na
 // Take it back off so the rest of the flow starts from a clean composer.
 await click(document.querySelector(".sous-card .pin-chip button"), 200);
 
+// 7d-ter. A product from its own packaging: paste the label, read it, cook
+// with its real numbers. This is the exact text of a Lithuanian label.
+const LABEL = `**Veganiški pjausniai kumpio stiliaus, 80 g**
+
+**Maistinė vertė (100 g/ml)**
+
+Energinė vertė922.00 kJ / 220.00 Kcal
+
+Riebalai9.50 g
+
+Sočiosios riebalų rūgštys0.80 g
+
+Angliavandeniai8.40 g
+
+Cukrūs2.20 g
+
+Baltymai24.30 g
+
+Druska1.30 g`;
+await click(document.querySelector("[data-action='add-product']"), 400);
+assert(document.querySelector(".sheet-title")?.textContent.includes("Add a product"), "product sheet opened");
+await setInput(document.querySelector("[data-field='label']"), LABEL);
+await click(document.querySelector("[data-action='read-label']"), 300);
+const nameField = document.querySelector("[data-field='product-name']");
+assert(/Veganiški pjausniai/i.test(nameField.value), `name read from the label (${nameField.value})`);
+const numberFields = [...document.querySelectorAll(".sheet .input[type=number]")].map(input => input.value);
+assert(numberFields[0] === "220", `calories read (${numberFields[0]})`);
+assert(numberFields[1] === "24.3", `protein read (${numberFields[1]})`);
+assert(numberFields[2] === "8.4", `carbs read (${numberFields[2]})`);
+assert(numberFields[3] === "9.5", `fat read (${numberFields[3]})`);
+assert(numberFields[4] === "80", `pack size read (${numberFields[4]})`);
+await click(button("Save product", document.querySelector(".sheet-foot")), 900);
+assert(!document.querySelector(".sheet-title")?.textContent.includes("Add a product"), "sheet closed after saving");
+const productChip = [...document.querySelectorAll(".sous-card .pin-chip")].map(el => el.textContent).join(" | ");
+assert(/pjausniai/i.test(productChip), `the product is pinned (${productChip})`);
+const storedProduct = state().products?.find(row => /pjausniai/i.test(row.nameEn));
+assert(storedProduct && storedProduct.kcal === 220 && storedProduct.protein === 24.3, "product saved with its real values");
+await click(document.querySelector("[data-action='generate']"), 1200);
+const productCard = document.querySelector(".idea-card");
+const productIngredients = productCard.querySelector(".idea-ingredients")?.textContent || "";
+assert(/pjausniai/i.test(productIngredients), `the dish uses the product (${productIngredients.slice(0, 100)})`);
+assert(productCard.querySelector(".pin-line.ok"), "the card confirms what went in");
+console.log(`OWN PRODUCT: label → ${productCard.querySelector(".idea-name")?.textContent} · ${productCard.querySelector(".opt-meta")?.textContent.replace(/\s+/g, " ").trim()}`);
+await click(document.querySelector(".sous-card .pin-chip button"), 300);
+
 await click(button("Review & save"), 500);
 assert(text().includes("Offline idea engine"), "generated draft opens in the editor for review");
 assert([...document.querySelectorAll(".sheet-title")].some(el => el.textContent.includes("New recipe")), "draft uses the new-recipe editor");

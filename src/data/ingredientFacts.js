@@ -88,6 +88,33 @@ export const INGREDIENT_FACTS = {
   mozzarella: { ltIn: "mocarela", shortEn: "Mozzarella", shortLt: "Mocarela", en: "Mozzarella", lt: "Mocarela", kcal: 280, protein: 22, carbs: 2.2, fat: 17, unit: "g", group: "protein", vegan: false, glutenFree: true, fodmap: true },
 };
 
+/**
+ * Products the household saved from their own packages. They behave exactly
+ * like the built-in facts — same shape, same maths — but they live outside this
+ * file because they belong to one kitchen.
+ *
+ *   registerProductFacts([{ key: "p-vegan-ham", en: "Vegan ham", kcal: 220, … }])
+ *
+ * Registering is idempotent: the same key replaces its previous value, and any
+ * key that is no longer listed is dropped on the next call.
+ */
+let PRODUCT_FACTS = {};
+
+export function registerProductFacts(list = []) {
+  const next = {};
+  for (const fact of list) {
+    if (fact && fact.key && fact.en) next[fact.key] = fact;
+  }
+  PRODUCT_FACTS = next;
+  return PRODUCT_FACTS;
+}
+
+export const productFacts = () => PRODUCT_FACTS;
+export const hasProductFacts = () => Object.keys(PRODUCT_FACTS).length > 0;
+/** The table the engine should use: built-ins first, the kitchen's own on top. */
+export const factFor = key => INGREDIENT_FACTS[key] || PRODUCT_FACTS[key] || null;
+export const allFacts = () => ({ ...INGREDIENT_FACTS, ...PRODUCT_FACTS });
+
 export const GROUP_DEFAULT_AMOUNT = { protein: 100, carb: 60, veg: 100, fat: 12, fruit: 100, flavor: 8 };
 
 

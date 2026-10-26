@@ -1,6 +1,7 @@
 import { mondayISO, createId } from "./format.js";
 import { describeLoadError } from "./errors.js";
 import { sanitizePantryItem, sanitizeRecipe, sanitizeNote, sanitizeWater, sanitizeMenu, sanitizePhotoPayload, sanitizeLabel } from "./validate.js";
+import { sanitizeProduct } from "./products.js";
 
 const mapProfile = row => row && ({
   id: row.id,
@@ -54,6 +55,18 @@ const mapAssignment = row => ({
   slot: row.slot,
   personKey: row.person_key,
   recipeId: row.recipe_id,
+});
+
+const mapProduct = row => row && ({
+  key: row.key,
+  nameEn: row.name_en,
+  nameLt: row.name_lt || row.name_en,
+  kcal: Number(row.kcal) || 0,
+  protein: Number(row.protein) || 0,
+  carbs: Number(row.carbs) || 0,
+  fat: Number(row.fat) || 0,
+  unit: row.unit || "g",
+  portionGrams: Number(row.portion_grams) || 0,
 });
 
 const mapPantry = row => ({
@@ -192,6 +205,7 @@ export function createSupabaseBackend(client) {
         menus: () => client.from("menus").select("*").eq("household_id", hid),
         sections: () => client.from("day_sections").select("*").eq("household_id", hid),
         labels: () => client.from("labels").select("*").eq("household_id", hid),
+        products: () => client.from("products").select("*").eq("household_id", hid),
       };
 
       const entries = await Promise.all(
@@ -248,6 +262,7 @@ export function createSupabaseBackend(client) {
         menus: rows("menus").map(mapMenuRow),
         hiddenSections: rows("sections").map(row => ({ day: row.day_index, slot: row.slot })),
         labels: rows("labels").map(row => ({ key: row.key, label: row.label })),
+        products: rows("products").map(mapProduct),
         issues,
       };
     },
@@ -261,7 +276,7 @@ export function createSupabaseBackend(client) {
         timer = setTimeout(callback, 220);
       };
       const channel = client.channel(`household-${hid}`);
-      const tables = ["meal_assignments", "eaten", "water", "recipe_notes", "shopping_checks", "pantry", "recipes", "menus", "day_sections", "labels"];
+      const tables = ["meal_assignments", "eaten", "water", "recipe_notes", "shopping_checks", "pantry", "recipes", "menus", "day_sections", "labels", "products"];
       for (const table of tables) {
         channel.on("postgres_changes", { event: "*", schema: "public", table, filter: `household_id=eq.${hid}` }, trigger);
       }
@@ -520,6 +535,33 @@ export function createSupabaseBackend(client) {
 
     async deleteLabel(key) {
       const { error } = await client.from("labels").delete()
+        .eq("household_id", ctx.householdId).eq("key", key);
+      raise(error);
+      return true;
+    },
+
+    async saveProduct(input) {
+      const { ok, errors, product } = sanitizeProduct(input);
+      if (!ok) throw Object.assign(new Error("Invalid product"), { errors });
+      const { data, error } = await client.from("products").upsert({
+        household_id: ctx.householdId,
+        key: product.key,
+        name_en: product.nameEn,
+        name_lt: product.nameLt,
+        kcal: product.kcal,
+        protein: product.protein,
+        carbs: product.carbs,
+        fat: product.fat,
+        unit: product.unit,
+        portion_grams: product.portionGrams || null,
+        created_by: ctx.userId,
+      }, { onConflict: "household_id,key" }).select("*").single();
+      raise(error);
+      return mapProduct(data);
+    },
+
+    async deleteProduct(key) {
+      const { error } = await client.from("products").delete()
         .eq("household_id", ctx.householdId).eq("key", key);
       raise(error);
       return true;

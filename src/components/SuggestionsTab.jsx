@@ -2,10 +2,12 @@ import { useMemo, useRef, useState } from "react";
 import { C, SLOT_META, SLOTS, TAG_LABELS } from "../theme.js";
 import { plannedIds, suggestRecipes, targetFromRecipe } from "../engine/recommend.js";
 import { parseWish, resolveIngredient, wishChips } from "../lib/wishes.js";
-import { GENERATOR_GROUPS, INGREDIENT_FACTS } from "../data/ingredientFacts.js";
+import { GENERATOR_GROUPS, INGREDIENT_FACTS, allFacts, factFor } from "../data/ingredientFacts.js";
 import { fmtNum, interpolate, todayIndex } from "../lib/format.js";
 import { allPlannedRecipes } from "../engine/plan.js";
 import { Chip, EmptyState, Field, Modal, NumberInput } from "./ui.jsx";
+import ProductSheet from "./ProductSheet.jsx";
+import { productFact } from "../lib/products.js";
 
 const TAG_LABEL = (lang, tag) => TAG_LABELS[lang]?.[tag] || tag;
 
@@ -35,6 +37,7 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
   // can compute with; anything else stays a name and is handed to the model.
   const [pins, setPins] = useState([]);
   const [pinDraft, setPinDraft] = useState("");
+  const [productSheet, setProductSheet] = useState(false);
   const [course, setCourse] = useState(null);
   const [slot, setSlot] = useState("lunch");
   const [maxMinutes, setMaxMinutes] = useState(0);
@@ -89,7 +92,7 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
   const addPin = raw => {
     const text = String(raw || "").trim();
     if (!text) return;
-    const key = resolveIngredient(text);
+    const key = factFor(text) ? text : resolveIngredient(text);
     const label = key
       ? (INGREDIENT_FACTS[key]?.[lang] || INGREDIENT_FACTS[key]?.en || text)
       : text.slice(0, 40);
@@ -101,6 +104,13 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
     setPinDraft("");
   };
   const removePin = id => setPins(previous => previous.filter(pin => pin.id !== id));
+  // A product that was just saved is not in the registry yet, so it is pinned
+  // from its own fact instead of waiting for the next refresh.
+  const addPinFact = fact => setPins(previous => (
+    fact && !previous.some(pin => pin.key === fact.key)
+      ? [...previous, { id: fact.key, key: fact.key, label: fact[lang] || fact.en }].slice(0, 5)
+      : previous
+  ));
 
   const ideaSummary = [
     wish.course === "sweet" ? `🍰 ${t.courseSweet}` : wish.course === "savoury" ? `🥘 ${t.courseSavoury}` : (SLOT_META[slot]?.[lang] || slot),
@@ -236,8 +246,8 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
             </button>
           </div>
           <datalist id="sous-ingredients">
-            {Object.entries(INGREDIENT_FACTS).map(([key, fact]) => (
-              <option key={key} value={fact.en} />
+            {Object.values(allFacts()).map(fact => (
+              <option key={fact.en} value={fact.en} />
             ))}
           </datalist>
           <div className="row" style={{ gap: 4, flexWrap: "wrap", marginTop: 6 }}>
@@ -252,6 +262,15 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
                 {INGREDIENT_FACTS[key]?.shortEn || INGREDIENT_FACTS[key]?.en || key}
               </button>
             ))}
+            <button
+              type="button"
+              className="chip sky"
+              style={{ minHeight: 26, padding: "0 8px", fontSize: 10 }}
+              data-action="add-product"
+              onClick={() => setProductSheet(true)}
+            >
+              ＋ {t.ownProduct}
+            </button>
             <span className="tiny" style={{ alignSelf: "center" }}>{GENERATOR_GROUPS.protein.length} {t.proteinStaples}</span>
           </div>
         </div>
@@ -501,6 +520,20 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
           ))}
         </div>
       )}
+
+      <ProductSheet
+        open={productSheet}
+        onClose={() => setProductSheet(false)}
+        products={app.products || []}
+        lang={lang}
+        t={t}
+        onDelete={key => app.deleteProduct(key)}
+        onSave={async input => {
+          const saved = await app.saveProduct(input);
+          if (saved) addPinFact(productFact(saved));
+          return saved;
+        }}
+      />
 
       <Modal
         open={!!addRecipe}
