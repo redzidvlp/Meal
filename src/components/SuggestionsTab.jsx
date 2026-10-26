@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 import { C, SLOT_META, SLOTS, TAG_LABELS } from "../theme.js";
 import { plannedIds, suggestRecipes, targetFromRecipe } from "../engine/recommend.js";
-import { parseWish, wishChips } from "../lib/wishes.js";
-import { INGREDIENT_FACTS } from "../data/ingredientFacts.js";
+import { parseWish, resolveIngredient, wishChips } from "../lib/wishes.js";
+import { GENERATOR_GROUPS, INGREDIENT_FACTS } from "../data/ingredientFacts.js";
 import { fmtNum, interpolate, todayIndex } from "../lib/format.js";
 import { allPlannedRecipes } from "../engine/plan.js";
 import { Chip, EmptyState, Field, Modal, NumberInput } from "./ui.jsx";
@@ -31,6 +31,10 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
   // One card holds everything the recipe is built from. There is deliberately
   // no "pick a meal first" step: the sous-chef writes from your words.
   const [wishText, setWishText] = useState("");
+  // Ingredients the person insists on. Known ones become real facts the engine
+  // can compute with; anything else stays a name and is handed to the model.
+  const [pins, setPins] = useState([]);
+  const [pinDraft, setPinDraft] = useState("");
   const [course, setCourse] = useState(null);
   const [slot, setSlot] = useState("lunch");
   const [maxMinutes, setMaxMinutes] = useState(0);
@@ -50,10 +54,12 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
   const ideaRef = useRef(null);
 
   const parsedWish = useMemo(() => parseWish(wishText), [wishText]);
-  const wish = useMemo(
-    () => (course ? { ...parsedWish, course } : parsedWish),
-    [parsedWish, course],
-  );
+  const pinKeys = useMemo(() => pins.map(pin => pin.key).filter(Boolean), [pins]);
+  const pinKeyString = pinKeys.join(",");
+  const wish = useMemo(() => {
+    const merged = { ...parsedWish, includes: [...new Set([...parsedWish.includes, ...pinKeys])] };
+    return course ? { ...merged, course } : merged;
+  }, [parsedWish, course, pinKeyString]);
   const chips = wishChips(wish);
 
   const plannedRefs = useMemo(() => allPlannedRecipes(app.plan).map(item => ({
@@ -80,11 +86,27 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
 
   const toggleFilter = key => setFilters(previous => ({ ...previous, [key]: !previous[key] }));
 
+  const addPin = raw => {
+    const text = String(raw || "").trim();
+    if (!text) return;
+    const key = resolveIngredient(text);
+    const label = key
+      ? (INGREDIENT_FACTS[key]?.[lang] || INGREDIENT_FACTS[key]?.en || text)
+      : text.slice(0, 40);
+    setPins(previous => (
+      previous.some(pin => (key ? pin.key === key : pin.label.toLowerCase() === label.toLowerCase()))
+        ? previous
+        : [...previous, { id: `${key || "text"}-${previous.length}`, key, label }].slice(0, 5)
+    ));
+    setPinDraft("");
+  };
+  const removePin = id => setPins(previous => previous.filter(pin => pin.id !== id));
+
   const ideaSummary = [
     wish.course === "sweet" ? `🍰 ${t.courseSweet}` : wish.course === "savoury" ? `🥘 ${t.courseSavoury}` : (SLOT_META[slot]?.[lang] || slot),
     `${fmtNum(target.kcal)} ${t.kcal}`,
     maxMinutes ? `${maxMinutes} ${t.minutes}` : t.anyTime,
-    wish.includes.length ? wish.includes.map(key => INGREDIENT_FACTS[key]?.en || key).join(" + ") : null,
+    pins.length ? `${t.ideaWith} ${pins.map(pin => pin.label).join(" + ")}` : null,
     wish.excludes.length ? `✕ ${wish.excludes.map(key => INGREDIENT_FACTS[key]?.en || key).join(", ")}` : null,
     filters.highProtein ? t.highProtein : null,
     filters.lowFodmap ? t.onlyFodmap : null,
@@ -102,6 +124,8 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
       const draft = await app.generateIdea({
         slot, target, filters, seed, excludeNames,
         notes: wishText.trim(), wish, avoidKeys: usedKeys, maxMinutes,
+        mustInclude: pinKeys,
+        mustNames: pins.filter(pin => !pin.key).map(pin => pin.label),
       });
       if (!draft) {
         app.notify(t.ideaFailed, "error");
@@ -171,6 +195,66 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
             onChange={event => setWishText(event.target.value)}
           />
         </Field>
+
+        <div className="sous-row">
+          <div className="eyebrow">⭐ {t.mustInclude}</div>
+          <p className="tiny" style={{ margin: "-2px 0 2px" }}>{t.mustIncludeHint}</p>
+          {pins.length > 0 && (
+            <div className="row" style={{ gap: 5, flexWrap: "wrap", marginBottom: 6 }}>
+              {pins.map(pin => (
+                <span key={pin.id} className={`pin-chip ${pin.key ? "" : "unknown"}`}>
+                  {pin.key ? "✓" : "✎"} {pin.label}
+                  <button type="button" onClick={() => removePin(pin.id)} aria-label={`${t.remove} ${pin.label}`}>✕</button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="row" style={{ gap: 6 }}>
+            <input
+              className="input"
+              data-field="must"
+              list="sous-ingredients"
+              value={pinDraft}
+              maxLength={40}
+              placeholder={t.mustIncludePlaceholder}
+              onChange={event => setPinDraft(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  addPin(pinDraft);
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="btn btn-sm btn-soft"
+              data-action="add-must"
+              disabled={!pinDraft.trim() || pins.length >= 5}
+              onClick={() => addPin(pinDraft)}
+            >
+              ＋ {t.add}
+            </button>
+          </div>
+          <datalist id="sous-ingredients">
+            {Object.entries(INGREDIENT_FACTS).map(([key, fact]) => (
+              <option key={key} value={fact.en} />
+            ))}
+          </datalist>
+          <div className="row" style={{ gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+            {["vegan-meat", "natural-tofu", "canned-chickpeas", "lentils", "eggs", "curd"].map(key => (
+              <button
+                key={key}
+                type="button"
+                className="chip sage"
+                style={{ minHeight: 26, padding: "0 8px", fontSize: 10 }}
+                onClick={() => addPin(INGREDIENT_FACTS[key]?.en || key)}
+              >
+                {INGREDIENT_FACTS[key]?.shortEn || INGREDIENT_FACTS[key]?.en || key}
+              </button>
+            ))}
+            <span className="tiny" style={{ alignSelf: "center" }}>{GENERATOR_GROUPS.protein.length} {t.proteinStaples}</span>
+          </div>
+        </div>
 
         {(wish.includes.length > 0 || wish.excludes.length > 0 || chips.length > 0) && (
           <div className="row" style={{ gap: 4, flexWrap: "wrap", marginTop: 7 }}>
@@ -332,6 +416,20 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
             ))}
           </ul>
 
+          {(idea.requested || []).length > 0 && (idea.missing || []).length === 0 && (
+            <p className="pin-line ok">✓ {t.ideaWith} {idea.requested.join(", ")}</p>
+          )}
+          {(idea.missing || []).length > 0 && (
+            <p className="pin-line warn">
+              ⚠ {t.ideaMissing} {idea.missing.join(", ")}. {t.ideaMissingHint}
+            </p>
+          )}
+          {idea.relaxed && <p className="pin-line warn">{t.ideaRelaxed}</p>}
+          {target.protein > 0 && idea.protein < target.protein * 0.9 && (
+            <p className="pin-line warn">
+              {interpolate(t.ideaProteinShort, { got: fmtNum(idea.protein), want: fmtNum(target.protein) })}
+            </p>
+          )}
           {aiNoteKey && (
             <p className="ai-note-line">{t[aiNoteKey]}</p>
           )}

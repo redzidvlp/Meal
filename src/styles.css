@@ -752,6 +752,24 @@ body.is-dragging-meal { cursor: grabbing; }
 }
 .sous-row:first-of-type { border-top: 0; }
 .sous-row .eyebrow { margin: 0; }
+.pin-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 6px 4px 9px; border-radius: 10px;
+  font-size: 11px; font-weight: 700;
+  background: var(--sage-soft); border: 1.5px solid #cfe89a; color: #4a5f14;
+}
+.pin-chip.unknown { background: var(--sky-soft); border-color: #c3dcff; color: #1c5aa8; }
+.pin-chip button {
+  border: none; background: transparent; cursor: pointer;
+  font-size: 10px; line-height: 1; padding: 2px; color: inherit; opacity: .7;
+}
+.pin-chip button:hover { opacity: 1; }
+.pin-line {
+  margin: 9px 0 0; padding: 7px 9px; border-radius: 9px;
+  font-size: 10.5px; line-height: 1.45;
+}
+.pin-line.ok { background: var(--sage-soft); border: 1px solid #cfe89a; color: #4a5f14; }
+.pin-line.warn { background: var(--amber-soft); border: 1px solid #f3cfae; color: #8a4a10; }
 .ai-note-line {
   margin: 9px 0 0; padding: 7px 9px;
   font-size: 10.5px; line-height: 1.45; color: #8a4a10;

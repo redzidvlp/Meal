@@ -1,4 +1,4 @@
-import { INGREDIENT_FACTS } from "../data/ingredientFacts.js";
+import { INGREDIENT_FACTS, GROUP_DEFAULT_AMOUNT } from "../data/ingredientFacts.js";
 import { SLOTS } from "../theme.js";
 
 // Small deterministic PRNG so a reroll is repeatable for a given seed and tests
@@ -341,6 +341,7 @@ export function generateRecipeDraft({
   excludeNames = [],
   wish = null,
   avoidKeys = [],
+  mustInclude = [],
 } = {}) {
   const safeSlot = SLOTS.includes(slot) ? slot : "lunch";
   const wantsSweet = wish?.course === "sweet" || filters.sweet === true;
@@ -352,143 +353,180 @@ export function generateRecipeDraft({
     if (fast.length) templates = fast;
   }
 
+  // Ingredients the person named. They must end up in the dish; everything
+  // else is the engine's to fit around them. Two pins of the same role both
+  // count — the first fills the role, the rest are added on top.
+  const pinned = [...new Set([
+    ...(Array.isArray(mustInclude) ? mustInclude : []),
+    ...((wish && wish.includes) || []),
+  ])].filter(key => INGREDIENT_FACTS[key]);
+
   let chosen = null;
-  for (let attempt = 0; attempt < 24; attempt += 1) {
-    // Mix the seed so neighbouring rerolls do not land on the same template.
-    const mixed = Math.imul((Number(seed) || 1) ^ 0x9e3779b9, 2654435761) + Math.imul(attempt + 1, 40503);
-    const random = mulberry32(mixed >>> 0);
-    const template = pick(random, templates);
-    let keys = template.pickSet(random);
+  // A dense pin can make the calorie window unreachable: 150 g of vegan meat
+  // leaves no room for a vegetable. Rather than dropping what was asked for,
+  // try once more with a wider window and mark the result, so the card can say
+  // why it sits outside the range instead of silently ignoring the request.
+  const passes = pinned.length ? [false, true] : [false];
+  attempts: for (const relaxed of passes) {
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      // Mix the seed so neighbouring rerolls do not land on the same template.
+      const mixed = Math.imul((Number(seed) || 1) ^ 0x9e3779b9, 2654435761) + Math.imul(attempt + 1, 40503);
+      const random = mulberry32(mixed >>> 0);
+      const template = pick(random, templates);
+      let keys = template.pickSet(random);
 
-    // Rerolling used to hand back the same template with one vegetable swapped,
-    // so every idea had avocado in it. Anything used by a recent idea is out
-    // unless the person asked for it by name.
-    // Only enforced for the first dozen attempts: after a long reroll streak
-    // everything is "recent", and a repeated ingredient beats no idea at all.
-    const fresh = attempt < 12
-      ? (avoidKeys || []).filter(key => !(wish?.includes || []).includes(key))
-      : [];
-    if (fresh.length && Object.values(keys).some(key => fresh.includes(key))) continue;
+      // Rerolling used to hand back the same template with one vegetable swapped,
+      // so every idea had avocado in it. Anything used by a recent idea is out
+      // unless the person asked for it by name.
+      // Only enforced for the first dozen attempts: after a long reroll streak
+      // everything is "recent", and a repeated ingredient beats no idea at all.
+      const fresh = attempt < 12
+        ? (avoidKeys || []).filter(key => !(wish?.includes || []).includes(key))
+        : [];
+      if (fresh.length && Object.values(keys).some(key => fresh.includes(key))) continue;
 
-    // Honour an explicit "I want curd / no avocado": swap the matching role for
-    // the requested ingredient and refuse any template that insists on a banned
-    // one.
-    if (wish) {
-      const banned = wish.excludes || [];
-      if (Object.values(keys).some(key => banned.includes(key))) continue;
-      const next = { ...keys };
-      for (const key of wish.includes || []) {
+      // Honour an explicit "I want curd / no avocado": swap the matching role for
+      // the requested ingredient and refuse any template that insists on a banned
+      // one.
+      if (wish) {
+        const banned = wish.excludes || [];
+        if (Object.values(keys).some(key => banned.includes(key))) continue;
+      }
+
+      const filledRoles = new Set();
+      const extras = [];
+      const nextKeys = { ...keys };
+      for (const key of pinned) {
+        const role = INGREDIENT_FACTS[key].group;
+        if (role in nextKeys && !filledRoles.has(role)) {
+          nextKeys[role] = key;
+          filledRoles.add(role);
+        } else {
+          extras.push(key);
+        }
+      }
+      keys = nextKeys;
+
+      if (filters.lowFodmap) {
+        const ok = Object.entries(keys).every(([role, key]) => role === "carb" || INGREDIENT_FACTS[key]?.fodmap);
+        if (!ok) continue;
+      }
+      if (filters.highProtein) {
+        const proteinFact = INGREDIENT_FACTS[keys.protein];
+        if (!proteinFact || proteinFact.protein < 10) continue;
+      }
+
+      const ingredients = [];
+      for (const [role, key] of Object.entries(keys)) {
         const fact = INGREDIENT_FACTS[key];
         if (!fact) continue;
-        if (fact.group in next) next[fact.group] = key;
+        const amount = template.amounts[role] ?? 50;
+        ingredients.push({ key, en: fact.en, lt: fact.lt, amount, unit: fact.unit });
       }
-      keys = next;
-    }
+      // Pins that had no matching role still go on the plate.
+      for (const key of extras) {
+        if (ingredients.some(item => item.key === key)) continue;
+        const fact = INGREDIENT_FACTS[key];
+        if (!fact) continue;
+        const amount = GROUP_DEFAULT_AMOUNT[fact.group] ?? 60;
+        ingredients.push({ key, en: fact.en, lt: fact.lt, amount, unit: fact.unit, pinned: true });
+      }
 
-    if (filters.lowFodmap) {
-      const ok = Object.entries(keys).every(([role, key]) => role === "carb" || INGREDIENT_FACTS[key]?.fodmap);
-      if (!ok) continue;
-    }
-    if (filters.highProtein) {
+      // Scale the energy ingredient so the plate lands near the calorie target.
+      const base = macrosFor(ingredients);
+      const energyKey = keys.fat || keys.carb;
+      const energyFact = INGREDIENT_FACTS[energyKey];
+      if (!energyFact) continue;
+      const desired = Math.max(180, Number(target.kcal) || 500);
+      const missing = desired - base.kcal;
+      const perGram = energyFact.kcal / 100;
+      const energyIngredient = ingredients.find(item => item.key === energyKey);
+      const bumped = Math.min(
+        energyFact.group === "fat" ? 26 : 125,
+        Math.max(energyFact.group === "fat" ? 4 : 30, (energyIngredient?.amount || 0) + missing / perGram),
+      );
+      if (energyIngredient) energyIngredient.amount = Math.round(bumped);
+
+      // Nudge the protein ingredient when the target asks for noticeably more.
+      const wantedProtein = Number(target.protein) || 0;
       const proteinFact = INGREDIENT_FACTS[keys.protein];
-      if (!proteinFact || proteinFact.protein < 10) continue;
-    }
-
-    const ingredients = [];
-    for (const [role, key] of Object.entries(keys)) {
-      const fact = INGREDIENT_FACTS[key];
-      if (!fact) continue;
-      const amount = template.amounts[role] ?? 50;
-      ingredients.push({ key, en: fact.en, lt: fact.lt, amount, unit: fact.unit });
-    }
-
-    // Scale the energy ingredient so the plate lands near the calorie target.
-    const base = macrosFor(ingredients);
-    const energyKey = keys.fat || keys.carb;
-    const energyFact = INGREDIENT_FACTS[energyKey];
-    if (!energyFact) continue;
-    const desired = Math.max(180, Number(target.kcal) || 500);
-    const missing = desired - base.kcal;
-    const perGram = energyFact.kcal / 100;
-    const energyIngredient = ingredients.find(item => item.key === energyKey);
-    const bumped = Math.min(
-      energyFact.group === "fat" ? 26 : 125,
-      Math.max(energyFact.group === "fat" ? 4 : 30, (energyIngredient?.amount || 0) + missing / perGram),
-    );
-    if (energyIngredient) energyIngredient.amount = Math.round(bumped);
-
-    // Nudge the protein ingredient when the target asks for noticeably more.
-    const wantedProtein = Number(target.protein) || 0;
-    const proteinFact = INGREDIENT_FACTS[keys.protein];
-    const proteinIngredient = ingredients.find(item => item.key === keys.protein);
-    if (wantedProtein && proteinFact && proteinIngredient && proteinFact.protein > 0) {
-      const current = macrosFor(ingredients).protein;
-      if (current < wantedProtein * 0.8) {
-        const extra = Math.min(70, (wantedProtein * 0.92 - current) / (proteinFact.protein / 100));
-        proteinIngredient.amount = Math.max(40, Math.round(proteinIngredient.amount + extra));
+      const proteinIngredient = ingredients.find(item => item.key === keys.protein);
+      if (wantedProtein && proteinFact && proteinIngredient && proteinFact.protein > 0) {
+        const current = macrosFor(ingredients).protein;
+        if (current < wantedProtein * 0.8) {
+          // The named ingredient is allowed to carry more of the plate than a
+          // template one: the person asked for it by name.
+          const ceiling = pinned.includes(keys.protein) ? 220 : 70;
+          const extra = Math.min(ceiling, (wantedProtein * 0.92 - current) / (proteinFact.protein / 100));
+          proteinIngredient.amount = Math.max(40, Math.round(proteinIngredient.amount + extra));
+        }
       }
-    }
 
-    // If the plate is still too heavy, trim the starchy base before rejecting.
-    let macros = macrosFor(ingredients);
-    if (macros.kcal > desired * 1.12) {
-      const carbIngredient = ingredients.find(item => item.key === keys.carb);
-      const carbKcal = (INGREDIENT_FACTS[keys.carb]?.kcal || 0) / 100;
-      if (carbIngredient && carbIngredient.amount > 30 && carbKcal > 0) {
-        const trim = Math.min(carbIngredient.amount - 30, (macros.kcal - desired) / carbKcal);
-        carbIngredient.amount = Math.max(30, Math.round(carbIngredient.amount - trim));
-        macros = macrosFor(ingredients);
+      // If the plate is still too heavy, trim the starchy base before rejecting.
+      let macros = macrosFor(ingredients);
+      if (macros.kcal > desired * 1.12) {
+        const carbIngredient = ingredients.find(item => item.key === keys.carb);
+        const carbKcal = (INGREDIENT_FACTS[keys.carb]?.kcal || 0) / 100;
+        if (carbIngredient && carbIngredient.amount > 30 && carbKcal > 0) {
+          const trim = Math.min(carbIngredient.amount - 30, (macros.kcal - desired) / carbKcal);
+          carbIngredient.amount = Math.max(30, Math.round(carbIngredient.amount - trim));
+          macros = macrosFor(ingredients);
+        }
       }
+      const lowFactor = relaxed ? 0.6 : 0.72;
+      const highFactor = relaxed ? 1.5 : 1.25;
+      if (macros.kcal < desired * lowFactor || macros.kcal > desired * highFactor) continue;
+
+      const nameEn = template.en(keys);
+      if (excludeNames.some(name => name.toLowerCase() === nameEn.toLowerCase())) continue;
+
+      const parts = {
+        carb: label(keys.carb).toLowerCase() || "grain",
+        carbLt: label(keys.carb, "lt").toLowerCase() || "grūdai",
+        protein: label(keys.protein).toLowerCase() || "tofu",
+        proteinLt: label(keys.protein, "lt").toLowerCase() || "tofu",
+        veg: label(keys.veg).toLowerCase() || "vegetables",
+        vegLt: label(keys.veg, "lt").toLowerCase() || "daržovės",
+        fruit: label(keys.fruit).toLowerCase() || "fruit",
+        fruitLt: label(keys.fruit, "lt").toLowerCase() || "vaisiai",
+        fat: label(keys.fat).toLowerCase() || "seeds",
+        fatLt: label(keys.fat, "lt").toLowerCase() || "sėklos",
+        proteinIn: labelLtIn(keys.protein) || "tofu",
+        vegIn: labelLtIn(keys.veg) || "daržovėmis",
+        carbIn: labelLtIn(keys.carb) || "grūdais",
+        fruitIn: labelLtIn(keys.fruit) || "vaisiais",
+        fatIn: labelLtIn(keys.fat) || "sėklomis",
+      };
+
+      const prepMinutes = template.prepMinutes;
+
+      chosen = {
+        id: null,
+        isDraft: true,
+        name: { en: nameEn, lt: template.lt(keys) },
+        emoji: template.emoji,
+        slot: safeSlot,
+        kcal: macros.kcal,
+        protein: macros.protein,
+        carbs: macros.carbs,
+        fat: macros.fat,
+        ingredients,
+        method: {
+          en: template.methodEn(parts),
+          lt: template.methodLt(parts),
+        },
+        tags: tagsFor(ingredients.map(item => item.key), macros, prepMinutes),
+        course: template.sweet ? "sweet" : "savoury",
+        vegetarian: true,
+        prepMinutes,
+        generated: true,
+        seed,
+        template: template.id,
+        requested: pinned.map(key => INGREDIENT_FACTS[key].en),
+        relaxed: relaxed ? true : undefined,
+      };
+      break attempts;
     }
-    if (macros.kcal < desired * 0.72 || macros.kcal > desired * 1.25) continue;
-
-    const nameEn = template.en(keys);
-    if (excludeNames.some(name => name.toLowerCase() === nameEn.toLowerCase())) continue;
-
-    const parts = {
-      carb: label(keys.carb).toLowerCase() || "grain",
-      carbLt: label(keys.carb, "lt").toLowerCase() || "grūdai",
-      protein: label(keys.protein).toLowerCase() || "tofu",
-      proteinLt: label(keys.protein, "lt").toLowerCase() || "tofu",
-      veg: label(keys.veg).toLowerCase() || "vegetables",
-      vegLt: label(keys.veg, "lt").toLowerCase() || "daržovės",
-      fruit: label(keys.fruit).toLowerCase() || "fruit",
-      fruitLt: label(keys.fruit, "lt").toLowerCase() || "vaisiai",
-      fat: label(keys.fat).toLowerCase() || "seeds",
-      fatLt: label(keys.fat, "lt").toLowerCase() || "sėklos",
-      proteinIn: labelLtIn(keys.protein) || "tofu",
-      vegIn: labelLtIn(keys.veg) || "daržovėmis",
-      carbIn: labelLtIn(keys.carb) || "grūdais",
-      fruitIn: labelLtIn(keys.fruit) || "vaisiais",
-      fatIn: labelLtIn(keys.fat) || "sėklomis",
-    };
-
-    const prepMinutes = template.prepMinutes;
-
-    chosen = {
-      id: null,
-      isDraft: true,
-      name: { en: nameEn, lt: template.lt(keys) },
-      emoji: template.emoji,
-      slot: safeSlot,
-      kcal: macros.kcal,
-      protein: macros.protein,
-      carbs: macros.carbs,
-      fat: macros.fat,
-      ingredients,
-      method: {
-        en: template.methodEn(parts),
-        lt: template.methodLt(parts),
-      },
-      tags: tagsFor(ingredients.map(item => item.key), macros, prepMinutes),
-      course: template.sweet ? "sweet" : "savoury",
-      vegetarian: true,
-      prepMinutes,
-      generated: true,
-      seed,
-      template: template.id,
-    };
-    break;
   }
 
   return chosen;

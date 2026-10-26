@@ -44,6 +44,20 @@ export const FORBIDDEN_INGREDIENTS = [
 
 const escapeRe = value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/**
+ * A plant product may legitimately carry a meat word: "vegan meat",
+ * "plant-based steak", "soy mince", "veganiška mėsa". The qualifier is what
+ * makes it vegetarian. Without one the very same word is still a real ban, so
+ * "chicken" or "beef" alone is rejected exactly as before.
+ */
+const LETTERS = "a-ząčęėįšųūž";
+const PLANT_QUALIFIER = new RegExp(
+  `(?:^|[^${LETTERS}])(?:vegan[${LETTERS}]*|plant[\\s-]?based|plant[\\s-]?protein[${LETTERS}]*|augalin[${LETTERS}]*|be\\s*m[eė]sos|meat[\\s-]?free|meatless|vegetarian|vegetari[${LETTERS}]*|veggie|faux|mock|imitation|soy|soya|soj[${LETTERS}]*|pea[\\s-]?protein|mycoprotein|quorn)\\s*$`,
+  "iu",
+);
+// "meat-free mince": the qualifier follows the word instead.
+const PLANT_SUFFIX = new RegExp(`^\\s*[- ]?free(?:[^${LETTERS}]|$)`, "iu");
+
 // Word-prefix matching catches inflected Lithuanian forms (mėsa → mėsos)
 // without matching inside unrelated words.
 export function findForbiddenIngredients(text) {
@@ -51,8 +65,16 @@ export function findForbiddenIngredients(text) {
   const normalized = String(text).toLocaleLowerCase();
   const hits = new Set();
   for (const term of FORBIDDEN_INGREDIENTS) {
-    const pattern = new RegExp(`(^|[^a-ząčęėįšųūž])${escapeRe(term)}`, "iu");
-    if (pattern.test(normalized)) hits.add(term);
+    const pattern = new RegExp(`(^|[^a-ząčęėįšųūž])${escapeRe(term)}`, "giu");
+    let match;
+    while ((match = pattern.exec(normalized)) !== null) {
+      // Look at what was written just before the meat word.
+      const before = normalized.slice(0, match.index + match[1].length);
+      const after = normalized.slice(match.index + match[0].length);
+      if (PLANT_QUALIFIER.test(before) || PLANT_SUFFIX.test(after)) continue;
+      hits.add(term);
+      break;
+    }
   }
   return [...hits];
 }

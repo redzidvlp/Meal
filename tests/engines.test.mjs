@@ -13,7 +13,7 @@ import { mergeMenus, menuTotals, menuItemsFromDay } from "../src/lib/menus.js";
 import { customTag, isCustomTag, tagLabel, tagsInUse, labelKey } from "../src/lib/labels.js";
 import { generateRecipeDraft } from "../src/engine/generate.js";
 import { offlineIdea } from "../src/lib/ideas.js";
-import { parseWish, wishSatisfied, containsExcluded, wishChips } from "../src/lib/wishes.js";
+import { parseWish, wishSatisfied, containsExcluded, wishChips, resolveIngredient } from "../src/lib/wishes.js";
 import { requestRecipeIdea } from "../src/lib/ideas.js";
 
 const makeRecipe = (overrides = {}) => ({
@@ -746,6 +746,101 @@ test("the time budget reaches both layers", async () => {
   });
   assert.equal(seen.filters.maxMinutes, 20, "the function is told about the time budget");
   assert.ok(draft.prepMinutes <= 20, `offline engine respects it (${draft.prepMinutes})`);
+});
+
+test("a plant product may use a meat word — and nothing else may", async () => {
+  // The user's own product is called "vegan meat". It is vegetarian.
+  for (const name of ["Vegan meat", "Veganiška mėsa", "plant-based steak", "soy mince", "meat-free mince"]) {
+    assert.deepEqual(findForbiddenIngredients(name), [], `${name} is allowed`);
+  }
+  // The same words without a plant qualifier are still banned.
+  for (const name of ["Chicken breast", "Beef steak", "mince", "mėsa", "ham"]) {
+    assert.ok(findForbiddenIngredients(name).length > 0, `${name} is rejected`);
+  }
+  // And the name resolves to a real ingredient the engine can compute with.
+  assert.equal(resolveIngredient("my vegan meat"), "vegan-meat");
+  assert.equal(resolveIngredient("Veganiška mėsa"), "vegan-meat");
+  assert.equal(resolveIngredient("sriracha"), null);
+});
+
+test("a named ingredient is in the dish and the plate still fits", async () => {
+  for (const slot of ["breakfast", "lunch", "snack", "dinner"]) {
+    for (let seed = 1; seed <= 40; seed += 1) {
+      const draft = generateRecipeDraft({
+        slot,
+        target: { kcal: 500, protein: 30, carbs: 45, fat: 20 },
+        seed,
+        mustInclude: ["vegan-meat"],
+      });
+      assert.ok(draft, `${slot} ${seed} produced a draft`);
+      assert.ok(
+        draft.ingredients.some(item => item.key === "vegan-meat"),
+        `${slot} ${seed} contains the ingredient that was asked for`,
+      );
+      assert.ok(
+        draft.kcal >= 500 * 0.72 && draft.kcal <= 500 * 1.25,
+        `${slot} ${seed} stays in the calorie range (${draft.kcal})`,
+      );
+      assert.ok(draft.protein >= 22, `${slot} ${seed} protein ${draft.protein} is fitted to the target`);
+    }
+  }
+});
+
+test("several named ingredients all end up on the plate", () => {
+  const draft = generateRecipeDraft({
+    slot: "lunch",
+    target: { kcal: 500, protein: 30, carbs: 45, fat: 20 },
+    seed: 7,
+    mustInclude: ["vegan-meat", "gf-bread", "hummus"],
+  });
+  assert.ok(draft);
+  for (const key of ["vegan-meat", "gf-bread", "hummus"]) {
+    assert.ok(draft.ingredients.some(item => item.key === key), `${key} is present`);
+  }
+  assert.ok(draft.kcal <= 500 * 1.25, `still inside the range (${draft.kcal})`);
+});
+
+test("an unknown ingredient is reported, never silently dropped", async () => {
+  const base = {
+    target: { kcal: 500, protein: 30, carbs: 45, fat: 20 },
+    slot: "lunch",
+    seed: 4,
+    mustNames: ["grandma's mushroom spread"],
+  };
+  // Offline: the engine cannot know it, so the draft says what is missing.
+  const offline = await requestRecipeIdea({ ...base, api: {} });
+  assert.equal(offline.ai, false);
+  assert.deepEqual(offline.missing, ["grandma's mushroom spread"]);
+  assert.equal(offline.aiNote, "unavailable");
+
+  // The model is the one that can cook with it, and it is told to.
+  let sent = null;
+  const withAi = await requestRecipeIdea({
+    ...base,
+    api: {
+      generateRecipe: async payload => {
+        sent = payload;
+        return {
+          available: true,
+          recipe: {
+            name: { en: "Mushroom spread toast", lt: "Skrudinta duona su pievagrybių tepuku" },
+            emoji: "🍞", slot: "lunch", kcal: 480, protein: 31, carbs: 44, fat: 18,
+            prepMinutes: 15, course: "savoury",
+            ingredients: [
+              { en: "Grandma's mushroom spread", lt: "Močiutės pievagrybių tepukas", amount: 60, unit: "g" },
+              { en: "GF bread", lt: "Duona be glitimo", amount: 70, unit: "g" },
+              { en: "Skyr", lt: "Skyr", amount: 120, unit: "g" },
+            ],
+            method: { en: "Toast and spread.", lt: "Paskrudinkite ir užtepkite." },
+            tags: [],
+          },
+        };
+      },
+    },
+  });
+  assert.equal(sent.mustInclude.includes("grandma's mushroom spread"), true, "the model is told what must be in it");
+  assert.equal(withAi.ai, true);
+  assert.deepEqual(withAi.missing, []);
 });
 
 test("rerolling changes the dish, not just the garnish", () => {

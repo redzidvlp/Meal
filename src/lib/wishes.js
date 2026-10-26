@@ -50,6 +50,19 @@ const EXTRA_ALIASES = {
   berries: ["berries", "berry", "uogos"],
   orange: ["orange", "oranges", "apelsinas"],
   kiwi: ["kiwi", "kivis"],
+  // Plant-protein products people name by their packaging, not by biology.
+  "vegan-meat": ["vegan meat", "plant based meat", "plant-based meat", "meat alternative", "meat substitute", "vegan mince", "vegan steak", "vegan chicken", "vegan sausage", "plant based steak", "soy steak", "faux meat", "augaline mesa", "veganiska mesa", "mesos pakaitalas"],
+  "soy-cubes": ["soy mince", "textured soy", "textured soy protein", "soy granules", "sojų faršas", "soju farsas"],
+  tempeh: ["tempeh"],
+  "kidney-beans": ["kidney beans", "red beans", "pupeles", "raudonosios pupeles"],
+  "black-beans": ["black beans", "juodosios pupeles"],
+  "green-peas": ["peas", "green peas", "zirniai", "zirneliai"],
+  falafel: ["falafel"],
+  "soy-yogurt": ["soy yogurt", "soya yogurt", "soju jogurtas"],
+  skyr: ["skyr"],
+  ricotta: ["ricotta"],
+  cheddar: ["cheddar", "cederis"],
+  mozzarella: ["mozzarella", "mocarela"],
 };
 
 const ALIAS_TO_KEY = (() => {
@@ -168,6 +181,24 @@ export function parseWish(text) {
   };
 }
 
+/**
+ * Maps anything a person types to an ingredient we can actually compute with.
+ * Returns null for names outside the table — those are still allowed, but only
+ * the AI can build with them.
+ */
+export function resolveIngredient(text) {
+  const clean = fold(text);
+  if (!clean || clean.length < 2) return null;
+  if (ALIAS_TO_KEY.has(clean)) return ALIAS_TO_KEY.get(clean);
+  let best = null;
+  for (const [phrase, key] of ALIAS_TO_KEY) {
+    if (phrase.length < 3) continue;
+    if (!phraseIn(clean, phrase)) continue;
+    if (!best || phrase.length > best.length) best = { phrase, key, length: phrase.length };
+  }
+  return best ? best.key : null;
+}
+
 /** English names to send to the model, e.g. ["Curd cheese"]. */
 export const wishIngredientNames = wish =>
   (wish?.includes || []).map(key => INGREDIENT_FACTS[key]?.en).filter(Boolean).slice(0, 5);
@@ -181,7 +212,7 @@ const ingredientText = recipe =>
     .map(lower)
     .join(" | ");
 
-const phraseIn = (haystack, phrase) => new RegExp(`(^|[^a-z0-9])${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-z0-9])`).test(haystack);
+function phraseIn(haystack, phrase) { return new RegExp(`(^|[^a-z0-9])${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-z0-9])`).test(haystack); }
 
 /** True when every ingredient the person asked for is actually in the recipe. */
 export function wishSatisfied(recipe, wish) {

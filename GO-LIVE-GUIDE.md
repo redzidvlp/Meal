@@ -309,6 +309,42 @@ Under the Generate button, the “From your own recipe book” list is a separat
 scores recipes you already own against the same targets, for the nights you would rather
 reuse something.
 
+### 7c-quinquies. “Make something with this ingredient”
+
+Under the wish box there is a **⭐ Must include** row. It is the direct answer to
+*“build me a meal around this product, but keep it in my calories and protein.”*
+
+1. Type the product — `vegan meat`, `tempeh`, `skyr` — or tap one of the quick suggestions.
+2. Press **＋ Add**. It appears as a chip with a ✓, which means the app knows its
+   nutrition and will do the maths with it. Up to five ingredients.
+3. Set your calories and (under *More nutrition*) the protein you want, then press
+   **✨ Generate recipe**.
+
+What the engine does with it, in this order:
+
+- the named ingredient is **locked into the plate** — it is never quietly swapped out;
+- the calorie ingredient (oil, seeds, grain) is scaled so the plate lands on your target;
+- the protein ingredient — which is your pin when it is the protein — is grown until it
+  meets the protein target, up to a sensible ceiling;
+- if the plate still lands outside the range, it is rejected and another shape is tried.
+
+The card then tells you exactly what happened, in one of four short lines:
+
+| Line on the card | Meaning |
+|---|---|
+| ✓ **With** Vegan meat | It is in the dish, inside your range |
+| ⚠ **Built without** … | A name the app does not know; only the AI function can cook with it |
+| ⚠ **Slightly outside your calorie range** | The pin is dense (e.g. 150 g of it already fills the plate). It kept your ingredient instead of dropping it |
+| ⚠ **Protein is 22 g of your 30 g target** | The pin is light in protein; adding more would break the calorie ceiling |
+
+Names with no ✓ (like a brand-specific spread) are still accepted — they go to the
+AI function as a hard requirement. Without a working AI function the card says
+**Built without** instead of pretending.
+
+The quick suggestions and the full list cover 25 protein ingredients, including
+vegan meat, tempeh, seitan-style products, all common beans and peas, falafel,
+skyr, ricotta, cheddar and mozzarella.
+
 ### 7c-quater. What the sous-chef can be asked for
 
 Type into **“Anything you feel like?”** the way you would say it out loud:
@@ -317,6 +353,9 @@ Type into **“Anything you feel like?”** the way you would say it out loud:
 - something to leave out — `no mushrooms`, `be svogūnų`
 - a kind of dish — `sweet`, `dessert` (builds a dessert, not a savoury plate)
 - a modifier — `lactose free`, `quick`, `high protein`
+
+“Vegan meat”, “plant-based steak” and “soy mince” are understood as vegetarian
+products; plain “meat”, “chicken” or “steak” is still refused by the vegetarian guard.
 
 The chips under the box show what it understood, and **Will make:** under the Generate
 button says what will be cooked. If a chip is wrong, change a word — the app only acts on
