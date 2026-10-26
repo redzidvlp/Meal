@@ -1,4 +1,4 @@
-import { INGREDIENT_FACTS, GROUP_DEFAULT_AMOUNT } from "../data/ingredientFacts.js";
+import { INGREDIENT_FACTS, GROUP_DEFAULT_AMOUNT, factFor } from "../data/ingredientFacts.js";
 import { SLOTS } from "../theme.js";
 
 // Small deterministic PRNG so a reroll is repeatable for a given seed and tests
@@ -31,7 +31,7 @@ for (const [key, fact] of Object.entries(INGREDIENT_FACTS)) {
 }
 
 const label = (key, lang = "en") => {
-  const fact = INGREDIENT_FACTS[key];
+  const fact = factFor(key);
   if (!fact) return "";
   return lang === "lt" ? (fact.shortLt || fact.lt) : (fact.shortEn || fact.en);
 };
@@ -50,7 +50,7 @@ function ltWith(word) {
   return w;
 }
 
-const labelLtIn = key => INGREDIENT_FACTS[key]?.ltIn || ltWith(label(key, "lt"));
+const labelLtIn = key => factFor(key)?.ltIn || ltWith(label(key, "lt"));
 
 const TEMPLATES = {
   breakfast: [
@@ -61,7 +61,7 @@ const TEMPLATES = {
       lt: ({ carb, fruit, fat }) => `Naktį brinkintos ${label(carb, "lt").toLowerCase()} su ${labelLtIn(fruit)} ir ${labelLtIn(fat)}`,
       methodEn: parts => `Soak the ${parts.carb} in plant milk overnight. In the morning stir through the ${parts.fruit}, top with ${parts.fat} and a pinch of cinnamon.`,
       methodLt: parts => `Užpilkite ${parts.carbLt} augaliniu pienu ir palikite per naktį. Ryte įmaišykite ${parts.fruitLt}, pabarstykite ${parts.fatIn} ir cinamonu.`,
-      pickSet: random => ({ carb: "gf-rolled-oats", protein: "lactose-free-yogurt-2-5", fruit: pick(random, FACT_GROUPS.fruit.filter(key => INGREDIENT_FACTS[key].fodmap)), fat: pick(random, ["chia-seeds", "pumpkin-seeds", "hemp-seeds", "walnuts"]) }),
+      pickSet: random => ({ carb: "gf-rolled-oats", protein: "lactose-free-yogurt-2-5", fruit: pick(random, FACT_GROUPS.fruit.filter(key => factFor(key)?.fodmap)), fat: pick(random, ["chia-seeds", "pumpkin-seeds", "hemp-seeds", "walnuts"]) }),
       amounts: { carb: 50, protein: 150, fruit: 100, fat: 12 },
       prepMinutes: 8,
     },
@@ -72,7 +72,7 @@ const TEMPLATES = {
       lt: ({ fruit, protein, fat }) => `${label(fruit, "lt")} ir ${label(protein, "lt").toLowerCase()} pusryčių kokteilis`,
       methodEn: parts => `Blend the ${parts.fruit}, ${parts.protein} and a splash of plant milk until smooth, then top with ${parts.fat}.`,
       methodLt: parts => `Sutrinkite ${parts.fruitLt}, ${parts.proteinLt} ir šlakelį augalinio pieno iki vientisos masės, pabarstykite ${parts.fatIn}.`,
-      pickSet: random => ({ protein: pick(random, ["lactose-free-yogurt-2-5", "natural-tofu", "soy-milk"]), fruit: pick(random, FACT_GROUPS.fruit.filter(key => INGREDIENT_FACTS[key].fodmap)), fat: pick(random, ["chia-seeds", "hemp-seeds", "pumpkin-seeds"]) }),
+      pickSet: random => ({ protein: pick(random, ["lactose-free-yogurt-2-5", "natural-tofu", "soy-milk"]), fruit: pick(random, FACT_GROUPS.fruit.filter(key => factFor(key)?.fodmap)), fat: pick(random, ["chia-seeds", "hemp-seeds", "pumpkin-seeds"]) }),
       amounts: { protein: 150, fruit: 120, fat: 10 },
       prepMinutes: 5,
     },
@@ -188,7 +188,7 @@ const TEMPLATES = {
       lt: ({ fruit, fat }) => `Jogurtas be laktozės su ${labelLtIn(fruit)} ir ${labelLtIn(fat)}`,
       methodEn: parts => `Spoon the yogurt into a glass, layer with ${parts.fruit} and scatter the ${parts.fat} on top.`,
       methodLt: parts => `Sudėkite jogurtą į stiklinę, sluoksniuokite su ${parts.fruitLt} ir pabarstykite ${parts.fatIn}.`,
-      pickSet: random => ({ protein: "lactose-free-yogurt-2-5", fruit: pick(random, FACT_GROUPS.fruit.filter(key => INGREDIENT_FACTS[key].fodmap)), fat: pick(random, ["pumpkin-seeds", "chia-seeds", "walnuts", "dark-chocolate"]) }),
+      pickSet: random => ({ protein: "lactose-free-yogurt-2-5", fruit: pick(random, FACT_GROUPS.fruit.filter(key => factFor(key)?.fodmap)), fat: pick(random, ["pumpkin-seeds", "chia-seeds", "walnuts", "dark-chocolate"]) }),
       amounts: { protein: 170, fruit: 90, fat: 12 },
       prepMinutes: 3,
     },
@@ -297,12 +297,12 @@ const SWEET_TEMPLATES = [
   },
 ];
 
-const pickFruit = random => pick(random, FACT_GROUPS.fruit.filter(key => INGREDIENT_FACTS[key].fodmap));
+const pickFruit = random => pick(random, FACT_GROUPS.fruit.filter(key => factFor(key)?.fodmap));
 
 function macrosFor(ingredients) {
   const total = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
   for (const ingredient of ingredients) {
-    const fact = INGREDIENT_FACTS[ingredient.key];
+    const fact = factFor(ingredient.key);
     if (!fact) continue;
     const factor = ingredient.amount / 100;
     total.kcal += fact.kcal * factor;
@@ -319,7 +319,7 @@ function macrosFor(ingredients) {
 }
 
 function tagsFor(keys, macros, prepMinutes) {
-  const facts = keys.map(key => INGREDIENT_FACTS[key]).filter(Boolean);
+  const facts = keys.map(key => factFor(key)).filter(Boolean);
   const tags = ["vegetarian"];
   if (facts.every(fact => fact.vegan)) tags.push("vegan", "dairy-free");
   if (facts.every(fact => fact.glutenFree)) tags.push("gluten-free");
@@ -359,7 +359,7 @@ export function generateRecipeDraft({
   const pinned = [...new Set([
     ...(Array.isArray(mustInclude) ? mustInclude : []),
     ...((wish && wish.includes) || []),
-  ])].filter(key => INGREDIENT_FACTS[key]);
+  ])].filter(key => factFor(key));
 
   let chosen = null;
   // A dense pin can make the calorie window unreachable: 150 g of vegan meat
@@ -397,7 +397,7 @@ export function generateRecipeDraft({
       const extras = [];
       const nextKeys = { ...keys };
       for (const key of pinned) {
-        const role = INGREDIENT_FACTS[key].group;
+        const role = factFor(key).group;
         if (role in nextKeys && !filledRoles.has(role)) {
           nextKeys[role] = key;
           filledRoles.add(role);
@@ -407,18 +407,21 @@ export function generateRecipeDraft({
       }
       keys = nextKeys;
 
+      // Optional filters rank suggestions; they can never veto an ingredient the
+      // person named. A household product has no FODMAP certificate either, so
+      // treating it as "not low-FODMAP" would silently return no idea at all.
       if (filters.lowFodmap) {
-        const ok = Object.entries(keys).every(([role, key]) => role === "carb" || INGREDIENT_FACTS[key]?.fodmap);
+        const ok = Object.entries(keys).every(([role, key]) => role === "carb" || pinned.includes(key) || factFor(key)?.fodmap);
         if (!ok) continue;
       }
       if (filters.highProtein) {
-        const proteinFact = INGREDIENT_FACTS[keys.protein];
-        if (!proteinFact || proteinFact.protein < 10) continue;
+        const proteinFact = factFor(keys.protein);
+        if (!pinned.includes(keys.protein) && (!proteinFact || proteinFact.protein < 10)) continue;
       }
 
       const ingredients = [];
       for (const [role, key] of Object.entries(keys)) {
-        const fact = INGREDIENT_FACTS[key];
+        const fact = factFor(key);
         if (!fact) continue;
         const amount = template.amounts[role] ?? 50;
         ingredients.push({ key, en: fact.en, lt: fact.lt, amount, unit: fact.unit });
@@ -426,7 +429,7 @@ export function generateRecipeDraft({
       // Pins that had no matching role still go on the plate.
       for (const key of extras) {
         if (ingredients.some(item => item.key === key)) continue;
-        const fact = INGREDIENT_FACTS[key];
+        const fact = factFor(key);
         if (!fact) continue;
         const amount = GROUP_DEFAULT_AMOUNT[fact.group] ?? 60;
         ingredients.push({ key, en: fact.en, lt: fact.lt, amount, unit: fact.unit, pinned: true });
@@ -435,7 +438,7 @@ export function generateRecipeDraft({
       // Scale the energy ingredient so the plate lands near the calorie target.
       const base = macrosFor(ingredients);
       const energyKey = keys.fat || keys.carb;
-      const energyFact = INGREDIENT_FACTS[energyKey];
+      const energyFact = factFor(energyKey);
       if (!energyFact) continue;
       const desired = Math.max(180, Number(target.kcal) || 500);
       const missing = desired - base.kcal;
@@ -449,7 +452,7 @@ export function generateRecipeDraft({
 
       // Nudge the protein ingredient when the target asks for noticeably more.
       const wantedProtein = Number(target.protein) || 0;
-      const proteinFact = INGREDIENT_FACTS[keys.protein];
+      const proteinFact = factFor(keys.protein);
       const proteinIngredient = ingredients.find(item => item.key === keys.protein);
       if (wantedProtein && proteinFact && proteinIngredient && proteinFact.protein > 0) {
         const current = macrosFor(ingredients).protein;
@@ -466,7 +469,7 @@ export function generateRecipeDraft({
       let macros = macrosFor(ingredients);
       if (macros.kcal > desired * 1.12) {
         const carbIngredient = ingredients.find(item => item.key === keys.carb);
-        const carbKcal = (INGREDIENT_FACTS[keys.carb]?.kcal || 0) / 100;
+        const carbKcal = (factFor(keys.carb)?.kcal || 0) / 100;
         if (carbIngredient && carbIngredient.amount > 30 && carbKcal > 0) {
           const trim = Math.min(carbIngredient.amount - 30, (macros.kcal - desired) / carbKcal);
           carbIngredient.amount = Math.max(30, Math.round(carbIngredient.amount - trim));
@@ -522,7 +525,7 @@ export function generateRecipeDraft({
         generated: true,
         seed,
         template: template.id,
-        requested: pinned.map(key => INGREDIENT_FACTS[key].en),
+        requested: pinned.map(key => factFor(key).en),
         relaxed: relaxed ? true : undefined,
       };
       break attempts;

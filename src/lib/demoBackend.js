@@ -2,6 +2,7 @@ import { PRESET_RECIPES, PRESET_MENUS } from "../data/presets.js";
 import { mondayISO, createId } from "./format.js";
 import { applyDeltas, applyDeltasTracked, consumptionForRecipe } from "../engine/pantry.js";
 import { sanitizePantryItem, sanitizeRecipe, sanitizeNote, sanitizeWater, sanitizeMenu, sanitizePhotoPayload, sanitizeLabel } from "./validate.js";
+import { sanitizeProduct } from "./products.js";
 
 const STORAGE_KEY = "our-table-demo-v2";
 const EVENT = "our-table-demo-change";
@@ -65,6 +66,7 @@ function seedState() {
     shoppingChecks: [],
     menus: [],
     labels: [],
+    products: [],
     hiddenSections: [],
     pantry,
     weekStart,
@@ -88,6 +90,7 @@ function loadState() {
     if (!Array.isArray(parsed.menus)) parsed.menus = [];
     if (!Array.isArray(parsed.hiddenSections)) parsed.hiddenSections = [];
     if (!Array.isArray(parsed.labels)) parsed.labels = [];
+    if (!Array.isArray(parsed.products)) parsed.products = [];
     return parsed;
   } catch {
     return seedState();
@@ -136,6 +139,7 @@ export function createDemoBackend() {
     menus: state.menus || [],
     pantry: state.pantry,
     labels: state.labels || [],
+    products: state.products || [],
     hiddenSections: (state.hiddenSections || []).map(row => ({ day: row.day, slot: row.slot })),
   });
 
@@ -397,6 +401,20 @@ export function createDemoBackend() {
         ...recipe,
         tags: (recipe.tags || []).filter(tag => tag !== `x-${key}`),
       }));
+      emit();
+      return true;
+    },
+
+    async saveProduct(input) {
+      const { ok, errors, product } = sanitizeProduct(input);
+      if (!ok) throw Object.assign(new Error("Invalid product"), { errors });
+      state.products = [...(state.products || []).filter(row => row.key !== product.key), product];
+      emit();
+      return clone(product);
+    },
+
+    async deleteProduct(key) {
+      state.products = (state.products || []).filter(row => row.key !== key);
       emit();
       return true;
     },

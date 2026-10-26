@@ -1,4 +1,4 @@
-import { INGREDIENT_FACTS } from "../data/ingredientFacts.js";
+import { INGREDIENT_FACTS, factFor, productFacts } from "../data/ingredientFacts.js";
 
 /**
  * Turns "I fancy curd, no avocado, something quick" into ingredients the
@@ -90,6 +90,36 @@ const KEY_PHRASES = (() => {
   return map;
 })();
 
+// Household products are registered after this module loads, so their names are
+// looked up on demand instead of being baked into the maps above.
+// "vegan ham" and "my vegan ham" both have to reach "Vegan ham slices"
+// without matching an unrelated product.
+const nameParts = name => fold(name).split(" ").filter(word => word.length > 1);
+const namesOverlap = (text, name) => {
+  const typed = nameParts(text);
+  const parts = nameParts(name);
+  if (!typed.length || !parts.length) return false;
+  const shared = typed.filter(word => parts.includes(word)).length;
+  return shared >= 2 && shared / Math.min(typed.length, parts.length) >= 0.6;
+};
+
+const productPhrases = key => {
+  const fact = productFacts()[key];
+  if (!fact) return [];
+  return [fact.en, fact.lt, fact.shortEn, fact.shortLt]
+    .filter(Boolean)
+    .map(phrase => fold(phrase))
+    .filter(Boolean);
+};
+
+const phrasesFor = key => {
+  const known = KEY_PHRASES.get(key);
+  if (known && known.length) return known;
+  const own = productPhrases(key);
+  if (own.length) return own;
+  return [key.replace(/-/g, " ")];
+};
+
 // Longest phrases first, so "sweet potato" wins over "potato".
 const ALIAS_PHRASES = [...ALIAS_TO_KEY.keys()].sort((a, b) => b.length - a.length);
 
@@ -161,6 +191,15 @@ export function parseWish(text) {
 
   for (const key of excludes) includes.delete(key);
 
+  // "vegan ham" typed in the box is the product the household saved, even
+  // though it is not in the built-in alias table.
+  const haystack = ` ${fold(raw).replace(/-/g, " ")} `;
+  for (const [key, fact] of Object.entries(productFacts())) {
+    if (includes.has(key) || excludes.has(key)) continue;
+    const names = [fact.en, fact.lt].filter(Boolean);
+    if (names.some(name => phraseIn(haystack, fold(name)) || namesOverlap(raw, name))) includes.add(key);
+  }
+
   // A wish is a sentence, not just a list of ingredients. "lactose free curd
   // sweet" means: a dessert, built on curd. Without this the sugar words were
   // dropped and the app answered with a curd pasta.
@@ -190,6 +229,13 @@ export function resolveIngredient(text) {
   const clean = fold(text);
   if (!clean || clean.length < 2) return null;
   if (ALIAS_TO_KEY.has(clean)) return ALIAS_TO_KEY.get(clean);
+  // The kitchen's own products, matched by name. "vegan ham" has to find
+  // "Vegan ham slices", so the match is by words rather than by whole phrase.
+  for (const [key, fact] of Object.entries(productFacts())) {
+    const names = [fact.en, fact.lt, fact.shortEn, fact.shortLt].filter(Boolean);
+    const hit = names.some(name => fold(name) === clean || namesOverlap(clean, name));
+    if (hit) return key;
+  }
   let best = null;
   for (const [phrase, key] of ALIAS_TO_KEY) {
     if (phrase.length < 3) continue;
@@ -220,7 +266,7 @@ export function wishSatisfied(recipe, wish) {
   if (!wanted.length) return true;
   const haystack = ingredientText(recipe);
   return wanted.every(key => {
-    const phrases = KEY_PHRASES.get(key) || [key.replace(/-/g, " ")];
+    const phrases = phrasesFor(key);
     return phrases.some(phrase => phraseIn(haystack, phrase));
   });
 }
@@ -238,7 +284,7 @@ export function containsExcluded(recipe, wish) {
   if (!banned.length) return [];
   const haystack = ingredientText(recipe);
   return banned.filter(key => {
-    const phrases = KEY_PHRASES.get(key) || [key.replace(/-/g, " ")];
+    const phrases = phrasesFor(key);
     return phrases.some(phrase => phraseIn(haystack, phrase));
   });
 }
@@ -264,10 +310,10 @@ export function wishSummary(wish) {
   if (wish.modifiers?.lactoseFree) bits.push("It must be lactose-free");
   if (wish.modifiers?.dairyFree) bits.push("It must contain no dairy at all");
   if (wish.includes?.length) {
-    bits.push(`It must contain ${wish.includes.map(key => INGREDIENT_FACTS[key]?.en || key).join(" and ")}`);
+    bits.push(`It must contain ${wish.includes.map(key => factFor(key)?.en || key).join(" and ")}`);
   }
   if (wish.excludes?.length) {
-    bits.push(`It must not contain ${wish.excludes.map(key => INGREDIENT_FACTS[key]?.en || key).join(" or ")}`);
+    bits.push(`It must not contain ${wish.excludes.map(key => factFor(key)?.en || key).join(" or ")}`);
   }
   return bits.join(". ");
 }

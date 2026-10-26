@@ -752,6 +752,11 @@ body.is-dragging-meal { cursor: grabbing; }
 }
 .sous-row:first-of-type { border-top: 0; }
 .sous-row .eyebrow { margin: 0; }
+.product-row {
+  padding: 7px 9px; border: 1.5px solid var(--line-soft);
+  border-radius: 12px; background: var(--surface-soft);
+}
+.product-name { font-size: 12px; font-weight: 700; }
 .pin-chip {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 4px 6px 4px 9px; border-radius: 10px;

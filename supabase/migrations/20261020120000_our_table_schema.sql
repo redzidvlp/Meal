@@ -199,6 +199,29 @@ create table if not exists public.labels (
   primary key (household_id, key)
 );
 
+-- Products the household actually buys, with the numbers off the package:
+-- "Veganiški pjausniai kumpio stiliaus", a particular spread, a protein
+-- yoghurt. Everything is stored per 100 g/ml so a meal built around one lands
+-- on its real calories instead of a guess.
+create table if not exists public.products (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households(id) on delete cascade,
+  key text not null check (key ~ '^p-[a-z0-9-]{1,40}$'),
+  name_en text not null check (char_length(name_en) between 1 and 60),
+  name_lt text check (char_length(name_lt) between 1 and 60),
+  kcal numeric(6, 1) not null check (kcal between 0 and 900),
+  protein numeric(5, 1) not null default 0 check (protein between 0 and 100),
+  carbs numeric(5, 1) not null default 0 check (carbs between 0 and 100),
+  fat numeric(5, 1) not null default 0 check (fat between 0 and 100),
+  unit text not null default 'g' check (unit in ('g', 'ml', 'vnt')),
+  portion_grams numeric(6, 1) check (portion_grams is null or portion_grams between 0 and 2000),
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (household_id, key)
+);
+
+create index if not exists products_household_idx on public.products (household_id);
+
 -- Sections a household removed from a given day (e.g. no snack on Sunday).
 create table if not exists public.day_sections (
   id uuid primary key default gen_random_uuid(),
@@ -1068,6 +1091,7 @@ alter table public.shopping_checks enable row level security;
 alter table public.menus enable row level security;
 alter table public.pantry enable row level security;
 alter table public.labels enable row level security;
+alter table public.products enable row level security;
 alter table public.day_sections enable row level security;
 
 -- households: members read; members may rename / change extra portions only.
@@ -1259,6 +1283,31 @@ create policy labels_delete on public.labels
 revoke all on public.labels from anon;
 grant select, insert, update, delete on public.labels to authenticated;
 
+-- products (a household's own packaging facts)
+drop policy if exists products_select on public.products;
+create policy products_select on public.products
+  for select to authenticated
+  using (household_id = public.my_household_id());
+
+drop policy if exists products_insert on public.products;
+create policy products_insert on public.products
+  for insert to authenticated
+  with check (household_id = public.my_household_id());
+
+drop policy if exists products_update on public.products;
+create policy products_update on public.products
+  for update to authenticated
+  using (household_id = public.my_household_id())
+  with check (household_id = public.my_household_id());
+
+drop policy if exists products_delete on public.products;
+create policy products_delete on public.products
+  for delete to authenticated
+  using (household_id = public.my_household_id());
+
+revoke all on public.products from anon;
+grant select, insert, update, delete on public.products to authenticated;
+
 -- day sections
 drop policy if exists day_sections_select on public.day_sections;
 create policy day_sections_select on public.day_sections
@@ -1304,7 +1353,7 @@ begin
   foreach t in array array[
     'recipes', 'meal_assignments', 'eaten', 'water',
     'recipe_notes', 'shopping_checks', 'pantry', 'menus', 'households', 'profiles',
-    'day_sections', 'labels'
+    'day_sections', 'labels', 'products'
   ] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);

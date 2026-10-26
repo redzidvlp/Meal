@@ -8,6 +8,8 @@ import { mergeMenus } from "../lib/menus.js";
 import { PRESET_MENUS } from "../data/presets.js";
 import { mondayISO, debounce } from "../lib/format.js";
 import { requestRecipeIdea } from "../lib/ideas.js";
+import { productFact } from "../lib/products.js";
+import { registerProductFacts } from "../data/ingredientFacts.js";
 
 // A load that never settles is worse than a failed one: the spinner turns
 // forever on a bad mobile connection. Every network read gets a deadline.
@@ -33,6 +35,7 @@ const EMPTY = {
   menus: [],
   pantry: [],
   labels: [],
+  products: [],
   hiddenSections: [],
 };
 
@@ -458,6 +461,16 @@ export function useAppData(t = {}) {
     await guarded(() => api.deleteLabel(key));
   }, [guarded]);
 
+  const saveProduct = useCallback(async input => {
+    const saved = await api.saveProduct(input);
+    await refresh();
+    return saved;
+  }, [refresh]);
+
+  const deleteProduct = useCallback(async key => {
+    await guarded(() => api.deleteProduct(key));
+  }, [guarded]);
+
   const saveRecipe = useCallback(async input => {
     try {
       const saved = await api.saveRecipe(input);
@@ -520,6 +533,11 @@ export function useAppData(t = {}) {
     }
   }, [notify, t]);
 
+  useEffect(() => {
+    const facts = (data.products || []).map(productFact).filter(Boolean);
+    registerProductFacts(facts);
+  }, [data.products]);
+
   const resetWeek = useCallback(async () => {
     await guarded(() => api.resetWeek(), t.weekCleared || "Week cleared");
   }, [guarded, t.weekCleared]);
@@ -550,6 +568,7 @@ export function useAppData(t = {}) {
     checksMap,
     pantry: data.pantry,
     labels: data.labels,
+    products: data.products || [],
     lowPantry,
     shoppingList,
     menus,
@@ -588,6 +607,8 @@ export function useAppData(t = {}) {
     saveRecipe,
     saveLabel,
     deleteLabel,
+    saveProduct,
+    deleteProduct,
     generateIdea,
     saveMenu,
     deleteMenu,

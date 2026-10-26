@@ -289,6 +289,51 @@ What the new version adds:
 Without the update the app still works: it notices the model ignored your wish and
 answers with the offline engine instead — so you get your curd either way.
 
+### 7c-sexies. Your own product, straight from the package
+
+This is the one that makes the sous-chef cook with **your** vegan ham, not an
+average one.
+
+1. **⚙️ Sous-chef → ⭐ Must include → ＋ My product.**
+2. Paste the nutrition table from the package (or the shop page) into
+   **Paste the label** and press **🔍 Read the label**. It picks out the product
+   name, the pack size and the four numbers a meal calculation needs.
+3. Check them, press **Save product**. It is pinned to the current idea
+   straight away, and it stays in **My products** for every later meal.
+
+Lithuanian and English labels both work, kJ is converted, and a label printed
+“per portion” or “per slice” is scaled to 100 g automatically.
+
+What is read and what is not:
+
+| On the label | Used? |
+|---|---|
+| Energinė vertė / Energy → kcal (or kJ) | **yes** — this is the calorie number |
+| Baltymai / Protein | **yes** — this is what the protein target is fitted against |
+| Angliavandeniai / Carbohydrate | **yes** |
+| Riebalai / Fat | **yes** |
+| Sočiosios riebalų rūgštys, Cukrūs, Druska (saturates, sugars, salt) | no — they do not change the calorie or protein fit |
+
+So of the nine lines on your label, four are needed: **220 kcal, 24.3 g protein,
+8.4 g carbs, 9.5 g fat**, all per 100 g. The pack size (80 g) is kept only to
+remind you what one pack is.
+
+If the printed energy disagrees with what the macros add up to by more than a
+quarter, the app trusts the macros — that keeps every meal total self-consistent.
+
+Matching by hand: a product saved as “Vegan ham slices” is found by typing
+`vegan ham`, `my vegan ham` or the full name in the wish box. It also appears in
+the suggestion list of the Must include box.
+
+Nothing is picked at random: a saved product is only used when you ask for it.
+
+> **First time only:** this adds one table, so the upgrade SQL has to run once
+> more. Supabase → SQL editor → paste
+> `https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/upgrade-existing-project.sql`
+> → Run. It is idempotent, keeps every login and every meal, and ends with the
+> `doctor.sql` report where `products` must say `ok`. Then reload the app.
+> Without it the sheet says *“This project has no products table yet”*.
+
 ### 7c-ter. How the sous-chef is laid out
 
 The whole page is one card, read top to bottom:
@@ -353,6 +398,7 @@ Type into **“Anything you feel like?”** the way you would say it out loud:
 - something to leave out — `no mushrooms`, `be svogūnų`
 - a kind of dish — `sweet`, `dessert` (builds a dessert, not a savoury plate)
 - a modifier — `lactose free`, `quick`, `high protein`
+- a product you saved from its own label — `vegan ham`, `my protein yoghurt`
 
 “Vegan meat”, “plant-based steak” and “soy mince” are understood as vegetarian
 products; plain “meat”, “chicken” or “steak” is still refused by the vegetarian guard.
@@ -422,6 +468,7 @@ The app names the failure instead of saying “refresh to retry”. Match the ti
 | **The Supabase project is paused or unreachable** | Free projects pause after ~a week idle | Supabase dashboard → Restore project |
 | **No answer from Supabase** | Wi-Fi, VPN, ad-blocker, or the project URL is wrong | Try mobile data; re-check 4a |
 | **The database said no** | Row-level security blocked the account | Confirm the account joined a kitchen; re-run `schema.sql` |
+| **“This project has no products table yet”** | the newer upgrade SQL has not been run | paste `upgrade-existing-project.sql` again (Phase 2), then reload |
 | Yellow **Local demo** banner after going live | the deploy built without the Supabase secrets (check the **Check the Supabase configuration** step) | Do 4a, then 4c again |
 | Your phone shows demo data but the site works on a laptop | the installed app kept an older demo build in its cache | close the app fully and reopen it; if the yellow banner stays, remove the home-screen icon and add it again |
 | `syntax error at or near "upgrade"` | The *filename* was run instead of the file’s text | Open the `raw.githubusercontent.com` link → select all → paste |
