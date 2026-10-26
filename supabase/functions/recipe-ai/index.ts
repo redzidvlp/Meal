@@ -15,6 +15,26 @@ const FORBIDDEN = [
   "mussel", "oyster", "gelatin", "lard", "veal", "venison", "meat", "mince", "steak",
 ];
 
+// "Vegan meat" or "plant-based steak" is a plant product, not a ban. The
+// qualifier is what makes the word vegetarian; without one the word is still
+// rejected, exactly as before.
+const PLANT_QUALIFIER = /(?:^|[^a-z])(?:vegan[a-z]*|plant[\s-]?based|plant[\s-]?protein[a-z]*|meat[\s-]?free|meatless|vegetarian|veggie|faux|mock|imitation|soy|soya|pea[\s-]?protein|mycoprotein|quorn)\s*$/;
+const PLANT_SUFFIX = /^\s*[- ]?free(?:[^a-z]|$)/;
+
+function forbiddenHit(haystack) {
+  const text = String(haystack || "").toLowerCase();
+  return FORBIDDEN.find(word => {
+    const pattern = new RegExp(`\\b${word}\\b`, "g");
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      const before = text.slice(0, match.index);
+      const after = text.slice(match.index + match[0].length);
+      if (!PLANT_QUALIFIER.test(before) && !PLANT_SUFFIX.test(after)) return true;
+    }
+    return false;
+  });
+}
+
 const cors = origin => ({
   "Access-Control-Allow-Origin": origin,
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -202,7 +222,7 @@ Deno.serve(async request => {
 
   const haystack = [nameEn, nameLt, parsed.method_en, parsed.method_lt, ...ingredients.flatMap(item => [item.en, item.lt])]
     .join(" ").toLowerCase();
-  if (FORBIDDEN.some(word => new RegExp(`\\b${word}\\b`).test(haystack))) {
+  if (forbiddenHit(haystack)) {
     return json({ available: true, error: "not_vegetarian" }, 200, origin);
   }
 

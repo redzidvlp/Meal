@@ -389,6 +389,55 @@ it only copies calories and meal type, never the dish.</p>
 <p>Under the Generate button, the “From your own recipe book” list is a separate thing: it
 scores recipes you already own against the same targets, for the nights you would rather
 reuse something.</p>
+<h3>7c-quinquies. “Make something with this ingredient”</h3>
+<p>Under the wish box there is a <strong>⭐ Must include</strong> row. It is the direct answer to
+<em>“build me a meal around this product, but keep it in my calories and protein.”</em></p>
+<ol>
+<li>Type the product — <code>vegan meat</code>, <code>tempeh</code>, <code>skyr</code> — or tap one of the quick suggestions.</li>
+<li>Press <strong>＋ Add</strong>. It appears as a chip with a ✓, which means the app knows its
+nutrition and will do the maths with it. Up to five ingredients.</li>
+<li>Set your calories and (under <em>More nutrition</em>) the protein you want, then press
+<strong>✨ Generate recipe</strong>.</li>
+</ol>
+<p>What the engine does with it, in this order:</p>
+<ul>
+<li>the named ingredient is <strong>locked into the plate</strong> — it is never quietly swapped out;</li>
+<li>the calorie ingredient (oil, seeds, grain) is scaled so the plate lands on your target;</li>
+<li>the protein ingredient — which is your pin when it is the protein — is grown until it
+meets the protein target, up to a sensible ceiling;</li>
+<li>if the plate still lands outside the range, it is rejected and another shape is tried.</li>
+</ul>
+<p>The card then tells you exactly what happened, in one of four short lines:</p>
+<table>
+<thead>
+<tr>
+<th>Line on the card</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>✓ <strong>With</strong> Vegan meat</td>
+<td>It is in the dish, inside your range</td>
+</tr>
+<tr>
+<td>⚠ <strong>Built without</strong> …</td>
+<td>A name the app does not know; only the AI function can cook with it</td>
+</tr>
+<tr>
+<td>⚠ <strong>Slightly outside your calorie range</strong></td>
+<td>The pin is dense (e.g. 150 g of it already fills the plate). It kept your ingredient instead of dropping it</td>
+</tr>
+<tr>
+<td>⚠ <strong>Protein is 22 g of your 30 g target</strong></td>
+<td>The pin is light in protein; adding more would break the calorie ceiling</td>
+</tr>
+</tbody></table>
+<p>Names with no ✓ (like a brand-specific spread) are still accepted — they go to the
+AI function as a hard requirement. Without a working AI function the card says
+<strong>Built without</strong> instead of pretending.</p>
+<p>The quick suggestions and the full list cover 25 protein ingredients, including
+vegan meat, tempeh, seitan-style products, all common beans and peas, falafel,
+skyr, ricotta, cheddar and mozzarella.</p>
 <h3>7c-quater. What the sous-chef can be asked for</h3>
 <p>Type into <strong>“Anything you feel like?”</strong> the way you would say it out loud:</p>
 <ul>
@@ -397,6 +446,8 @@ reuse something.</p>
 <li>a kind of dish — <code>sweet</code>, <code>dessert</code> (builds a dessert, not a savoury plate)</li>
 <li>a modifier — <code>lactose free</code>, <code>quick</code>, <code>high protein</code></li>
 </ul>
+<p>“Vegan meat”, “plant-based steak” and “soy mince” are understood as vegetarian
+products; plain “meat”, “chicken” or “steak” is still refused by the vegetarian guard.</p>
 <p>The chips under the box show what it understood, and <strong>Will make:</strong> under the Generate
 button says what will be cooked. If a chip is wrong, change a word — the app only acts on
 what it recognised, it does not guess silently.</p>

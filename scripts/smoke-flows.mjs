@@ -484,6 +484,27 @@ assert(/curd/i.test(ideaIngredients), `the idea really contains curd (${ideaIngr
 assert(sweetIdea.querySelector(".ai-note-line"), "the card explains the fallback");
 console.log(`WISH: "lactose free curd sweet" → ${sweetIdea.querySelector(".idea-name")?.textContent}`);
 
+// 7d-bis. Build a dish around one ingredient the person names.
+// Start from an empty wish box: a leftover "sweet" would fight the pin.
+await setInput(document.querySelector("[data-field='wish']"), "");
+const mustInput = document.querySelector("[data-field='must']");
+assert(mustInput, "the must-include box is on screen");
+await setInput(mustInput, "vegan meat");
+await click(document.querySelector("[data-action='add-must']"), 250);
+const pinChip = document.querySelector(".pin-chip");
+assert(pinChip && /Vegan meat/i.test(pinChip.textContent), `the ingredient is pinned (${pinChip?.textContent})`);
+await click(document.querySelector("[data-action='generate']"), 1000);
+const pinnedCard = document.querySelector(".idea-card");
+const pinnedIngredients = pinnedCard.querySelector(".idea-ingredients")?.textContent || "";
+assert(/vegan meat/i.test(pinnedIngredients), `the dish really contains it (${pinnedIngredients.slice(0, 90)})`);
+assert(!/Built without/i.test(pinnedCard.textContent), "nothing is quietly dropped");
+assert(pinnedCard.querySelector(".pin-line.ok"), "the card confirms what went in");
+const pinnedMeta = pinnedCard.querySelector(".opt-meta")?.textContent || "";
+assert(/🔥 4\d\d|🔥 5\d\d|🔥 6\d\d/.test(pinnedMeta), `it still fits the calorie range (${pinnedMeta.trim()})`);
+console.log(`MUST INCLUDE: "vegan meat" → ${pinnedCard.querySelector(".idea-name")?.textContent} · ${pinnedMeta.replace(/\s+/g, " ").trim()}`);
+// Take it back off so the rest of the flow starts from a clean composer.
+await click(document.querySelector(".sous-card .pin-chip button"), 200);
+
 await click(button("Review & save"), 500);
 assert(text().includes("Offline idea engine"), "generated draft opens in the editor for review");
 assert([...document.querySelectorAll(".sheet-title")].some(el => el.textContent.includes("New recipe")), "draft uses the new-recipe editor");

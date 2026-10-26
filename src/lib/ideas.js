@@ -1,13 +1,13 @@
 import { generateRecipeDraft } from "../engine/generate.js";
 import { sanitizeRecipe } from "./validate.js";
 import { INGREDIENT_FACTS } from "../data/ingredientFacts.js";
-import { parseWish, wishSatisfied, containsExcluded, wishIngredientNames, wishSummary } from "./wishes.js";
+import { parseWish, wishSatisfied, containsExcluded, wishSummary } from "./wishes.js";
 
 /**
  * Walks forward through deterministic seeds until one draft avoids every name
  * already on screen. This is what makes "Reroll" feel fresh rather than random.
  */
-export function offlineIdea({ slot, target, filters = {}, seed = 1, excludeNames = [], wish = null, avoidKeys = [] }) {
+export function offlineIdea({ slot, target, filters = {}, seed = 1, excludeNames = [], wish = null, avoidKeys = [], mustInclude = [] }) {
   const merged = { ...filters, quick: filters.quick || !!wish?.quick };
   for (let step = 0; step < 24; step += 1) {
     const draft = generateRecipeDraft({
@@ -18,6 +18,7 @@ export function offlineIdea({ slot, target, filters = {}, seed = 1, excludeNames
       excludeNames,
       wish,
       avoidKeys,
+      mustInclude,
     });
     if (draft) return draft;
   }
@@ -35,6 +36,24 @@ export function offlineIdea({ slot, target, filters = {}, seed = 1, excludeNames
   }
   return null;
 }
+
+const foldText = value => String(value || "")
+  .toLowerCase()
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "");
+
+/** Loose match: every meaningful word of the name must appear in the list. */
+function draftContains(draft, name) {
+  const haystack = (draft?.ingredients || [])
+    .flatMap(item => [item?.key, item?.en, item?.lt])
+    .map(foldText)
+    .join(" | ");
+  const words = foldText(name).split(/[^a-z0-9]+/).filter(word => word.length > 2);
+  if (!words.length) return haystack.includes(foldText(name));
+  return words.every(word => haystack.includes(word));
+}
+
+const keepsNamed = (draft, names) => names.every(name => draftContains(draft, name));
 
 function fromAi(recipe, seed) {
   const check = sanitizeRecipe({
@@ -78,14 +97,28 @@ export async function requestRecipeIdea({
   avoidKeys = [],
   maxMinutes = 0,
   pantry = [],
+  mustInclude = [],
+  mustNames = [],
 }) {
   const parsed = wish || parseWish(notes);
+  // Ingredients named explicitly (picker or "must include" box). They are the
+  // one thing the recipe may not quietly leave out.
+  const pins = [...new Set([...(parsed.includes || []), ...(Array.isArray(mustInclude) ? mustInclude : [])])]
+    .filter(key => INGREDIENT_FACTS[key]);
+  const customNames = (Array.isArray(mustNames) ? mustNames : [])
+    .map(name => String(name || "").trim())
+    .filter(name => name.length > 1)
+    .slice(0, 4);
+  const pinnedWish = { ...parsed, includes: pins };
+  const requested = [...pins.map(key => INGREDIENT_FACTS[key].en), ...customNames];
   const minutes = Number(maxMinutes) || 0;
   const merged = { ...filters, quick: filters.quick || !!parsed.quick || (minutes > 0 && minutes <= 15), maxMinutes: minutes };
-  const mustInclude = wishIngredientNames(parsed);
+  const mustForAi = [...new Set([...pins.map(key => INGREDIENT_FACTS[key].en), ...customNames])].slice(0, 5);
   const mustAvoid = excludedNames(parsed);
   const hasWish = Boolean(
-    parsed.includes?.length
+    pins.length
+    || customNames.length
+    || parsed.includes?.length
     || parsed.excludes?.length
     || parsed.quick
     || parsed.course
@@ -109,22 +142,24 @@ export async function requestRecipeIdea({
         notes: String(notes || "").replace(/[<>{}]/g, "").trim().slice(0, 160),
         // The model gets the wish as a sentence, not only a list of keys:
         // "lactose free curd sweet" reads as a dessert built on curd.
-        wish: wishSummary(parsed).slice(0, 400),
+        wish: wishSummary(pinnedWish).slice(0, 400),
         course: parsed.course,
         modifiers: parsed.modifiers,
-        mustInclude,
+        mustInclude: mustForAi,
         avoidIngredients: mustAvoid,
         seed: Number(seed) || 1,
         pantry: pantry.map(item => (typeof item === "string" ? item : item?.nameEn || item?.key)).filter(Boolean).slice(0, 20),
       });
       if (result?.available && result.recipe) {
         const draft = fromAi(result.recipe, seed);
-        const keepsWish = draft && wishSatisfied(draft, parsed);
-        const cleanOfBans = draft && containsExcluded(draft, parsed).length === 0;
+        const keepsWish = draft && wishSatisfied(draft, pinnedWish) && keepsNamed(draft, customNames);
+        const cleanOfBans = draft && containsExcluded(draft, pinnedWish).length === 0;
         // A sweet wish answered with a savoury dish is a miss, however good it
         // sounds: the offline engine can build the dessert instead.
         const wrongCourse = draft && parsed.course && draft.course !== parsed.course;
-        if (draft && keepsWish && cleanOfBans && !wrongCourse) return draft;
+        if (draft && keepsWish && cleanOfBans && !wrongCourse) {
+          return { ...draft, requested, missing: [] };
+        }
         // The model ignored the request (or slipped in a banned ingredient):
         // fall through to the engine, which is built to honour it.
         aiNote = "ignored";
@@ -138,6 +173,20 @@ export async function requestRecipeIdea({
     }
   }
 
-  const draft = offlineIdea({ slot, target, filters: merged, seed, excludeNames, wish: hasWish ? parsed : null, avoidKeys });
-  return draft ? { ...draft, ai: false, aiNote } : null;
+  const draft = offlineIdea({
+    slot,
+    target,
+    filters: merged,
+    seed,
+    excludeNames,
+    wish: hasWish ? pinnedWish : null,
+    avoidKeys,
+    mustInclude: pins,
+  });
+  if (!draft) return null;
+  // Be explicit about what could not be honoured. A free-text ingredient the
+  // built-in table does not know can only be cooked by the model; saying so is
+  // better than handing back a dish that quietly lacks it.
+  const missing = requested.filter(name => !draftContains(draft, name));
+  return { ...draft, ai: false, aiNote, requested, missing };
 }

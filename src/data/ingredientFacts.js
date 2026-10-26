@@ -72,7 +72,24 @@ export const INGREDIENT_FACTS = {
   mushrooms: { ltIn: "pievagrybiais", shortEn: "Mushrooms", shortLt: "Pievagrybiai", en: "Mushrooms", lt: "Pievagrybiai", kcal: 22, protein: 3.1, carbs: 3.3, fat: 0.3, unit: "g", group: "veg", vegan: true, glutenFree: true, fodmap: false },
   potato: { ltIn: "bulvėmis", shortEn: "Potato", shortLt: "Bulvės", en: "Potato", lt: "Bulvės", kcal: 77, protein: 2, carbs: 17, fat: 0.1, unit: "g", group: "carb", vegan: true, glutenFree: true, fodmap: true },
   "sweet-potato": { ltIn: "batatais", shortEn: "Sweet potato", shortLt: "Batatai", en: "Sweet potato", lt: "Batatai", kcal: 86, protein: 1.6, carbs: 20, fat: 0.1, unit: "g", group: "carb", vegan: true, glutenFree: true, fodmap: true },
+  // Protein staples people actually buy. Without these an ingredient can be
+  // typed but never built with, which is what made "make something with my
+  // vegan meat" impossible.
+  "vegan-meat": { ltIn: "veganiška mėsa", shortEn: "Vegan meat", shortLt: "Veganiška mėsa", en: "Vegan meat", lt: "Veganiška mėsa", kcal: 200, protein: 18, carbs: 8, fat: 11, unit: "g", group: "protein", vegan: true, glutenFree: true, fodmap: true },
+  tempeh: { ltIn: "tempeh", shortEn: "Tempeh", shortLt: "Tempeh", en: "Tempeh", lt: "Tempeh", kcal: 192, protein: 20, carbs: 8, fat: 11, unit: "g", group: "protein", vegan: true, glutenFree: true, fodmap: false },
+  "kidney-beans": { ltIn: "raudonomis pupelėmis", shortEn: "Kidney beans", shortLt: "Raudonosios pupelės", en: "Kidney beans", lt: "Raudonosios pupelės", kcal: 127, protein: 8.7, carbs: 22.8, fat: 0.5, unit: "g", group: "protein", vegan: true, glutenFree: true, fodmap: false },
+  "black-beans": { ltIn: "juodosiomis pupelėmis", shortEn: "Black beans", shortLt: "Juodosios pupelės", en: "Black beans", lt: "Juodosios pupelės", kcal: 132, protein: 8.9, carbs: 24, fat: 0.5, unit: "g", group: "protein", vegan: true, glutenFree: true, fodmap: false },
+  "green-peas": { ltIn: "žirneliais", shortEn: "Green peas", shortLt: "Žirneliai", en: "Green peas", lt: "Žirneliai", kcal: 81, protein: 5.4, carbs: 14, fat: 0.4, unit: "g", group: "protein", vegan: true, glutenFree: true, fodmap: false },
+  falafel: { ltIn: "falafeliais", shortEn: "Falafel", shortLt: "Falafeliai", en: "Falafel", lt: "Falafeliai", kcal: 333, protein: 13, carbs: 32, fat: 18, unit: "g", group: "protein", vegan: true, glutenFree: false, fodmap: false },
+  "soy-yogurt": { ltIn: "sojų jogurtu", shortEn: "Soy yogurt", shortLt: "Sojų jogurtas", en: "Soy yogurt", lt: "Sojų jogurtas", kcal: 60, protein: 4, carbs: 5, fat: 2.5, unit: "g", group: "protein", vegan: true, glutenFree: true, fodmap: true },
+  skyr: { ltIn: "skyr", shortEn: "Skyr", shortLt: "Skyr", en: "Skyr", lt: "Skyr", kcal: 63, protein: 11, carbs: 4, fat: 0.2, unit: "g", group: "protein", vegan: false, glutenFree: true, fodmap: true },
+  ricotta: { ltIn: "rikota", shortEn: "Ricotta", shortLt: "Rikota", en: "Ricotta", lt: "Rikota", kcal: 174, protein: 11, carbs: 3, fat: 13, unit: "g", group: "protein", vegan: false, glutenFree: true, fodmap: true },
+  cheddar: { ltIn: "čederio sūriu", shortEn: "Cheddar", shortLt: "Čederis", en: "Cheddar", lt: "Čederio sūris", kcal: 402, protein: 25, carbs: 1.3, fat: 33, unit: "g", group: "protein", vegan: false, glutenFree: true, fodmap: true },
+  mozzarella: { ltIn: "mocarela", shortEn: "Mozzarella", shortLt: "Mocarela", en: "Mozzarella", lt: "Mocarela", kcal: 280, protein: 22, carbs: 2.2, fat: 17, unit: "g", group: "protein", vegan: false, glutenFree: true, fodmap: true },
 };
+
+export const GROUP_DEFAULT_AMOUNT = { protein: 100, carb: 60, veg: 100, fat: 12, fruit: 100, flavor: 8 };
+
 
 export const GENERATOR_GROUPS = {
   protein: Object.entries(INGREDIENT_FACTS).filter(([, f]) => f.group === "protein").map(([key]) => key),
