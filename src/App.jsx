@@ -101,6 +101,7 @@ export default function App() {
   const [viewer, setViewer] = useState(null);
   const [viewerContext, setViewerContext] = useState(null);
   const [scanOpen, setScanOpen] = useState(false);
+  const [scanDay, setScanDay] = useState(null);
   const [menuEditor, setMenuEditor] = useState({ open: false, menu: null });
   const [editor, setEditor] = useState({ open: false, recipe: null, slot: null, context: null });
   const [picker, setPicker] = useState({ open: false, day: todayIdx, slot: null, mode: "empty", person: null, initialTab: "recipes" });
@@ -154,6 +155,10 @@ export default function App() {
     const hour = new Date().getHours();
     const slot = hour < 11 ? "breakfast" : hour < 15 ? "lunch" : hour < 18 ? "snack" : "dinner";
     const ingredientName = result.name || t.scanMeal;
+    // Opened from the plan, so the meal is saved into that day: the camera sits
+    // next to the day menu, and a photo that only lands in the recipe book
+    // looks like it did nothing.
+    const targetDay = scanDay ?? day;
     setEditor({
       open: true,
       recipe: {
@@ -171,9 +176,10 @@ export default function App() {
         tags: ["vegetarian"],
       },
       slot,
-      context: null,
+      context: { day: targetDay, slot, mode: "both", person: null },
     });
     setScanOpen(false);
+    setScanDay(null);
   };
 
   const openNewRecipe = context => {
@@ -357,7 +363,7 @@ export default function App() {
               onOpenRecipe={openViewer}
               onPick={openPicker}
               onOpenMenu={targetDay => openPicker({ day: targetDay, slot: null, mode: "menu", initialTab: "menus" })}
-              onScan={() => setScanOpen(true)}
+              onScan={targetDay => { setScanDay(targetDay ?? day); setScanOpen(true); }}
             />
           )}
 
@@ -479,6 +485,7 @@ export default function App() {
         app={app}
         initialMode="meal"
         onApply={handleScanResult}
+        dayLabel={t.dayNames[scanDay ?? day]}
       />
 
       {updateGate}

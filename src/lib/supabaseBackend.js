@@ -591,7 +591,18 @@ export function createSupabaseBackend(client) {
       const { data, error: invokeError } = await client.functions.invoke("nutrition-scan", { body: payload });
       raise(invokeError);
       if (!data || data.available !== true) return { available: false, reason: data?.reason || "ai_offline", size: payload.image.length };
-      return { available: true, mode: payload.mode, nutrition: data.nutrition || null, items: Array.isArray(data.items) ? data.items : [] };
+      return {
+        available: true,
+        mode: payload.mode,
+        nutrition: data.nutrition || null,
+        // A product needs per-100 g numbers; a recipe needs per portion. Both
+        // come back when the deployed function knows how to compute them.
+        per100: data.per100 || null,
+        basis: data.basis || null,
+        name: data.name || "",
+        portionGrams: Number(data.portionGrams) || 0,
+        items: Array.isArray(data.items) ? data.items : [],
+      };
     },
 
     async setExtraPortions(value) {

@@ -42,6 +42,8 @@ const prompt = mode => {
     base.push(
       "The image is a packaged-food nutrition label.",
       "Read the values per 100 g if available, otherwise per serving, and say which in name.",
+      "Also return per100 = the same macros converted to per 100 g (use portionGrams when the label states a serving), and basis = \"per100\" or \"serving\" for how the label itself is printed.",
+      "portionGrams = the serving or pack size in grams if the label states one, otherwise 0.",
       "Round to one decimal. If a value is unreadable use 0.",
     );
   } else {
@@ -148,5 +150,24 @@ Deno.serve(async request => {
     return json({ available: true, error: "not_food" }, 200, origin);
   }
 
-  return json({ available: true, mode, name, nutrition, portionGrams }, 200, origin);
+  // A product saved from a label has to be per 100 g; a recipe is per portion.
+  // The caller picks, so both are returned and an older function simply omits
+  // per100 (the app then says to check the numbers).
+  const rawPer100 = parsed?.per100 && typeof parsed.per100 === "object" ? parsed.per100 : null;
+  const per100 = rawPer100 ? {
+    kcal: clampNumber(rawPer100.kcal, 0, 900),
+    protein: clampNumber(rawPer100.protein, 0, 100),
+    carbs: clampNumber(rawPer100.carbs, 0, 100),
+    fat: clampNumber(rawPer100.fat, 0, 100),
+  } : null;
+
+  return json({
+    available: true,
+    mode,
+    name,
+    nutrition,
+    portionGrams,
+    per100: per100 && per100.kcal > 0 ? per100 : null,
+    basis: parsed?.basis === "serving" ? "serving" : parsed?.basis === "per100" ? "per100" : null,
+  }, 200, origin);
 });

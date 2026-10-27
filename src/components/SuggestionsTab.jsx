@@ -273,6 +273,32 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
             </button>
             <span className="tiny" style={{ alignSelf: "center" }}>{GENERATOR_GROUPS.protein.length} {t.proteinStaples}</span>
           </div>
+
+          {(app.products || []).length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div className="eyebrow" style={{ marginBottom: 5 }}>🏷️ {t.myProducts}</div>
+              <div className="row" style={{ gap: 4, flexWrap: "wrap" }} data-products="saved">
+                {(app.products || []).map(product => {
+                  const active = pinKeys.includes(product.key);
+                  return (
+                    <button
+                      key={product.key}
+                      type="button"
+                      data-product={product.key}
+                      className={`chip ${active ? "active" : "sage"}`}
+                      style={{ minHeight: 27, padding: "0 9px", fontSize: 10 }}
+                      onClick={() => (active ? removePin(product.key) : addPinFact(productFact(product)))}
+                    >
+                      {active ? "✓ " : ""}{lang === "lt" && product.nameLt ? product.nameLt : product.nameEn}
+                      <span style={{ opacity: .65, fontWeight: 500 }}>
+                        {Math.round(product.kcal)} kcal · {product.protein}g
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {(wish.includes.length > 0 || wish.excludes.length > 0 || chips.length > 0) && (
@@ -528,6 +554,7 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
         products={app.products || []}
         lang={lang}
         t={t}
+        app={app}
         onDelete={key => app.deleteProduct(key)}
         onSave={async input => {
           const saved = await app.saveProduct(input);

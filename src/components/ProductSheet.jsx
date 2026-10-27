@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { C } from "../theme.js";
 import { PRODUCT_USES, parseNutritionLabel, useLabel } from "../lib/products.js";
+import { discardImage, prepareImage } from "../lib/photo.js";
 import { Field, NumberInput, Sheet } from "./ui.jsx";
 
 const EMPTY = { name: "", kcal: "", protein: "", carbs: "", fat: "", portion: "", uses: [] };
@@ -9,12 +10,87 @@ const EMPTY = { name: "", kcal: "", protein: "", carbs: "", fat: "", portion: ""
  * Adds a product from its package. Pasting the label is the fast path on a
  * phone: it fills the four numbers the meal maths needs and nothing else.
  */
-export default function ProductSheet({ open, onClose, onSave, onDelete, products = [], lang, t }) {
+export default function ProductSheet({ open, onClose, onSave, onDelete, products = [], lang, t, app }) {
   const [labelText, setLabelText] = useState("");
   const [form, setForm] = useState(EMPTY);
   const [parsed, setParsed] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // The label photo exists only until the numbers are read out of it.
+  const [photo, setPhoto] = useState(null);
+  const [reading, setReading] = useState("");
+  const cameraRef = useRef(null);
+  const galleryRef = useRef(null);
+
+  const closeSheet = () => {
+    setPhoto(current => discardImage(current));
+    setReading("");
+    onClose();
+  };
+
+  const onFile = async event => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setError(t.scanFailed); return; }
+    setError("");
+    setReading("preparing");
+    try {
+      const prepared = await prepareImage(file);
+      setPhoto(previous => {
+        discardImage(previous);
+        return prepared;
+      });
+      setReading("ready");
+    } catch {
+      setError(t.scanFailed);
+      setReading("");
+    }
+  };
+
+  /**
+   * Reads the photographed label with the AI function, fills the form, then
+   * deletes the picture. It is sent once, held in memory for the length of the
+   * request, and never saved anywhere.
+   */
+  const readPhoto = async () => {
+    if (!photo?.data) { setError(t.scanNoImage); return; }
+    if (!app?.analyzePhoto) { setError(t.photoNeedsAi); return; }
+    setError("");
+    setReading("reading");
+    try {
+      const result = await app.analyzePhoto({ image: photo.data, mode: "label" });
+      if (!result?.available) {
+        setReading("offline");
+        return;
+      }
+      // Per-100 g is what a product stores. The old function deployment only
+      // returns per-portion numbers, so scaling is done here when it can be.
+      const per100 = result.per100 || null;
+      const serving = Number(result.portionGrams) || 0;
+      // The first deployment of the function returned per-portion numbers only,
+      // with no basis. Treat that as "serving" whenever a serving size came back.
+      const basis = result.basis || (per100 ? "per100" : "serving");
+      const scale = !per100 && basis === "serving" && serving > 0 ? 100 / serving : 1;
+      const numbers = per100 || result.nutrition || {};
+      const round = value => Math.round((Number(value) || 0) * scale * 10) / 10;
+      setForm(previous => ({
+        ...previous,
+        name: previous.name || String(result.name || "").slice(0, 60),
+        kcal: numbers.kcal ? String(Math.round((Number(numbers.kcal) || 0) * scale)) : "",
+        protein: numbers.protein ? String(round(numbers.protein)) : "",
+        carbs: numbers.carbs ? String(round(numbers.carbs)) : "",
+        fat: numbers.fat ? String(round(numbers.fat)) : "",
+        portion: previous.portion || (serving ? String(serving) : ""),
+      }));
+      setReading("done");
+    } catch {
+      setReading("offline");
+    } finally {
+      // The picture has served its purpose either way.
+      setPhoto(current => discardImage(current));
+    }
+  };
 
   const update = key => value => setForm(previous => ({ ...previous, [key]: value }));
   const toggleUse = key => setForm(previous => ({
@@ -66,6 +142,9 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
       setForm(EMPTY);
       setLabelText("");
       setParsed(null);
+      // Whatever happened in the sheet, no picture leaves it.
+      setPhoto(current => discardImage(current));
+      setReading("");
       onClose();
     } catch (cause) {
       // A project that has not run the newer upgrade SQL has no products
@@ -85,18 +164,66 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
   return (
     <Sheet
       open={open}
-      onClose={onClose}
+      onClose={closeSheet}
       title={t.addProductTitle}
       subtitle={t.addProductSub}
       footer={(
         <>
-          <button type="button" className="btn btn-soft" style={{ flex: 1 }} onClick={onClose}>{t.cancel}</button>
+          <button type="button" className="btn btn-soft" style={{ flex: 1 }} onClick={closeSheet}>{t.cancel}</button>
           <button type="button" className="btn btn-primary" style={{ flex: 1.4 }} onClick={save} disabled={busy}>
             {busy ? t.saving : t.saveProduct}
           </button>
         </>
       )}
     >
+      <div className="row" style={{ gap: 6, marginBottom: 8 }}>
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={onFile} data-photo="camera" />
+        <input ref={galleryRef} type="file" accept="image/*" hidden onChange={onFile} data-photo="gallery" />
+        <button
+          type="button"
+          className="btn btn-sm btn-primary"
+          data-action="photo-label"
+          style={{ flex: 1 }}
+          disabled={reading === "preparing" || reading === "reading"}
+          onClick={() => cameraRef.current?.click()}
+        >
+          📷 {t.photoLabel}
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-soft"
+          disabled={reading === "preparing" || reading === "reading"}
+          onClick={() => galleryRef.current?.click()}
+        >
+          🖼️ {t.scanPick}
+        </button>
+      </div>
+
+      {photo && (
+        <div className="photo-frame" style={{ marginBottom: 10 }}>
+          <img src={photo.data} alt="" className="photo-preview" />
+          <button type="button" className="btn btn-sm btn-ghost photo-retake" onClick={() => cameraRef.current?.click()}>
+            ↻ {t.scanRetake}
+          </button>
+        </div>
+      )}
+
+      {photo && (
+        <button
+          type="button"
+          className="btn btn-primary btn-block"
+          data-action="read-photo"
+          style={{ marginBottom: 10 }}
+          onClick={readPhoto}
+          disabled={reading === "reading"}
+        >
+          {reading === "reading" ? `⏳ ${t.scanAnalyzing}` : `✨ ${t.scanAnalyze}`}
+        </button>
+      )}
+
+      {reading === "done" && <p className="tiny" style={{ color: C.leaf, marginBottom: 8 }} data-note="photo-read">✓ {t.photoReadAndDiscarded}</p>}
+      {reading === "offline" && <p className="tiny" style={{ color: C.amber, marginBottom: 8 }}>{t.photoNeedsAi}</p>}
+
       <Field label={t.pasteLabel} hint={t.pasteLabelHint}>
         <textarea
           className="textarea"
@@ -117,6 +244,7 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
       >
         🔍 {t.readLabel}
       </button>
+      <p className="tiny" style={{ marginTop: 6 }}>{t.orTypeInstead}</p>
 
       {parsed && summary && (
         <p className="tiny" style={{ marginTop: 8, color: C.leaf }}>

@@ -354,7 +354,7 @@ export default function PlanTab({ app, lang, t, day, setDay, todayIdx, onOpenRec
           <button type="button" className="btn btn-sm btn-soft" onClick={() => onOpenMenu(day)}>
             🍱 {t.dayMenu}
           </button>
-          <button type="button" className="icon-btn scan-btn" onClick={onScan} aria-label={t.scanTitle} title={t.scanTitle}>
+          <button type="button" className="icon-btn scan-btn" onClick={() => onScan(day)} aria-label={t.scanTitle} title={t.scanTitle}>
             📷
           </button>
         </div>

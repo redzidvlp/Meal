@@ -1164,3 +1164,29 @@ test("startup does not wait on third-party fonts or the Supabase client", () => 
   assert.doesNotMatch(api, /^import[^;]*supabase\.js/m, "the Supabase client is not a static import");
   assert.match(api, /import\("\.\/supabase\.js"\)/, "it is loaded on demand");
 });
+
+test("a label photo is read once and then thrown away", async () => {
+  const { prepareImage, discardImage } = await import("../src/lib/photo.js");
+  // The smallest fake browser that can run the helper: a bitmap and a canvas.
+  const calls = [];
+  globalThis.createImageBitmap = async () => ({ width: 2048, height: 1536, close: () => calls.push("bitmap-closed") });
+  globalThis.document = {
+    createElement: () => ({
+      width: 0,
+      height: 0,
+      getContext: () => ({ drawImage: (bitmap, x, y, width, height) => calls.push(`draw ${width}x${height}`) }),
+      toDataURL: (type, quality) => { calls.push(`encode ${type} ${quality}`); return "data:image/jpeg;base64,AAAA"; },
+    }),
+  };
+  const photo = await prepareImage({ type: "image/jpeg" });
+  assert.equal(photo.width, 1024, "the long edge is capped at 1024 px");
+  assert.equal(photo.height, 768, "the short edge keeps the aspect ratio");
+  assert.equal(photo.data, "data:image/jpeg;base64,AAAA");
+  assert.ok(calls.includes("encode image/jpeg 0.82"), "the upload is a compressed JPEG");
+  assert.ok(calls.includes("bitmap-closed"), "the decoded bitmap is released");
+  // Nothing but the string exists: dropping the photo really drops it.
+  discardImage(photo);
+  assert.equal(photo.data, null, "the picture is gone once the numbers are read");
+  delete globalThis.document;
+  delete globalThis.createImageBitmap;
+});

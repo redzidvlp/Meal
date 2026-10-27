@@ -1,30 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { C } from "../theme.js";
+import { discardImage, prepareImage } from "../lib/photo.js";
 import { Sheet } from "./ui.jsx";
-
-const MAX_EDGE = 1024;
-const QUALITY = 0.82;
-
-/** Downscales a picked photo in the browser so uploads stay small and fast on mobile. */
-async function prepareImage(file) {
-  const bitmap = await createImageBitmap(file).catch(() => null);
-  if (!bitmap) throw new Error("unreadable");
-  const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(bitmap, 0, 0, width, height);
-  bitmap.close?.();
-  const data = canvas.toDataURL("image/jpeg", QUALITY);
-  return { data, width, height };
-}
 
 const emptyNutrition = { kcal: "", protein: "", carbs: "", fat: "" };
 
-export default function PhotoSheet({ open, onClose, t, app, initialMode = "label", onApply }) {
+export default function PhotoSheet({ open, onClose, t, app, initialMode = "label", onApply, dayLabel = "" }) {
   const [mode, setMode] = useState(initialMode);
   const [photo, setPhoto] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -34,6 +15,7 @@ export default function PhotoSheet({ open, onClose, t, app, initialMode = "label
   const [name, setName] = useState("");
   const [portion, setPortion] = useState("");
   const [source, setSource] = useState("");
+  const [readOnce, setReadOnce] = useState(false);
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
 
@@ -48,6 +30,7 @@ export default function PhotoSheet({ open, onClose, t, app, initialMode = "label
     setName("");
     setPortion("");
     setSource("");
+    setReadOnce(false);
   }, [open, initialMode]);
 
   const hasValues = useMemo(() => Number(values.kcal) > 0, [values.kcal]);
@@ -96,10 +79,27 @@ export default function PhotoSheet({ open, onClose, t, app, initialMode = "label
       if (result.name) setName(String(result.name).slice(0, 80));
       setSource(result.mode === "label" ? t.scanLabelDetected : "");
       setStatus("result");
+      setPhoto(previous => discardImage(previous));
+      setReadOnce(true);
     } catch {
       setStatus("offline");
       setError(t.scanFailed);
     }
+  };
+
+  // Closing the sheet is the last chance to drop the picture.
+  const closeSheet = () => {
+    setPhoto(previous => discardImage(previous));
+    setReadOnce(false);
+    onClose?.();
+  };
+
+  const reset = () => {
+    setPhoto(previous => discardImage(previous));
+    setReadOnce(false);
+    setStatus("idle");
+    setValues(emptyNutrition);
+    setSource("");
   };
 
   const apply = () => {
@@ -115,15 +115,19 @@ export default function PhotoSheet({ open, onClose, t, app, initialMode = "label
       name: name.trim(),
       portionGrams: Number(portion) || 0,
       mode,
-      photo: photo?.data || null,
     });
-    onClose?.();
+    closeSheet();
   };
 
   const update = key => event => setValues(previous => ({ ...previous, [key]: event.target.value.replace(/[^0-9.,]/g, "") }));
 
   return (
-    <Sheet open={open} onClose={onClose} title={t.scanTitle} subtitle={t.scanSub}>
+    <Sheet
+      open={open}
+      onClose={closeSheet}
+      title={t.scanTitle}
+      subtitle={mode === "meal" && dayLabel ? `${t.scanSub} ${t.scanGoesTo} ${dayLabel}.` : t.scanSub}
+    >
       <div className="segmented" role="tablist" aria-label={t.scanTitle} style={{ marginBottom: 14 }}>
         {[
           { value: "meal", label: t.scanMeal, icon: "🍽️" },
@@ -145,10 +149,14 @@ export default function PhotoSheet({ open, onClose, t, app, initialMode = "label
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={onFile} />
       <input ref={galleryRef} type="file" accept="image/*" hidden onChange={onFile} />
 
-      {photo ? (
+      {!photo && readOnce ? (
+        <div className="scan-read-note" data-note="photo-discarded">
+          🗑️ {t.photoReadAndDiscarded}
+        </div>
+      ) : photo ? (
         <div className="photo-frame">
           <img src={photo.data} alt="" className="photo-preview" />
-          <button type="button" className="btn btn-sm btn-ghost photo-retake" onClick={() => cameraRef.current?.click()}>
+          <button type="button" className="btn btn-sm btn-ghost photo-retake" onClick={() => { reset(); cameraRef.current?.click(); }}>
             ↻ {t.scanRetake}
           </button>
         </div>

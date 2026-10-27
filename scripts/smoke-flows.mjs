@@ -25,6 +25,7 @@ const React = (await import("react")).default;
 const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
 const App = (await import("../src/App.jsx")).default;
+const { todayIndex } = await import("../src/lib/format.js");
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const root = createRoot(document.getElementById("root"));
@@ -510,6 +511,21 @@ console.log(`MUST INCLUDE: "vegan meat" → ${pinnedCard.querySelector(".idea-na
 // Take it back off so the rest of the flow starts from a clean composer.
 await click(document.querySelector(".sous-card .pin-chip button"), 200);
 
+// jsdom has no image decoder, so the photo path gets a stand-in: a bitmap of a
+// known size and a canvas that "encodes" instantly. The code under test —
+// downscale, read, delete — is the real one.
+globalThis.createImageBitmap = async () => ({ width: 1600, height: 1200, close() {} });
+Object.defineProperty(dom.window.HTMLCanvasElement.prototype, "getContext", { value: () => ({ drawImage() {} }), configurable: true });
+Object.defineProperty(dom.window.HTMLCanvasElement.prototype, "toDataURL", { value: () => "data:image/jpeg;base64,LQUJD", configurable: true });
+const pickPhoto = async input => {
+  const file = new dom.window.File(["fake-bytes"], "label.jpg", { type: "image/jpeg" });
+  Object.defineProperty(input, "files", { value: [file], configurable: true });
+  await act(async () => {
+    input.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    await sleep(220);
+  });
+};
+
 // 7d-ter. A product from its own packaging: paste the label, read it, cook
 // with its real numbers. This is the exact text of a Lithuanian label.
 const LABEL = `**Veganiški pjausniai kumpio stiliaus, 80 g**
@@ -531,6 +547,22 @@ Baltymai24.30 g
 Druska1.30 g`;
 await click(document.querySelector("[data-action='add-product']"), 400);
 assert(document.querySelector(".sheet-title")?.textContent.includes("Add a product"), "product sheet opened");
+// A label can be photographed instead of typed. The picture is a one-time
+// input: the sheet says so, and there is a typing path right underneath for
+// phones or households where the AI function is not set up.
+const photoButton = document.querySelector("[data-action='photo-label']");
+assert(photoButton && /photograph/i.test(photoButton.textContent), `the sheet offers a photo (${photoButton?.textContent.trim()})`);
+assert(/type \/ paste the label/i.test(document.querySelector(".sheet")?.textContent || ""), "typing the label stays available");
+// Photograph it instead: the picture is shown while it is being read, and gone
+// the moment the numbers are in hand — never stored anywhere.
+await pickPhoto(document.querySelector("[data-photo='camera']"));
+assert(document.querySelector(".photo-preview"), "the picture is previewed before it is read");
+assert(document.querySelector("[data-action='read-photo']"), "the read button appears once there is a picture");
+await click(document.querySelector("[data-action='read-photo']"), 400);
+// Demo mode has no AI key, so the sheet says what it needs and does not pretend.
+assert(/needs the AI function/i.test(text()), "without the AI function the sheet says so");
+assert(!document.querySelector(".photo-preview") && !document.querySelector("[data-action='read-photo']"), "the picture is deleted even when the read fails");
+console.log("LABEL PHOTO: preview → read → picture deleted, typing offered instead");
 await setInput(document.querySelector("[data-field='label']"), LABEL);
 await click(document.querySelector("[data-action='read-label']"), 300);
 const nameField = document.querySelector("[data-field='product-name']");
@@ -552,6 +584,13 @@ const productChip = [...document.querySelectorAll(".sous-card .pin-chip")].map(e
 assert(/pjausniai/i.test(productChip), `the product is pinned (${productChip})`);
 const storedProduct = state().products?.find(row => /pjausniai/i.test(row.nameEn));
 assert(storedProduct && storedProduct.kcal === 220 && storedProduct.protein === 24.3, "product saved with its real values");
+// Saved products get their own shelf, so the next cooking session starts with
+// a tap instead of retyping the label.
+const shelf = document.querySelector("[data-products='saved']");
+assert(shelf && /My products/i.test(shelf.parentElement?.textContent || ""), "saved products have a shelf");
+const shelfChip = [...(shelf?.querySelectorAll("[data-product]") || [])].find(el => /pjausniai/i.test(el.textContent));
+assert(shelfChip && shelfChip.dataset.product === storedProduct.key, "the new product is one tap from the sous-chef");
+assert(/✓/.test(shelfChip.textContent), "and it shows as picked, because saving already pinned it");
 await click(document.querySelector("[data-action='generate']"), 1200);
 const productCard = document.querySelector(".idea-card");
 const productIngredients = productCard.querySelector(".idea-ingredients")?.textContent || "";
@@ -563,12 +602,45 @@ assert(!/stew|curry|roast|skillet/i.test(shape), `it is not stewed (${shape})`);
 assert(productCard.querySelector(".pin-line.ok"), "the card confirms what went in");
 console.log(`OWN PRODUCT: label → ${productCard.querySelector(".idea-name")?.textContent} · ${productCard.querySelector(".opt-meta")?.textContent.replace(/\s+/g, " ").trim()}`);
 await click(document.querySelector(".sous-card .pin-chip button"), 300);
+assert(!document.querySelector(".sous-card .pin-chip"), "unpinning from the cards clears it everywhere");
+// The shelf chip is the other half of the same switch.
+await click(document.querySelector(`[data-product='${storedProduct.key}']`), 300);
+assert(/pjausniai/i.test([...document.querySelectorAll(".sous-card .pin-chip")].map(el => el.textContent).join(" ")), "a shelf tap pins the product again");
+await click(document.querySelector(`[data-product='${storedProduct.key}']`), 300);
+assert(!document.querySelector(".sous-card .pin-chip"), "a second tap lets it go");
+console.log("MY PRODUCTS: shelf chip pins and unpins the saved ham");
 
 await click(button("Review & save"), 500);
 assert(text().includes("Offline idea engine"), "generated draft opens in the editor for review");
 assert([...document.querySelectorAll(".sheet-title")].some(el => el.textContent.includes("New recipe")), "draft uses the new-recipe editor");
 await click(button("Cancel", [...document.querySelectorAll(".sheet-foot")].at(-1)), 300);
 console.log(`IDEAS: generated and rerolled "${firstIdea}" → "${secondIdea}"`);
+
+// 7e. The camera by the day menu: a plate the app has never seen should land
+// on the day being looked at, not vanish into the recipe book.
+await nav("Plan");
+await click(document.querySelector(".scan-btn"), 350);
+assert(/It will be added to/.test(text()), "the camera says which day it fills");
+assert(/Use these values|Take a photo/.test(text()), "the plate tab is open, not the label tab");
+await pickPhoto(document.querySelector(".sheet input[type='file']"));
+await click(button("Read it"), 600);
+assert(/needs the AI function|not set up|AI/i.test(text()), "without the AI function it says so and offers the numbers");
+await setInput(document.querySelector(".sheet .input[inputmode='numeric']"), "520");
+// Calories alone are not a meal the app will store; the macro is what the plan
+// is fitted against, so the sheet asks for it too.
+await setInput(document.querySelector(".sheet .input[inputmode='decimal']"), "30");
+const mealName = "Photo plate test";
+const nameBox = [...document.querySelectorAll(".sheet .input")].find(input => input.placeholder === "Photo meal");
+await setInput(nameBox, mealName);
+await click(button("Use these values"), 400);
+assert(text().includes("New recipe"), "the plate opens as a draft you can correct");
+await click(button("Save", document.querySelector(".sheet-foot")), 1400);
+const photoRecipe = (state().recipes || []).find(row => (row.name?.en || "") === mealName);
+assert(photoRecipe, "the photographed meal is saved to the recipe book");
+const placed = (state().assignments || []).find(row => row.recipeId === photoRecipe.id);
+assert(placed, "and it is on the plan, not only in the book");
+assert(placed.day === todayIndex(), `it landed on the day on screen (day ${placed.day})`);
+console.log(`PLAN CAMERA: photo → draft → saved into day ${placed.day} (${placed.slot})`);
 
 // 8. Week reset keeps pantry, clears plan.
 await nav("Pantry");
