@@ -383,8 +383,11 @@ The pizza shape is new: a tortilla base, tomato sauce, your product and
 vegetables, 12 minutes at 220 °C. It is offered at lunch and dinner.
 
 Matching by hand: a product saved as “Vegan ham slices” is found by typing
-`vegan ham`, `my vegan ham` or the full name in the wish box. It also appears in
-the suggestion list of the Must include box.
+`vegan ham`, `my vegan ham` or the full name in the wish box. It is also on the
+**🏷️ My products** shelf under Must include, with its kcal and protein: tap it
+there and it is pinned for the next idea, tap again and it lets go. That shelf
+is where “the ham and the bread I actually buy” live — no typing, and no doubt
+about which product the sous-chef used.
 
 Nothing is picked at random: a saved product is only used when you ask for it.
 
