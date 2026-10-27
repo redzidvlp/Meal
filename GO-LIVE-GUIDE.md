@@ -295,11 +295,30 @@ This is the one that makes the sous-chef cook with **your** vegan ham, not an
 average one.
 
 1. **⚙️ Sous-chef → ⭐ Must include → ＋ My product.**
-2. Paste the nutrition table from the package (or the shop page) into
-   **Paste the label** and press **🔍 Read the label**. It picks out the product
-   name, the pack size and the four numbers a meal calculation needs.
+2. Either **📷 Photograph the label** — frame the nutrition table, the AI reads
+   it and fills the four numbers — or paste the table into **Paste the label**
+   and press **🔍 Read the label**. Both pick out the product name, the pack
+   size and the numbers a meal calculation needs.
 3. Check them, press **Save product**. It is pinned to the current idea
-   straight away, and it stays in **My products** for every later meal.
+   straight away, and it stays on the **🏷️ My products** shelf for every later
+   meal.
+
+The photo is a one-time input:
+
+* The picture is downscaled on the phone, sent **once** to your own AI function,
+  and the numbers are copied into the form.
+* Then the picture is **deleted**. It is not saved on the phone, not uploaded to
+  the database, not attached to the product and not attached to any recipe.
+  The sheet says so when it is done.
+* If the AI function is not deployed (Phase 7 skipped), the camera still works
+  as a reminder of what to type: the sheet shows the type-in box instead.
+
+**Where your products live.** In your own database, in a table called
+`products`, one row per household member who added it. Nothing is sent to the
+AI when you save one. They never appear in the week at random — a product only
+enters a meal when you pin it. The shelf under **Must include** lists all of
+them, with kcal and protein, so the ham and the bread you use are exactly what
+gets cooked.
 
 Lithuanian and English labels both work, kJ is converted, and a label printed
 “per portion” or “per slice” is scaled to 100 g automatically.
@@ -320,6 +339,26 @@ remind you what one pack is.
 
 If the printed energy disagrees with what the macros add up to by more than a
 quarter, the app trusts the macros — that keeps every meal total self-consistent.
+
+### The camera next to the day menu — what it is for
+
+It photographs a **plate**, not a label. Use it when you ate something the app
+has never heard of — a restaurant dish, a friend's soup, a bakery thing — and
+you want the week to know roughly what it was.
+
+1. **Plan → 📷.** The sheet opens on 🍽️ **Meal** (the label reader is the
+   second tab, the one the product sheet uses).
+2. Take the photo. The AI estimates kcal, protein, carbs and fat of what it can
+   see — no barcode, no packaging, so the numbers are an estimate, and you get
+   to correct every one of them.
+3. Press **✓**, check the name and the portion, **Save**. The meal lands on the
+   day you were looking at, and it is saved to your recipe book too, so the same
+   dish is one tap away next time.
+4. The picture is deleted as soon as the numbers arrive, exactly like a label.
+
+The camera guesses the meal slot from the clock when it opens (before 11:00
+breakfast, before 15:00 lunch, before 18:00 snack, otherwise dinner). If that
+is wrong, change the slot in the draft before saving.
 
 ### How you use it — the one question that keeps ideas sensible
 
@@ -445,7 +484,9 @@ your curd and asks for the lactose-free version of it rather than swapping it ou
      dish when you asked for sweet). Reroll; the offline engine is already giving you a
      correct recipe in the meantime.
 3. Press **🎲 Reroll** — a different dish must appear.
-4. Plan tab → **📷** → photograph a nutrition label → it fills calories and macros.
+4. Plan tab → **📷** (next to the day menu) → photograph the plate → the AI
+   estimates calories and protein for what is in the photo → press **✓** →
+   check the draft → **Save**. The meal appears on that day, with its numbers.
 
 ---
 

@@ -593,6 +593,12 @@ img { max-width: 100%; }
 .scan-offline p { margin: 5px 0 0; }
 .scan-offline-title { font-weight: 800; font-size: 12px; }
 .scan-privacy { text-align: center; margin: 12px 0 0; }
+.scan-read-note {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 11px 13px; border-radius: 16px;
+  background: var(--sage-soft); border: 1.5px solid var(--sage);
+  font-size: 11.5px; line-height: 1.5; color: var(--forest-deep);
+}
 
 /* ── Menu editor ───────────────────────────────────────────────────────── */
 .menu-card { box-shadow: var(--shadow); }

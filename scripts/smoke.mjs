@@ -70,6 +70,25 @@ for (const [label, check] of [
   console.log(`TAB ${label}: ok`);
 }
 
+// The camera next to the day menu photographs the plate. It has to say which
+// day the meal is going into: otherwise a photo looks like it did nothing,
+// because the saved recipe never appears on the plan.
+const scanButton = container.querySelector(".scan-btn");
+if (!scanButton) throw new Error("Plan screen has no camera button");
+await act(async () => {
+  scanButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  await new Promise(resolve => setTimeout(resolve, 150));
+});
+const scanText = text();
+if (!scanText.includes("It will be added to")) throw new Error(`The camera does not say where the meal goes: ${scanText.slice(0, 240)}`);
+if (!/Mon|Tue|Wed|Thu|Fri|Sat|Sun/.test(scanText)) throw new Error("The camera does not name the day");
+console.log("PLAN CAMERA: says which day it fills");
+const scanClose = [...document.querySelectorAll("button")].find(button => button.getAttribute("aria-label") === "Close");
+await act(async () => {
+  scanClose.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  await new Promise(resolve => setTimeout(resolve, 80));
+});
+
 // Open the first meal recipe and close it.
 const recipeButton = [...container.querySelectorAll("button")].find(button => button.textContent.trim() === "Recipe");
 if (recipeButton) {

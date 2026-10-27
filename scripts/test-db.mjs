@@ -199,6 +199,51 @@ await scenario("old project with its own invite code and display names", async (
   await db.close();
 });
 
+
+// The exact situation of a database upgraded one release ago: everything is
+// current except that `products` has no `uses` column yet, and the household
+// already saved a product. Running the newer paste must add the column and
+// keep the row — this is the "is it safe to press Run again?" case.
+await scenario("project upgraded last week: the paste only adds what is missing", async () => {
+  const db = await freshDatabase();
+  await seedOldApp(db);
+  await db.exec(readSql("upgrade-existing-project.sql"));
+  // Roll the schema back to the previous release.
+  await db.exec(`
+    alter table public.products drop column if exists uses;
+    insert into public.products (household_id, key, name_en, name_lt, kcal, protein, carbs, fat, unit, portion_grams)
+    values ('${HOUSEHOLD}', 'p-veganiski-pjausniai', 'Veganiški pjausniai kumpio stiliaus', 'Veganiški pjausniai kumpio stiliaus', 220, 24.3, 8.4, 9.5, 'g', 80);
+  `);
+  const before = await one(db, `select count(*)::int as n from public.products`);
+  assert.equal(Number(before.n), 1, "the saved product is there before the upgrade");
+
+  await db.exec(readSql("upgrade-existing-project.sql"));
+
+  const columns = (await db.query(`
+    select column_name from information_schema.columns
+    where table_schema = 'public' and table_name = 'products' order by column_name
+  `)).rows.map(row => row.column_name);
+  assert.ok(columns.includes("uses"), `the new column was added (${columns.join(", ")})`);
+
+  const product = await one(db, `select name_en, kcal, protein, uses from public.products where key = 'p-veganiski-pjausniai'`);
+  assert.equal(product.name_en, "Veganiški pjausniai kumpio stiliaus", "the saved product survived");
+  assert.equal(Number(product.kcal), 220, "its calories survived");
+  assert.equal(Number(product.protein), 24.3, "its protein survived");
+  assert.deepEqual(product.uses, [], "existing rows get an empty uses list, not null");
+
+  // The week, the pantry and the people are untouched by a second paste.
+  assert.equal(await count(db, "meal_assignments"), 13, "the week is unchanged");
+  assert.equal(await count(db, "profiles"), 2, "both logins are unchanged");
+  const doctor = await doctorRows(db);
+  assert.ok(doctor.every(row => row.status === "ok"), "doctor reports ok after the second paste");
+
+  // And it is still idempotent a third time.
+  await db.exec(readSql("upgrade-existing-project.sql"));
+  assert.equal(await count(db, "meal_assignments"), 13);
+  assert.equal(Number((await one(db, `select count(*)::int as n from public.products`)).n), 1);
+  await db.close();
+});
+
 await scenario("empty project: one-paste upgrade works and reports ok", async () => {
   const db = await freshDatabase();
   await db.exec(readSql("upgrade-existing-project.sql"));
