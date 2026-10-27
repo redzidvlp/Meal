@@ -419,13 +419,31 @@ straight away, and it stays in <strong>My products</strong> for every later meal
 remind you what one pack is.</p>
 <p>If the printed energy disagrees with what the macros add up to by more than a
 quarter, the app trusts the macros — that keeps every meal total self-consistent.</p>
+<h3>How you use it — the one question that keeps ideas sensible</h3>
+<p>A pack of sliced ham is not the same ingredient as a block of tofu. Under
+<strong>🍽️ How you use it</strong> in the same sheet, tap the dishes this product belongs in:</p>
+<p>🥪 Sandwich · 🌯 Wrap · 🍕 Pizza · 🥗 Salad · 🍚 Bowl · 🍝 Pasta ·
+🍲 Stew / soup · 🍳 Pan-fried · 🔥 Oven · 🥞 Breakfast · 🧊 Cold · 🍰 Sweet</p>
+<p>Those answers decide the <strong>shape</strong> of every idea built with it:</p>
+<ul>
+<li>pick sandwich, wrap, pizza, salad → you get a toasted sandwich, a wrap, a
+flatbread pizza or a salad — at lunch <em>and</em> at dinner;</li>
+<li>it will never be dropped into a stew, curry, roast or pan-fry, even though
+those are perfectly good shapes for tofu;</li>
+<li>if the meal type you chose has no shape that fits (a slice at breakfast, with
+only breakfast shapes available), the card says <em>“No typical way to use this
+ingredient in this meal”</em> instead of pretending;</li>
+<li>leave it empty and the app behaves as before — any shape is allowed.</li>
+</ul>
+<p>The pizza shape is new: a tortilla base, tomato sauce, your product and
+vegetables, 12 minutes at 220 °C. It is offered at lunch and dinner.</p>
 <p>Matching by hand: a product saved as “Vegan ham slices” is found by typing
 <code>vegan ham</code>, <code>my vegan ham</code> or the full name in the wish box. It also appears in
 the suggestion list of the Must include box.</p>
 <p>Nothing is picked at random: a saved product is only used when you ask for it.</p>
 <blockquote>
-<p><strong>First time only:</strong> this adds one table, so the upgrade SQL has to run once
-more. Supabase → SQL editor → paste
+<p><strong>First time only:</strong> this adds one table and one column, so the upgrade SQL
+has to run once more. Supabase → SQL editor → paste
 <code>https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/upgrade-existing-project.sql</code>
 → Run. It is idempotent, keeps every login and every meal, and ends with the
 <code>doctor.sql</code> report where <code>products</code> must say <code>ok</code>. Then reload the app.
@@ -606,6 +624,11 @@ SQL by hand — and it only does something when <code>main</code> contains a <co
 <td><strong>“This project has no products table yet”</strong></td>
 <td>the newer upgrade SQL has not been run</td>
 <td>paste <code>upgrade-existing-project.sql</code> again (Phase 2), then reload</td>
+</tr>
+<tr>
+<td>Can’t scroll a recipe to the bottom, or the plan moves behind it</td>
+<td>fixed in this release — reopen the app so the new build is used</td>
+<td>close the app fully and reopen; if it persists, the phone is on an older build</td>
 </tr>
 <tr>
 <td>Yellow <strong>Local demo</strong> banner after going live</td>

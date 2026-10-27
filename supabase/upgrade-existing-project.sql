@@ -234,12 +234,19 @@ create table if not exists public.products (
   fat numeric(5, 1) not null default 0 check (fat between 0 and 100),
   unit text not null default 'g' check (unit in ('g', 'ml', 'vnt')),
   portion_grams numeric(6, 1) check (portion_grams is null or portion_grams between 0 and 2000),
+  -- Which dish shapes the product belongs in: sandwich, wrap, pizza, salad,
+  -- bowl, pasta, soup, pan, bake, breakfast, cold, sweet. A sliced product
+  -- must never be stewed, so the generator reads this before choosing a shape.
+  uses text[] not null default '{}',
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   unique (household_id, key)
 );
 
 create index if not exists products_household_idx on public.products (household_id);
+
+-- Projects upgraded before `uses` existed get the column added in place.
+alter table public.products add column if not exists uses text[] not null default '{}';
 
 -- Sections a household removed from a given day (e.g. no snack on Sunday).
 create table if not exists public.day_sections (
@@ -2483,7 +2490,7 @@ with required(tbl, cols) as (
     ('menus',            array['household_id', 'name_en', 'items']),
     ('day_sections',     array['household_id', 'day_index', 'slot']),
     ('labels',           array['household_id', 'key', 'label']),
-    ('products',         array['household_id', 'key', 'name_en', 'kcal', 'protein', 'carbs', 'fat'])
+    ('products',         array['household_id', 'key', 'name_en', 'kcal', 'protein', 'carbs', 'fat', 'uses'])
 ),
 existing as (
   select table_name

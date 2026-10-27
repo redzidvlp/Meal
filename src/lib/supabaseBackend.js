@@ -67,6 +67,7 @@ const mapProduct = row => row && ({
   fat: Number(row.fat) || 0,
   unit: row.unit || "g",
   portionGrams: Number(row.portion_grams) || 0,
+  uses: Array.isArray(row.uses) ? row.uses : [],
 });
 
 const mapPantry = row => ({
@@ -543,7 +544,7 @@ export function createSupabaseBackend(client) {
     async saveProduct(input) {
       const { ok, errors, product } = sanitizeProduct(input);
       if (!ok) throw Object.assign(new Error("Invalid product"), { errors });
-      const { data, error } = await client.from("products").upsert({
+      const row = {
         household_id: ctx.householdId,
         key: product.key,
         name_en: product.nameEn,
@@ -555,7 +556,15 @@ export function createSupabaseBackend(client) {
         unit: product.unit,
         portion_grams: product.portionGrams || null,
         created_by: ctx.userId,
-      }, { onConflict: "household_id,key" }).select("*").single();
+      };
+      // `uses` arrived with a later upgrade. Saving without it keeps an older
+      // project usable instead of failing the whole product.
+      const upsert = body => client.from("products")
+        .upsert(body, { onConflict: "household_id,key" }).select("*").single();
+      let { data, error } = await upsert({ ...row, uses: product.uses || [] });
+      if (error && /uses/i.test(String(error.message || ""))) {
+        ({ data, error } = await upsert(row));
+      }
       raise(error);
       return mapProduct(data);
     },

@@ -142,6 +142,32 @@ export function parseNutritionLabel(text) {
   return result;
 }
 
+/**
+ * How a product gets used in a kitchen. A sliced product belongs in a sandwich
+ * or on a pizza; a block of tofu belongs in a pan. The generator asks the
+ * question once, when the product is saved, and never stews a slice.
+ */
+export const PRODUCT_USES = [
+  { key: "sandwich", icon: "🥪", en: "Sandwich", lt: "Sumuštinis" },
+  { key: "wrap", icon: "🌯", en: "Wrap", lt: "Tortilija" },
+  { key: "pizza", icon: "🍕", en: "Pizza", lt: "Pica" },
+  { key: "salad", icon: "🥗", en: "Salad", lt: "Salotos" },
+  { key: "bowl", icon: "🍚", en: "Bowl", lt: "Dubenėlis" },
+  { key: "pasta", icon: "🍝", en: "Pasta", lt: "Makaronai" },
+  { key: "soup", icon: "🍲", en: "Stew / soup", lt: "Troškinys / sriuba" },
+  { key: "pan", icon: "🍳", en: "Pan-fried", lt: "Kepta keptuvėje" },
+  { key: "bake", icon: "🔥", en: "Oven", lt: "Orkaitė" },
+  { key: "breakfast", icon: "🥞", en: "Breakfast", lt: "Pusryčiai" },
+  { key: "cold", icon: "🧊", en: "Cold, no cooking", lt: "Šaltai, be virimo" },
+  { key: "sweet", icon: "🍰", en: "Sweet", lt: "Saldumynai" },
+];
+
+const USE_KEYS = new Set(PRODUCT_USES.map(use => use.key));
+export const useLabel = (key, lang = "en") => {
+  const found = PRODUCT_USES.find(use => use.key === key);
+  return found ? (lang === "lt" ? found.lt : found.en) : key;
+};
+
 const round1 = value => Math.round((Number(value) || 0) * 10) / 10;
 const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || 0));
 
@@ -196,6 +222,7 @@ export function productFact(product) {
     glutenFree: false,
     // A household product has no FODMAP certification; leave the filter honest.
     fodmap: false,
+    uses: Array.isArray(product.uses) ? product.uses.filter(use => USE_KEYS.has(use)) : [],
   };
   fact.group = productGroup(fact);
   return fact;
@@ -226,6 +253,8 @@ export function sanitizeProduct(input) {
       fat,
       unit,
       portionGrams: clamp(input?.portionGrams, 0, 2000) || 0,
+      uses: [...new Set((Array.isArray(input?.uses) ? input.uses : [])
+        .filter(use => USE_KEYS.has(use)))].slice(0, 8),
     },
   };
 }

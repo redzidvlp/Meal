@@ -52,11 +52,40 @@ function ltWith(word) {
 
 const labelLtIn = key => factFor(key)?.ltIn || ltWith(label(key, "lt"));
 
+// A sliced product is eaten between bread or on a flatbread, at lunch and at
+// dinner alike, so both shapes live in one place and are shared by the two.
+const PIZZA_TEMPLATE = {
+  id: "pizza",
+  emoji: "🍕",
+  uses: ["pizza", "bake", "sandwich"],
+  en: ({ protein, veg }) => `${label(protein)} & ${label(veg).toLowerCase()} flatbread pizza`,
+  lt: ({ protein, veg }) => `Plokščiaduonė pica su ${labelLtIn(protein)} ir ${labelLtIn(veg)}`,
+  methodEn: parts => `Spread tomato sauce over the ${parts.carb}, scatter the ${parts.protein} and ${parts.veg} on top with a little olive oil, and bake at 220°C for 12 minutes until the edges crisp.`,
+  methodLt: parts => `Užtepkite pomidorų padažą ant ${parts.carbLt}, sudėkite ${parts.proteinLt} ir ${parts.vegLt}, apšlakstykite aliejumi ir kepkite 220°C apie 12 min., kol kraštai apskrus.`,
+  pickSet: random => ({ carb: "gf-tortilla", protein: pick(random, ["mozzarella", "halloumi-cheese", "canned-chickpeas", "natural-tofu"]), veg: pick(random, FACT_GROUPS.veg), fat: "olive-oil" }),
+  amounts: { carb: 70, protein: 110, veg: 120, fat: 8 },
+  prepMinutes: 18,
+};
+
+const SANDWICH_TEMPLATE = {
+    id: "sandwich",
+    emoji: "🥪",
+    uses: ["sandwich", "wrap"],
+    en: ({ protein, veg }) => `${label(protein)} & ${label(veg).toLowerCase()} toasted sandwich`,
+    lt: ({ protein, veg }) => `Skrudintas sumuštinis su ${labelLtIn(protein)} ir ${labelLtIn(veg)}`,
+    methodEn: parts => `Layer the ${parts.protein} and ${parts.veg} between the ${parts.carb}, brush the outside with olive oil and press in a hot pan for two minutes a side until crisp.`,
+    methodLt: parts => `Sudėkite ${parts.proteinLt} ir ${parts.vegLt} ant ${parts.carbLt}, iš išorės patepkite aliejumi ir kepkite įkaitintoje keptuvėje po 2 min. iš abiejų pusių.`,
+    pickSet: random => ({ carb: "gf-bread", protein: pick(random, ["halloumi-cheese", "mozzarella", "eggs", "natural-tofu"]), veg: pick(random, FACT_GROUPS.veg), fat: "olive-oil" }),
+    amounts: { carb: 70, protein: 100, veg: 80, fat: 6 },
+    prepMinutes: 12,
+  };
+
 const TEMPLATES = {
   breakfast: [
     {
       id: "oats",
       emoji: "🥣",
+      uses: ["breakfast", "bowl"],
       en: ({ carb, fruit, fat }) => `${label(fruit)} overnight ${label(carb).toLowerCase()} with ${label(fat).toLowerCase()}`,
       lt: ({ carb, fruit, fat }) => `Naktį brinkintos ${label(carb, "lt").toLowerCase()} su ${labelLtIn(fruit)} ir ${labelLtIn(fat)}`,
       methodEn: parts => `Soak the ${parts.carb} in plant milk overnight. In the morning stir through the ${parts.fruit}, top with ${parts.fat} and a pinch of cinnamon.`,
@@ -68,6 +97,7 @@ const TEMPLATES = {
     {
       id: "smoothie",
       emoji: "🥤",
+      uses: ["breakfast"],
       en: ({ fruit, protein, fat }) => `${label(fruit)} & ${label(protein).toLowerCase()} breakfast smoothie`,
       lt: ({ fruit, protein, fat }) => `${label(fruit, "lt")} ir ${label(protein, "lt").toLowerCase()} pusryčių kokteilis`,
       methodEn: parts => `Blend the ${parts.fruit}, ${parts.protein} and a splash of plant milk until smooth, then top with ${parts.fat}.`,
@@ -79,6 +109,7 @@ const TEMPLATES = {
     {
       id: "eggs-toast",
       emoji: "🍳",
+      uses: ["breakfast", "sandwich", "pan"],
       en: ({ veg, fat }) => `Soft eggs on toast with ${label(veg).toLowerCase()} & ${label(fat).toLowerCase()}`,
       lt: ({ veg, fat }) => `Kiaušiniai ant skrudintos duonos su ${labelLtIn(veg)} ir ${labelLtIn(fat)}`,
       methodEn: parts => `Toast the ${parts.carb}, mash the ${parts.fat} with lemon juice and spread it on top. Fry or boil the eggs and serve with ${parts.veg}.`,
@@ -89,9 +120,12 @@ const TEMPLATES = {
     },
   ],
   lunch: [
+    PIZZA_TEMPLATE,
+    SANDWICH_TEMPLATE,
     {
       id: "bowl",
       emoji: "🥗",
+      uses: ["bowl", "salad"],
       en: ({ protein, carb, veg }) => `${label(protein)} & ${label(veg).toLowerCase()} bowl with ${label(carb).toLowerCase()}`,
       lt: ({ protein, carb, veg }) => `${label(protein, "lt")} ir ${label(veg, "lt").toLowerCase()} dubenėlis su ${labelLtIn(carb)}`,
       methodEn: parts => `Cook the ${parts.carb} in salted water. Pan-fry the ${parts.protein} with olive oil and paprika. Arrange with the ${parts.veg}, dress with lemon juice and a spoon of tahini.`,
@@ -103,6 +137,7 @@ const TEMPLATES = {
     {
       id: "salad",
       emoji: "🥙",
+      uses: ["salad", "bowl"],
       en: ({ protein, veg, fat }) => `${label(protein)} & ${label(veg).toLowerCase()} lunch salad`,
       lt: ({ protein, veg, fat }) => `${label(protein, "lt")} ir ${label(veg, "lt").toLowerCase()} pietų salotos`,
       methodEn: parts => `Toss the ${parts.veg} with the ${parts.protein}, olive oil and lemon. Add a handful of greens and the ${parts.fat} to finish.`,
@@ -114,6 +149,7 @@ const TEMPLATES = {
     {
       id: "wrap",
       emoji: "🌯",
+      uses: ["wrap", "sandwich"],
       en: ({ protein, veg }) => `${label(protein)} & ${label(veg).toLowerCase()} wrap`,
       lt: ({ protein, veg }) => `Tortilija su ${labelLtIn(protein)} ir ${labelLtIn(veg)}`,
       methodEn: parts => `Spread the ${parts.fat} on the tortilla, fill with ${parts.protein} and ${parts.veg}, roll tightly and toast for a minute per side.`,
@@ -125,6 +161,7 @@ const TEMPLATES = {
     {
       id: "pasta",
       emoji: "🍝",
+      uses: ["pasta"],
       en: ({ protein, veg }) => `${label(protein)} & ${label(veg).toLowerCase()} pasta`,
       lt: ({ protein, veg }) => `Makaronai su ${labelLtIn(protein)} ir ${labelLtIn(veg)}`,
       methodEn: parts => `Boil the ${parts.carb}. Sauté the ${parts.protein} and ${parts.veg} with olive oil, add tomato paste and a splash of pasta water, then toss everything together.`,
@@ -135,9 +172,12 @@ const TEMPLATES = {
     },
   ],
   dinner: [
+    PIZZA_TEMPLATE,
+    SANDWICH_TEMPLATE,
     {
       id: "roast",
       emoji: "🍲",
+      uses: ["bake", "pan"],
       en: ({ protein, veg }) => `Roasted ${label(protein).toLowerCase()} with ${label(veg).toLowerCase()}`,
       lt: ({ protein, veg }) => `Keptas ${label(protein, "lt").toLowerCase()} su ${labelLtIn(veg)}`,
       methodEn: parts => `Toss the ${parts.veg} and ${parts.protein} with olive oil, oregano, salt and pepper. Roast at 190°C for 25 minutes and finish with lemon juice.`,
@@ -149,6 +189,7 @@ const TEMPLATES = {
     {
       id: "curry",
       emoji: "🍛",
+      uses: ["soup", "pan"],
       en: ({ protein, veg }) => `${label(protein)} & ${label(veg).toLowerCase()} coconut curry`,
       lt: ({ protein, veg }) => `Kokosų kario su ${labelLtIn(protein)} ir ${labelLtIn(veg)}`,
       methodEn: parts => `Fry the ${parts.protein} with curry powder, add the ${parts.veg} and coconut milk, then simmer for 15 minutes. Serve over ${parts.carb}.`,
@@ -160,6 +201,7 @@ const TEMPLATES = {
     {
       id: "skillet",
       emoji: "🍳",
+      uses: ["pan"],
       en: ({ protein, veg }) => `15-minute ${label(protein).toLowerCase()} skillet with ${label(veg).toLowerCase()}`,
       lt: ({ protein, veg }) => `15 minučių ${label(protein, "lt").toLowerCase()} keptuvėje su ${labelLtIn(veg)}`,
       methodEn: parts => `Heat the oil, add the ${parts.protein} and ${parts.veg} and cook for 10 minutes. Season, then fold through the ${parts.carb} and serve.`,
@@ -171,6 +213,7 @@ const TEMPLATES = {
     {
       id: "stew",
       emoji: "🥘",
+      uses: ["soup"],
       en: ({ protein, veg }) => `Slow-cooked ${label(protein).toLowerCase()} stew with ${label(veg).toLowerCase()}`,
       lt: ({ protein, veg }) => `Troškinys su ${labelLtIn(protein)} ir ${labelLtIn(veg)}`,
       methodEn: parts => `Soften the ${parts.veg} in olive oil, add the ${parts.protein}, tomato sauce and oregano. Simmer 20 minutes and serve with the ${parts.carb}.`,
@@ -184,6 +227,7 @@ const TEMPLATES = {
     {
       id: "yogurt",
       emoji: "🫐",
+      uses: ["cold", "breakfast"],
       en: ({ fruit, fat }) => `Lactose-free yogurt with ${label(fruit).toLowerCase()} & ${label(fat).toLowerCase()}`,
       lt: ({ fruit, fat }) => `Jogurtas be laktozės su ${labelLtIn(fruit)} ir ${labelLtIn(fat)}`,
       methodEn: parts => `Spoon the yogurt into a glass, layer with ${parts.fruit} and scatter the ${parts.fat} on top.`,
@@ -195,6 +239,7 @@ const TEMPLATES = {
     {
       id: "toast",
       emoji: "🍞",
+      uses: ["sandwich", "breakfast", "cold"],
       en: ({ veg, protein }) => `${label(protein)} toast with ${label(veg).toLowerCase()}`,
       lt: ({ veg, protein }) => `Duona su ${labelLtIn(protein)} ir ${labelLtIn(veg)}`,
       methodEn: parts => `Toast the bread, spread the ${parts.protein} on top and add sliced ${parts.veg} with a crack of pepper.`,
@@ -206,6 +251,7 @@ const TEMPLATES = {
     {
       id: "crunch",
       emoji: "🥕",
+      uses: ["cold"],
       en: ({ veg, fat }) => `Crunchy ${label(veg).toLowerCase()} with ${label(fat).toLowerCase()}`,
       lt: ({ veg, fat }) => `Traškūs ${label(veg, "lt").toLowerCase()} su ${labelLtIn(fat)}`,
       methodEn: parts => `Cut the ${parts.veg} into sticks and serve with the ${parts.fat} for dipping.`,
@@ -226,6 +272,7 @@ const SWEET_TEMPLATES = [
   {
     id: "curd-bake",
     emoji: "🍮",
+    uses: ["sweet", "bake"],
     sweet: true,
     en: ({ protein, fruit }) => `Baked ${label(protein).toLowerCase()} pudding with ${label(fruit).toLowerCase()}`,
     lt: ({ protein, fruit }) => `Keptas pudingas su ${labelLtIn(protein)} ir ${labelLtIn(fruit)}`,
@@ -238,6 +285,7 @@ const SWEET_TEMPLATES = [
   {
     id: "curd-mousse",
     emoji: "🍧",
+    uses: ["sweet", "cold"],
     sweet: true,
     en: ({ protein, fruit }) => `Whipped ${label(protein).toLowerCase()} mousse with ${label(fruit).toLowerCase()}`,
     lt: ({ protein, fruit }) => `Saldus kremas su ${labelLtIn(protein)} ir ${labelLtIn(fruit)}`,
@@ -250,6 +298,7 @@ const SWEET_TEMPLATES = [
   {
     id: "curd-pancakes",
     emoji: "🥞",
+    uses: ["sweet", "pan", "breakfast"],
     sweet: true,
     en: ({ protein, fruit }) => `${label(protein)} pancakes with ${label(fruit).toLowerCase()}`,
     lt: ({ protein, fruit }) => `Blyneliai su ${labelLtIn(protein)} ir ${labelLtIn(fruit)}`,
@@ -262,6 +311,7 @@ const SWEET_TEMPLATES = [
   {
     id: "curd-glass",
     emoji: "🍨",
+    uses: ["sweet", "cold"],
     sweet: true,
     en: ({ protein, fruit }) => `Layered ${label(protein).toLowerCase()} & ${label(fruit).toLowerCase()} glass`,
     lt: ({ protein, fruit }) => `Sluoksniuotas desertas su ${labelLtIn(protein)} ir ${labelLtIn(fruit)}`,
@@ -274,6 +324,7 @@ const SWEET_TEMPLATES = [
   {
     id: "curd-toast",
     emoji: "🍞",
+    uses: ["sweet", "breakfast", "sandwich"],
     sweet: true,
     en: ({ protein, fruit }) => `Sweet ${label(protein).toLowerCase()} toast with ${label(fruit).toLowerCase()}`,
     lt: ({ protein, fruit }) => `Saldi duona su ${labelLtIn(protein)} ir ${labelLtIn(fruit)}`,
@@ -286,6 +337,7 @@ const SWEET_TEMPLATES = [
   {
     id: "sweet-porridge",
     emoji: "🥣",
+    uses: ["sweet", "breakfast", "bowl"],
     sweet: true,
     en: ({ carb, protein, fruit }) => `Creamy ${label(carb).toLowerCase()} with ${label(protein).toLowerCase()} & ${label(fruit).toLowerCase()}`,
     lt: ({ carb, protein, fruit }) => `Kreminės ${label(carb, "lt").toLowerCase()} su ${labelLtIn(protein)} ir ${labelLtIn(fruit)}`,
@@ -360,6 +412,19 @@ export function generateRecipeDraft({
     ...(Array.isArray(mustInclude) ? mustInclude : []),
     ...((wish && wish.includes) || []),
   ])].filter(key => factFor(key));
+
+  // A product that is essentially sliced — ham, cheese, a spread — belongs in a
+  // sandwich or on a pizza, not in a stew. Each template says which shapes it
+  // can host, so the pin narrows the list instead of being dropped into the
+  // wrong dish. If the slot has no such shape (no sandwich for a breakfast
+  // ham), the full list is used and the card says why.
+  const pinnedUses = [...new Set(pinned.flatMap(key => factFor(key)?.uses || []))];
+  let usesIgnored = false;
+  if (pinnedUses.length) {
+    const fitting = templates.filter(template => (template.uses || []).some(use => pinnedUses.includes(use)));
+    if (fitting.length) templates = fitting;
+    else usesIgnored = true;
+  }
 
   let chosen = null;
   // A dense pin can make the calorie window unreachable: 150 g of vegan meat
@@ -527,6 +592,7 @@ export function generateRecipeDraft({
         template: template.id,
         requested: pinned.map(key => factFor(key).en),
         relaxed: relaxed ? true : undefined,
+        usesIgnored: usesIgnored || undefined,
       };
       break attempts;
     }

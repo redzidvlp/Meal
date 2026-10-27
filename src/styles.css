@@ -46,7 +46,10 @@ html, body, #root { height: 100%; }
 /* Nothing may be wider than the phone: no sideways panning. */
 html, body { max-width: 100%; overflow-x: hidden; overscroll-behavior-x: none; }
 /* While a sheet is open nothing behind it may scroll, bounce or be dragged. */
-body.is-locked { overflow: hidden; overscroll-behavior: none; }
+body.is-locked {
+  position: fixed; left: 0; right: 0; width: 100%;
+  overflow: hidden; overscroll-behavior: none;
+}
 body { width: 100%; touch-action: manipulation; }
 
 body {
@@ -405,6 +408,10 @@ img { max-width: 100%; }
   position: sticky; top: 0; background: var(--surface); z-index: 2;
 }
 .sheet-body, .modal-body {
+  /* Without min-height:0 a flex child refuses to shrink below its content, so
+     a long recipe was clipped by the sheet instead of scrolling. */
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
   overflow-y: auto;
   /* `overflow-y: auto` alone turns the other axis into `auto` as well, which is
      what let a recipe sheet be dragged sideways. */

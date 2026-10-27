@@ -321,14 +321,36 @@ remind you what one pack is.
 If the printed energy disagrees with what the macros add up to by more than a
 quarter, the app trusts the macros — that keeps every meal total self-consistent.
 
+### How you use it — the one question that keeps ideas sensible
+
+A pack of sliced ham is not the same ingredient as a block of tofu. Under
+**🍽️ How you use it** in the same sheet, tap the dishes this product belongs in:
+
+🥪 Sandwich · 🌯 Wrap · 🍕 Pizza · 🥗 Salad · 🍚 Bowl · 🍝 Pasta ·
+🍲 Stew / soup · 🍳 Pan-fried · 🔥 Oven · 🥞 Breakfast · 🧊 Cold · 🍰 Sweet
+
+Those answers decide the **shape** of every idea built with it:
+
+- pick sandwich, wrap, pizza, salad → you get a toasted sandwich, a wrap, a
+  flatbread pizza or a salad — at lunch *and* at dinner;
+- it will never be dropped into a stew, curry, roast or pan-fry, even though
+  those are perfectly good shapes for tofu;
+- if the meal type you chose has no shape that fits (a slice at breakfast, with
+  only breakfast shapes available), the card says *“No typical way to use this
+  ingredient in this meal”* instead of pretending;
+- leave it empty and the app behaves as before — any shape is allowed.
+
+The pizza shape is new: a tortilla base, tomato sauce, your product and
+vegetables, 12 minutes at 220 °C. It is offered at lunch and dinner.
+
 Matching by hand: a product saved as “Vegan ham slices” is found by typing
 `vegan ham`, `my vegan ham` or the full name in the wish box. It also appears in
 the suggestion list of the Must include box.
 
 Nothing is picked at random: a saved product is only used when you ask for it.
 
-> **First time only:** this adds one table, so the upgrade SQL has to run once
-> more. Supabase → SQL editor → paste
+> **First time only:** this adds one table and one column, so the upgrade SQL
+> has to run once more. Supabase → SQL editor → paste
 > `https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/upgrade-existing-project.sql`
 > → Run. It is idempotent, keeps every login and every meal, and ends with the
 > `doctor.sql` report where `products` must say `ok`. Then reload the app.
@@ -469,6 +491,7 @@ The app names the failure instead of saying “refresh to retry”. Match the ti
 | **No answer from Supabase** | Wi-Fi, VPN, ad-blocker, or the project URL is wrong | Try mobile data; re-check 4a |
 | **The database said no** | Row-level security blocked the account | Confirm the account joined a kitchen; re-run `schema.sql` |
 | **“This project has no products table yet”** | the newer upgrade SQL has not been run | paste `upgrade-existing-project.sql` again (Phase 2), then reload |
+| Can’t scroll a recipe to the bottom, or the plan moves behind it | fixed in this release — reopen the app so the new build is used | close the app fully and reopen; if it persists, the phone is on an older build |
 | Yellow **Local demo** banner after going live | the deploy built without the Supabase secrets (check the **Check the Supabase configuration** step) | Do 4a, then 4c again |
 | Your phone shows demo data but the site works on a laptop | the installed app kept an older demo build in its cache | close the app fully and reopen it; if the yellow banner stays, remove the home-screen icon and add it again |
 | `syntax error at or near "upgrade"` | The *filename* was run instead of the file’s text | Open the `raw.githubusercontent.com` link → select all → paste |

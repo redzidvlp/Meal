@@ -8,12 +8,19 @@ import { fmtNum } from "../lib/format.js";
 /**
  * Locks the page behind a sheet or a dialog.
  *
- * `overflow: hidden` alone stops a mouse wheel but not iOS rubber-banding: the
- * page behind still slides and can be dragged sideways. The class carries
- * `touch-action: none` and `overscroll-behavior: none`, and the scroll
- * position is kept so closing the sheet does not jump the page.
+ * `overflow: hidden` on <body> stops a desktop wheel but not iOS: Safari keeps
+ * scrolling the document, which is why the day plan slid around behind an open
+ * recipe. Pinning the body in place is the reliable version — the page keeps
+ * its scroll position and gets it back untouched when the sheet closes.
  */
-const SCROLL_LOCK_STYLE = { touchAction: "pan-y", overscrollBehavior: "contain", overflowX: "hidden" };
+const SCROLL_LOCK_STYLE = {
+  touchAction: "pan-y",
+  overscrollBehavior: "contain",
+  overflowX: "hidden",
+  // A flex child must be allowed to shrink, or the sheet clips instead of
+  // scrolling; the same value is in the stylesheet, this keeps it honest.
+  minHeight: 0,
+};
 
 function useBodyLock(open) {
   useEffect(() => {
@@ -21,12 +28,15 @@ function useBodyLock(open) {
     const body = document.body;
     const scrollY = window.scrollY || 0;
     body.classList.add("is-locked");
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
     body.style.overflow = "hidden";
     return () => {
       body.classList.remove("is-locked");
+      body.style.position = "";
+      body.style.top = "";
       body.style.overflow = "";
-      // Only touch the scroll position if the page actually moved; otherwise
-      // this would fight the browser (and jsdom has no implementation).
+      // Only move the page if it actually moved; jsdom has no scrollTo.
       if ((window.scrollY || 0) !== scrollY) window.scrollTo(0, scrollY);
     };
   }, [open]);

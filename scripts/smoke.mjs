@@ -87,6 +87,13 @@ if (recipeButton) {
   if (!sheetBody) throw new Error("Recipe sheet has no scroll body");
   if (sheetBody.style.touchAction !== "pan-y") throw new Error(`Sheet allows sideways touch (${sheetBody.style.touchAction || "none"})`);
   if (sheetBody.style.overscrollBehavior !== "contain") throw new Error("Sheet rubber-bands into the page");
+  // A flex child that cannot shrink clips a long recipe instead of scrolling it.
+  if (sheetBody.style.minHeight !== "0px" && sheetBody.style.minHeight !== "0") {
+    throw new Error(`Sheet body cannot shrink, so it clips (min-height: ${sheetBody.style.minHeight || "auto"})`);
+  }
+  // iOS ignores overflow:hidden on body; only a pinned body stops the page
+  // behind from scrolling.
+  if (document.body.style.position !== "fixed") throw new Error("Page behind is not pinned, it can still scroll");
   const backdrop = document.querySelector(".modal-backdrop");
   if (backdrop && backdrop.style.touchAction === "none") throw new Error("Backdrop blocks the sheet's own scrolling");
   console.log("RECIPE PAN LOCK: ok");
@@ -97,6 +104,7 @@ if (recipeButton) {
     await new Promise(resolve => setTimeout(resolve, 80));
   });
   if (document.body.classList.contains("is-locked")) throw new Error("Page stayed locked after closing the recipe");
+  if (document.body.style.position === "fixed") throw new Error("Page stayed pinned after closing the recipe");
   console.log("RECIPE CLOSE UNLOCKS: ok");
 }
 

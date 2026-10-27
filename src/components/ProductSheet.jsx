@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { C } from "../theme.js";
-import { parseNutritionLabel } from "../lib/products.js";
+import { PRODUCT_USES, parseNutritionLabel, useLabel } from "../lib/products.js";
 import { Field, NumberInput, Sheet } from "./ui.jsx";
 
-const EMPTY = { name: "", kcal: "", protein: "", carbs: "", fat: "", portion: "" };
+const EMPTY = { name: "", kcal: "", protein: "", carbs: "", fat: "", portion: "", uses: [] };
 
 /**
  * Adds a product from its package. Pasting the label is the fast path on a
@@ -17,6 +17,12 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
   const [error, setError] = useState("");
 
   const update = key => value => setForm(previous => ({ ...previous, [key]: value }));
+  const toggleUse = key => setForm(previous => ({
+    ...previous,
+    uses: previous.uses.includes(key)
+      ? previous.uses.filter(use => use !== key)
+      : [...previous.uses, key].slice(0, 8),
+  }));
 
   const readLabel = () => {
     const result = parseNutritionLabel(labelText);
@@ -27,6 +33,7 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
     }
     setError("");
     setForm({
+      ...form,
       name: result.name || form.name,
       kcal: result.kcal ? String(result.kcal) : "",
       protein: result.protein ? String(result.protein) : "",
@@ -54,6 +61,7 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
         fat: Number(form.fat) || 0,
         unit: "g",
         portionGrams: Number(form.portion) || 0,
+        uses: form.uses,
       });
       setForm(EMPTY);
       setLabelText("");
@@ -150,6 +158,25 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
         <NumberInput value={form.portion} min={0} max={2000} ariaLabel={t.packSize} onChange={value => update("portion")(value)} />
       </Field>
 
+      <div className="divider" />
+
+      <Field label={`🍽️ ${t.productUses}`} hint={t.productUsesHint}>
+        <div className="row" style={{ gap: 5, flexWrap: "wrap" }}>
+          {PRODUCT_USES.map(use => (
+            <button
+              key={use.key}
+              type="button"
+              className={`chip ${form.uses.includes(use.key) ? "active" : ""}`}
+              data-use={use.key}
+              onClick={() => toggleUse(use.key)}
+            >
+              {use.icon} {useLabel(use.key, lang)}
+            </button>
+          ))}
+        </div>
+      </Field>
+      {form.uses.length === 0 && <p className="tiny" style={{ marginTop: 6 }}>{t.productUsesEmpty}</p>}
+
       {products.length > 0 && (
         <>
           <div className="divider" />
@@ -162,6 +189,7 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
                   <div className="tiny">
                     {Math.round(product.kcal)} kcal · 💪 {product.protein} g · 🌾 {product.carbs} g · 🫒 {product.fat} g
                     {product.portionGrams ? ` · ${product.portionGrams} g` : ""}
+                    {(product.uses || []).length ? ` · ${product.uses.map(use => useLabel(use, lang)).join(", ")}` : ""}
                   </div>
                 </div>
                 <button
