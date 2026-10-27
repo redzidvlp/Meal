@@ -443,6 +443,7 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
               ⚠ {t.ideaMissing} {idea.missing.join(", ")}. {t.ideaMissingHint}
             </p>
           )}
+          {idea.usesIgnored && <p className="pin-line warn">{t.ideaUsesIgnored}</p>}
           {idea.relaxed && <p className="pin-line warn">{t.ideaRelaxed}</p>}
           {target.protein > 0 && idea.protein < target.protein * 0.9 && (
             <p className="pin-line warn">

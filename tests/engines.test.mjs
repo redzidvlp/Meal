@@ -15,7 +15,7 @@ import { generateRecipeDraft } from "../src/engine/generate.js";
 import { offlineIdea } from "../src/lib/ideas.js";
 import { parseWish, wishSatisfied, containsExcluded, wishChips, resolveIngredient } from "../src/lib/wishes.js";
 import { requestRecipeIdea } from "../src/lib/ideas.js";
-import { parseNutritionLabel, productFact, sanitizeProduct } from "../src/lib/products.js";
+import { PRODUCT_USES, parseNutritionLabel, productFact, sanitizeProduct } from "../src/lib/products.js";
 import { registerProductFacts, factFor } from "../src/data/ingredientFacts.js";
 
 const makeRecipe = (overrides = {}) => ({
@@ -934,6 +934,80 @@ test("a saved product behaves like any other ingredient", () => {
   const plain = generateRecipeDraft({ slot: "lunch", target: { kcal: 500, protein: 30, carbs: 45, fat: 20 }, seed: 4 });
   assert.equal(plain.ingredients.some(item => item.key === product.key), false);
   registerProductFacts([]);
+});
+
+test("a sliced product is never stewed", () => {
+  // The user's vegan ham: sliced, so sandwiches, wraps, pizza and salad — not a
+  // slow-cooked stew or a coconut curry.
+  const { product } = sanitizeProduct({
+    nameEn: "Vegan ham slices",
+    kcal: 220, protein: 24.3, carbs: 8.4, fat: 9.5,
+    uses: ["sandwich", "wrap", "pizza", "salad"],
+  });
+  assert.deepEqual(product.uses, ["sandwich", "wrap", "pizza", "salad"], "uses survive sanitising");
+  registerProductFacts([productFact(product)]);
+
+  const seen = {};
+  for (const slot of ["lunch", "dinner"]) {
+    seen[slot] = new Set();
+    for (let seed = 1; seed <= 30; seed += 1) {
+      const draft = generateRecipeDraft({
+        slot,
+        target: { kcal: 500, protein: 30, carbs: 45, fat: 20 },
+        seed,
+        mustInclude: [product.key],
+      });
+      assert.ok(draft, `${slot} ${seed}`);
+      assert.ok(draft.ingredients.some(item => item.key === product.key), `${slot} ${seed} keeps the product`);
+      seen[slot].add(draft.template);
+    }
+  }
+  const forbidden = ["stew", "curry", "roast", "skillet"];
+  for (const slot of ["lunch", "dinner"]) {
+    for (const shape of forbidden) {
+      assert.equal(seen[slot].has(shape), false, `${slot} never uses the ${shape} shape for a slice (${[...seen[slot]].join(",")})`);
+    }
+    assert.ok(seen[slot].has("sandwich") || seen[slot].has("pizza"), `${slot} offers a sandwich or a pizza`);
+  }
+  assert.ok(seen.dinner.has("pizza"), "pizza is available at dinner too");
+
+  // Snacking on slices is a toast, breakfast is eggs on toast.
+  const breakfast = generateRecipeDraft({ slot: "breakfast", target: { kcal: 500, protein: 30, carbs: 45, fat: 20 }, seed: 3, mustInclude: [product.key] });
+  assert.equal(breakfast.template, "eggs-toast");
+
+  // A product with no uses keeps the old freedom, so nothing regresses.
+  const free = sanitizeProduct({ nameEn: "Mystery block", kcal: 200, protein: 15, carbs: 10, fat: 12 }).product;
+  assert.deepEqual(free.uses, []);
+  registerProductFacts([productFact(free)]);
+  const shapes = new Set();
+  for (let seed = 1; seed <= 20; seed += 1) {
+    const draft = generateRecipeDraft({ slot: "dinner", target: { kcal: 500, protein: 30, carbs: 45, fat: 20 }, seed, mustInclude: [free.key] });
+    shapes.add(draft.template);
+  }
+  assert.ok(shapes.size > 1, `an unclassified product still gets variety (${[...shapes].join(",")})`);
+
+  // Unknown uses are dropped rather than stored.
+  const odd = sanitizeProduct({ nameEn: "Odd", kcal: 100, uses: ["sandwich", "teleport", 42] }).product;
+  assert.deepEqual(odd.uses, ["sandwich"]);
+  registerProductFacts([]);
+});
+
+test("every built-in template declares where it belongs", () => {
+  const known = new Set(PRODUCT_USES.map(use => use.key));
+  for (const slot of ["breakfast", "lunch", "snack", "dinner"]) {
+    for (let seed = 1; seed <= 12; seed += 1) {
+      const draft = generateRecipeDraft({ slot, target: { kcal: 500, protein: 25, carbs: 45, fat: 20 }, seed });
+      assert.ok(draft, `${slot} ${seed}`);
+    }
+  }
+  // A product tagged only for a shape the slot lacks falls back and says so.
+  const { product } = sanitizeProduct({ nameEn: "Soup-only cube", kcal: 120, protein: 12, carbs: 5, fat: 6, uses: ["soup"] });
+  registerProductFacts([productFact(product)]);
+  const breakfast = generateRecipeDraft({ slot: "breakfast", target: { kcal: 500, protein: 25, carbs: 45, fat: 20 }, seed: 2, mustInclude: [product.key] });
+  assert.ok(breakfast, "a fallback still produces an idea");
+  assert.equal(breakfast.usesIgnored, true, "the card is told the shape had to change");
+  registerProductFacts([]);
+  assert.ok(known.size >= 10);
 });
 
 test("typing the product name in the wish box pins it", () => {

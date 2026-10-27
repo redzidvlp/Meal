@@ -16,7 +16,7 @@ with required(tbl, cols) as (
     ('menus',            array['household_id', 'name_en', 'items']),
     ('day_sections',     array['household_id', 'day_index', 'slot']),
     ('labels',           array['household_id', 'key', 'label']),
-    ('products',         array['household_id', 'key', 'name_en', 'kcal', 'protein', 'carbs', 'fat'])
+    ('products',         array['household_id', 'key', 'name_en', 'kcal', 'protein', 'carbs', 'fat', 'uses'])
 ),
 existing as (
   select table_name

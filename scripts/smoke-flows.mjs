@@ -225,6 +225,10 @@ const recipeBody = sheet().querySelector(".sheet-body");
 assert(recipeBody.style.touchAction === "pan-y", `recipe scroll body allows vertical pan only (${recipeBody.style.touchAction})`);
 assert(recipeBody.style.overscrollBehavior === "contain", "recipe scroll body does not bounce the page");
 assert(recipeBody.style.overflowX === "hidden", "recipe body cannot scroll sideways");
+// The two bugs reported from the phone: the sheet could not be scrolled to the
+// bottom, and the day plan moved behind it while trying.
+assert(recipeBody.style.minHeight === "0px" || recipeBody.style.minHeight === "0", "recipe body is allowed to shrink and scroll");
+assert(document.body.style.position === "fixed", "the plan behind an open recipe is pinned, not scrollable");
 const recipeBackdrop = document.querySelector(".modal-backdrop");
 // `touch-action: none` on an ancestor would also stop the recipe from
 // scrolling, so the backdrop must stay neutral.
@@ -239,6 +243,7 @@ await click(button("Save", editorSheet.querySelector(".sheet-foot")), 1000);
 const openClose = document.querySelector(".sheet .close-btn");
 if (openClose) await click(openClose, 300);
 assert(!document.body.classList.contains("is-locked"), "closing the recipe unlocks the page");
+assert(document.body.style.position !== "fixed", "the plan scrolls again once the recipe is closed");
 const activeDay = eatenRow?.day ?? 0;
 const updatedPlanRow = state().assignments.find(row => row.day === activeDay && row.slot === "breakfast");
 const updatedRecipe = state().recipes.find(recipe => recipe.id === updatedPlanRow.recipeId);
@@ -536,6 +541,11 @@ assert(numberFields[1] === "24.3", `protein read (${numberFields[1]})`);
 assert(numberFields[2] === "8.4", `carbs read (${numberFields[2]})`);
 assert(numberFields[3] === "9.5", `fat read (${numberFields[3]})`);
 assert(numberFields[4] === "80", `pack size read (${numberFields[4]})`);
+await click(document.querySelector("[data-use='sandwich']"), 150);
+await click(document.querySelector("[data-use='pizza']"), 150);
+await click(document.querySelector("[data-use='salad']"), 150);
+const chosenUses = [...document.querySelectorAll(".sheet .chip.active")].map(el => el.textContent.trim());
+assert(chosenUses.length === 3, `three uses picked (${chosenUses.join(", ")})`);
 await click(button("Save product", document.querySelector(".sheet-foot")), 900);
 assert(!document.querySelector(".sheet-title")?.textContent.includes("Add a product"), "sheet closed after saving");
 const productChip = [...document.querySelectorAll(".sous-card .pin-chip")].map(el => el.textContent).join(" | ");
@@ -546,6 +556,10 @@ await click(document.querySelector("[data-action='generate']"), 1200);
 const productCard = document.querySelector(".idea-card");
 const productIngredients = productCard.querySelector(".idea-ingredients")?.textContent || "";
 assert(/pjausniai/i.test(productIngredients), `the dish uses the product (${productIngredients.slice(0, 100)})`);
+// Sliced ham belongs in bread, not in a stew.
+const shape = productCard.querySelector(".idea-name")?.textContent || "";
+assert(/sandwich|pizza|wrap|salad|bowl|toast/i.test(shape), `the shape suits a slice (${shape})`);
+assert(!/stew|curry|roast|skillet/i.test(shape), `it is not stewed (${shape})`);
 assert(productCard.querySelector(".pin-line.ok"), "the card confirms what went in");
 console.log(`OWN PRODUCT: label → ${productCard.querySelector(".idea-name")?.textContent} · ${productCard.querySelector(".opt-meta")?.textContent.replace(/\s+/g, " ").trim()}`);
 await click(document.querySelector(".sous-card .pin-chip button"), 300);
