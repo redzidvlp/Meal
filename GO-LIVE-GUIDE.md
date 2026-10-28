@@ -391,6 +391,19 @@ about which product the sous-chef used.
 
 Nothing is picked at random: a saved product is only used when you ask for it.
 
+**The shelf is one line.** However many products you save, they sit in a single
+row that scrolls sideways, with the count next to the heading. Your card stays
+the same size; nothing is pushed off the screen. Long packaging names are cut
+with “…” inside their chip — tap one and it is still the whole product that is
+pinned. **⚙️ Manage** opens the list, where every name is shown in full.
+
+**Editing a product.** ⚙️ Sous-chef → **🏷️ My products** shelf → **⚙️ Manage** →
+**✏️** on the row. The sheet fills with what is saved: name, the four numbers,
+the pack size and the dishes it belongs in. Change anything — a typo in the
+name, a wrong calorie, the uses — and press **Save changes**. It stays the
+*same* product: if it was pinned, the pin is still there and still points at it.
+Editing never creates a second copy.
+
 **Removing a product.** ⚙️ Sous-chef → **🏷️ My products** shelf → **⚙️ Manage**
 (or **＋ My product**, which opens the same sheet). The list of what you have
 saved is the first thing on that sheet, with a ✕ on each row. Press ✕ and the
@@ -442,11 +455,18 @@ reuse something.
 Under the wish box there is a **⭐ Must include** row. It is the direct answer to
 *“build me a meal around this product, but keep it in my calories and protein.”*
 
-1. Type the product — `vegan meat`, `tempeh`, `skyr` — or tap one of the quick suggestions.
-2. Press **＋ Add**. It appears as a chip with a ✓, which means the app knows its
-   nutrition and will do the maths with it. Up to five ingredients.
+1. Tap the box (or the **▾** beside it): a list of ingredients opens with their
+   calories and protein. Type anything and the list narrows as you type — one
+   tap pins the ingredient. The same list works on a phone; it is drawn by the
+   app, not by the browser, which is why it no longer matters what you open the
+   page in. Something the list does not know (a brand, a spread) can still be
+   typed and pressed **＋ Add** — it goes to the model as a hard requirement.
+2. The pinned ingredient appears as a chip with a ✓, which means the app knows
+   its nutrition and will do the maths with it. Up to five.
 3. Set your calories and (under *More nutrition*) the protein you want, then press
-   **✨ Generate recipe**.
+   **✨ Generate recipe**. The calorie box can be emptied while you retype it:
+   clear it, type `450`, and it stays 450 — not 0450. If you leave it empty, 500
+   is used and the line under the button says so.
 
 What the engine does with it, in this order:
 
@@ -509,6 +529,30 @@ your curd and asks for the lactose-free version of it rather than swapping it ou
 4. Plan tab → **📷** (next to the day menu) → photograph the plate → the AI
    estimates calories and protein for what is in the photo → press **✓** →
    check the draft → **Save**. The meal appears on that day, with its numbers.
+
+---
+
+### If the AI says it did not answer
+
+The card under the idea now names the cause, so the fix is usually one line:
+
+| What the card says | What it means | What to do |
+|---|---|---|
+| **…rejected the key (HTTP 401/403)** | The provider refused `AI_API_KEY` | Supabase → Edge Functions → Secrets → `AI_API_KEY`; paste a fresh key, redeploy `recipe-ai` |
+| **…quota or rate limit is used up (HTTP 429)** | The key works, the account is empty or throttled | Wait, or check the plan on the provider's dashboard |
+| **…refused the request (HTTP 400/404)** | Usually the model name | Leave `AI_MODEL` unset (the default is `gpt-4o-mini`), or set a model your key can use |
+| **…could not be reached at all** | No function, no network, or an origin the function does not allow | Check that `recipe-ai` is deployed; open the app from its own address |
+| **…answer could not be read** | It replied with something that was not the JSON asked for | Press ✨ again — the function asks a second time by itself |
+| **The AI function is not set up** | No `AI_API_KEY` at all | Phase 7b |
+
+The reason only appears in full after you redeploy both functions once — the
+older deployment could only say “did not answer”. The redeploy is the same two
+commands as Phase 7c.
+
+Two other things the function now does by itself: it retries without
+`response_format` when a provider refuses that field (some OpenAI-compatible
+providers do), and it unwraps an answer that came back inside a ``` fence.
+Either of those used to be a silent “did not answer”.
 
 ---
 

@@ -70,6 +70,21 @@ for (const [label, check] of [
   console.log(`TAB ${label}: ok`);
 }
 
+// The Must include box has to offer its ingredients by tapping, because the
+// browser's own <datalist> is invisible on a phone.
+await clickByText("Sous-chef");
+if (container.querySelector("datalist")) throw new Error("The ingredient list still relies on a desktop-only datalist");
+const mustBox = container.querySelector("[data-field='must']");
+if (!mustBox) throw new Error("The Must include box is missing");
+await act(async () => {
+  mustBox.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  await new Promise(resolve => setTimeout(resolve, 120));
+});
+const pickerRows = [...container.querySelectorAll("[data-picker='must'] [data-pick]")];
+if (pickerRows.length < 5) throw new Error(`Tapping Must include offered ${pickerRows.length} ingredients`);
+console.log(`MUST INCLUDE PICKER: ${pickerRows.length} ingredients on tap`);
+await clickByText("Plan");
+
 // The camera next to the day menu photographs the plate. It has to say which
 // day the meal is going into: otherwise a photo looks like it did nothing,
 // because the saved recipe never appears on the plan.

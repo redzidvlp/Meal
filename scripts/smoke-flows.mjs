@@ -490,6 +490,37 @@ assert(/curd/i.test(ideaIngredients), `the idea really contains curd (${ideaIngr
 assert(sweetIdea.querySelector(".ai-note-line"), "the card explains the fallback");
 console.log(`WISH: "lactose free curd sweet" → ${sweetIdea.querySelector(".idea-name")?.textContent}`);
 
+// 7d-quater. The suggestion list must exist on a phone, where the browser's
+// own <datalist> does not. Tapping the box offers ingredients, typing narrows
+// them, and one tap pins what was chosen.
+assert(!document.querySelector("datalist"), "no browser-only datalist is relied on");
+await click(document.querySelector("[data-field='must']"), 250);
+const picker = document.querySelector("[data-picker='must']");
+assert(picker, "tapping the Must include box opens the ingredient list");
+const pickerKeys = [...picker.querySelectorAll("[data-pick]")].map(el => el.dataset.pick);
+assert(pickerKeys.length >= 5, `the list offers ingredients (${pickerKeys.length})`);
+assert(pickerKeys.includes("natural-tofu"), "proteins come first in an empty list");
+await setInput(document.querySelector("[data-field='must']"), "chick");
+const narrowed = [...document.querySelectorAll("[data-picker='must'] [data-pick]")].map(el => el.dataset.pick);
+assert(narrowed.includes("canned-chickpeas"), `typing narrows the list (${narrowed.join(", ")})`);
+assert(!narrowed.includes("natural-tofu"), "an unrelated ingredient drops out");
+await click(document.querySelector("[data-picker='must'] [data-pick='canned-chickpeas']"), 300);
+assert(!document.querySelector("[data-picker='must']"), "the list closes after a pick");
+assert(/Avinžirniai|Chickpeas/i.test(document.querySelector(".sous-card .pin-chip")?.textContent || ""), "the picked ingredient is pinned");
+await click(document.querySelector(".sous-card .pin-chip button"), 250);
+console.log(`PICKER: ${pickerKeys.length} ingredients on tap, "chick" → ${narrowed.length}, one tap pins it`);
+
+// 7d-quinquies. The calorie box can be emptied. It used to snap back to 0, so
+// 450 could only ever be typed as 0450.
+await nav("Sous-chef");
+const kcalField = document.querySelector(".sous-card .input[type='number']");
+assert(kcalField, "the calorie field is on screen");
+await setInput(kcalField, "");
+assert(document.querySelector(".sous-card .input[type='number']").value === "", "the field can be emptied");
+await setInput(document.querySelector(".sous-card .input[type='number']"), "450");
+assert(document.querySelector(".sous-card .input[type='number']").value === "450", "and typing 450 gives 450, not 0450");
+console.log("CALORIES: cleared, then 450 stays 450");
+
 // 7d-bis. Build a dish around one ingredient the person names.
 // Start from an empty wish box: a leftover "sweet" would fight the pin.
 await setInput(document.querySelector("[data-field='wish']"), "");
@@ -591,6 +622,24 @@ assert(shelf && /My products/i.test(shelf.parentElement?.textContent || ""), "sa
 const shelfChip = [...(shelf?.querySelectorAll("[data-product]") || [])].find(el => /pjausniai/i.test(el.textContent));
 assert(shelfChip && shelfChip.dataset.product === storedProduct.key, "the new product is one tap from the sous-chef");
 assert(/✓/.test(shelfChip.textContent), "and it shows as picked, because saving already pinned it");
+// A long packaging name must not stretch the page: the shelf is one sideways
+// line and the name is a truncating span, not the whole chip.
+assert(shelf.classList.contains("product-shelf"), "the shelf is a single sideways-scrolling line");
+assert(shelfChip.classList.contains("product-chip"), "each saved product is a compact chip");
+const chipName = shelfChip.querySelector(".product-chip-name");
+assert(chipName && /pjausniai/i.test(chipName.textContent), `the name has its own ellipsis box (${chipName?.textContent})`);
+assert(shelfChip.querySelector(".product-chip-meta"), "the numbers are a separate, fixed-width part");
+// The same product is reachable from the Must include list, and the chip it
+// creates carries the product's name rather than its storage key.
+await setInput(document.querySelector("[data-field='must']"), "pjaus");
+const productPick = document.querySelector("[data-picker='must'] [data-pick^='p-']");
+assert(productPick, "a saved product appears in the ingredient list");
+await click(productPick, 300);
+const pickedChip = document.querySelector(".sous-card .pin-chip")?.textContent || "";
+assert(/pjausniai/i.test(pickedChip) && !/p-vegan|p-vegai/i.test(pickedChip), `the chip is named, not keyed (${pickedChip})`);
+await setInput(document.querySelector("[data-field='must']"), "");
+console.log("PICKER: a saved product is pinned from the list, with its name");
+
 await click(document.querySelector("[data-action='generate']"), 1200);
 const productCard = document.querySelector(".idea-card");
 const productIngredients = productCard.querySelector(".idea-ingredients")?.textContent || "";
@@ -610,10 +659,29 @@ await click(document.querySelector(`[data-product='${storedProduct.key}']`), 300
 assert(!document.querySelector(".sous-card .pin-chip"), "a second tap lets it go");
 console.log("MY PRODUCTS: shelf chip pins and unpins the saved ham");
 
+// Editing one: the same product, with different numbers. Nothing new appears.
+await click(document.querySelector("[data-action='manage-products']"), 400);
+assert(document.querySelector("[data-products='list']"), "manage opens the list");
+await click(document.querySelector(`[data-product-row='${storedProduct.key}'] [data-action='edit-product']`), 400);
+assert(/Edit this product/i.test(text()), "the sheet switches to editing");
+const editFields = [...document.querySelectorAll(".sheet .input[type=number]")].map(input => input.value);
+assert(editFields[0] === "220" && editFields[1] === "24.3", `the saved numbers are in the form (${editFields.join("/")})`);
+await setInput(document.querySelector(".sheet .input[type=number]"), "210");
+// While editing, the way back to a blank form is a button, not a heading.
+assert(document.querySelector("[data-action='new-product']"), "editing offers a way back to a new product");
+await click(document.querySelector("[data-action='save-product']"), 900);
+const edited = (state().products || []).find(row => row.key === storedProduct.key);
+assert(edited && edited.kcal === 210, `the edit is saved (${edited?.kcal})`);
+assert((state().products || []).filter(row => /pjausniai/i.test(row.nameEn)).length === 1, "editing did not create a second product");
+assert((state().products || []).every(row => row.key !== "p-undefined"), "the edit kept its key");
+console.log("EDIT PRODUCT: 220 → 210 kcal, same product, same key");
+
 // Removing one: the list is the first thing the sheet shows, the ✕ asks before
 // it throws anything away, and a pin that pointed at it goes with it.
-await click(document.querySelector(`[data-product='${storedProduct.key}']`), 300);
-assert(/pjausniai/i.test(document.querySelector(".sous-card .pin-chip")?.textContent || ""), "pinned before the delete");
+// Saving an edit re-pins the product, so make sure it is pinned exactly once.
+const pinnedNow = () => /pjausniai/i.test([...document.querySelectorAll(".sous-card .pin-chip")].map(el => el.textContent).join(" "));
+if (!pinnedNow()) await click(document.querySelector(`[data-product='${storedProduct.key}']`), 300);
+assert(pinnedNow(), "pinned before the delete");
 await click(document.querySelector("[data-action='manage-products']"), 400);
 const list = document.querySelector("[data-products='list']");
 assert(list, "managing opens on the saved list, not on an empty form");
@@ -624,7 +692,7 @@ assert(
   "the saved list sits above the add-a-product form",
 );
 const productRow = document.querySelector(`[data-product-row='${storedProduct.key}']`);
-assert(productRow && /220 kcal/i.test(productRow.textContent), "the saved product is listed with its numbers");
+assert(productRow && /210 kcal/i.test(productRow.textContent), "the saved product is listed with its edited numbers");
 await click(productRow.querySelector("[data-action='delete-product-ask']"), 250);
 assert(/Remove this product/i.test(document.querySelector(`[data-product-row='${storedProduct.key}']`)?.textContent || ""), "it asks first");
 assert((state().products || []).some(row => row.key === storedProduct.key), "nothing is deleted by the first tap");

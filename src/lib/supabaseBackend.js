@@ -104,6 +104,28 @@ function raise(error) {
   if (error) throw error;
 }
 
+/**
+ * Edge functions answer errors with a JSON body: { error, reason }. Supabase's
+ * client throws that away and hands over a bare "non-2xx status code", which is
+ * why every failure used to look like "the AI did not answer". Reading the body
+ * is what makes the message on the card actionable.
+ */
+export async function functionErrorReason(error) {
+  const response = error?.context;
+  if (response && typeof response.clone === "function") {
+    try {
+      const body = await response.clone().json();
+      if (body && (body.reason || body.error)) return String(body.reason || body.error);
+    } catch {
+      // Not JSON, or already consumed: fall through to the error type.
+    }
+  }
+  const name = String(error?.name || "");
+  if (/FetchError|TypeError/i.test(name) || /fetch/i.test(String(error?.message || ""))) return "network";
+  if (/Relay/i.test(name)) return "relay";
+  return "unknown";
+}
+
 export function createSupabaseBackend(client) {
   let ctx = { userId: null, householdId: null, personKey: "R" };
 
@@ -578,9 +600,13 @@ export function createSupabaseBackend(client) {
 
     async generateRecipe(payload) {
       const { data, error } = await client.functions.invoke("recipe-ai", { body: payload });
-      raise(error);
+      if (error) {
+        // A 502 from the function is not "nothing answered": it carries the
+        // provider's verdict, and that is what the card should repeat.
+        return { available: false, reason: await functionErrorReason(error) };
+      }
       if (!data || data.available !== true || !data.recipe) {
-        return { available: false, reason: data?.reason || "ai_offline" };
+        return { available: false, reason: data?.reason || data?.error || "ai_offline" };
       }
       return { available: true, recipe: data.recipe };
     },
@@ -589,7 +615,11 @@ export function createSupabaseBackend(client) {
       const { ok, error, payload } = sanitizePhotoPayload(input);
       if (!ok) throw Object.assign(new Error(error || "invalidImage"), { userMessage: error });
       const { data, error: invokeError } = await client.functions.invoke("nutrition-scan", { body: payload });
-      raise(invokeError);
+      if (invokeError) {
+        // Same as recipe-ai: the body says whether the key, the quota or the
+        // model is the problem, and the sheet can repeat that.
+        return { available: false, reason: await functionErrorReason(invokeError) };
+      }
       if (!data || data.available !== true) return { available: false, reason: data?.reason || "ai_offline", size: payload.image.length };
       return {
         available: true,

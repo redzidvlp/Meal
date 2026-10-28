@@ -95,11 +95,11 @@ Deno.serve(async request => {
   const baseUrl = (Deno.env.get("AI_BASE_URL") || "https://api.openai.com/v1").replace(/\/$/, "");
   const model = Deno.env.get("AI_MODEL") || "gpt-4o-mini";
 
-  const requestBody = {
+  const body = jsonMode => ({
     model,
     temperature: 0.1,
     max_tokens: 300,
-    response_format: { type: "json_object" },
+    ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
     messages: [
       { role: "system", content: prompt(mode) },
       {
@@ -110,32 +110,44 @@ Deno.serve(async request => {
         ],
       },
     ],
+  });
+
+  const send = async jsonMode => {
+    try {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify(body(jsonMode)),
+      });
+      if (!response.ok) {
+        // 400/404/422 is often a provider that will not take response_format;
+        // the caller retries once without it before giving up.
+        const reason = response.status === 401 || response.status === 403
+          ? "bad_key"
+          : response.status === 429
+            ? "quota"
+            : response.status === 400 || response.status === 404 || response.status === 422
+              ? "model"
+              : "upstream_failed";
+        return { status: response.status, reason };
+      }
+      const data = await response.json();
+      const raw = String(data?.choices?.[0]?.message?.content || "{}");
+      const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+      return { parsed: JSON.parse(cleaned || "{}") };
+    } catch {
+      return { reason: "network" };
+    }
   };
 
-  let response;
-  try {
-    response = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify(requestBody),
-    });
-  } catch {
-    return json({ available: true, error: "upstream_unreachable" }, 502, origin);
+  let attempt = await send(true);
+  if (attempt.reason === "model") attempt = await send(false);
+  if (attempt.reason) {
+    // Never leak provider details or keys to the client — only which kind of
+    // failure it was, so the app can say what to fix.
+    return json({ available: true, error: attempt.reason === "unreadable_result" ? "unreadable_result" : "upstream_failed", reason: attempt.reason }, 502, origin);
   }
-
-  if (!response.ok) {
-    // Never leak provider details or keys to the client.
-    return json({ available: true, error: "upstream_failed" }, 502, origin);
-  }
-
-  let parsed;
-  try {
-    const data = await response.json();
-    const content = data?.choices?.[0]?.message?.content || "{}";
-    parsed = JSON.parse(content);
-  } catch {
-    return json({ available: true, error: "unreadable_result" }, 502, origin);
-  }
+  const parsed = attempt.parsed;
 
   const nutrition = {
     kcal: clampNumber(parsed.kcal, 0, 5000),

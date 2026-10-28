@@ -8,6 +8,8 @@ import { allPlannedRecipes } from "../engine/plan.js";
 import { Chip, EmptyState, Field, Modal, NumberInput } from "./ui.jsx";
 import ProductSheet from "./ProductSheet.jsx";
 import { productFact } from "../lib/products.js";
+import { matchIngredients } from "../lib/picker.js";
+import { aiReasonKey } from "../lib/aiReasons.js";
 
 const TAG_LABEL = (lang, tag) => TAG_LABELS[lang]?.[tag] || tag;
 
@@ -37,6 +39,11 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
   // can compute with; anything else stays a name and is handed to the model.
   const [pins, setPins] = useState([]);
   const [pinDraft, setPinDraft] = useState("");
+  // The list under the box opens on tap as well as on typing: on a phone a
+  // person has to be able to discover what can be pinned without guessing a
+  // name and hoping autocomplete appears.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerIndex, setPickerIndex] = useState(-1);
   const [productSheet, setProductSheet] = useState(false);
   const [course, setCourse] = useState(null);
   const [slot, setSlot] = useState("lunch");
@@ -93,9 +100,10 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
     const text = String(raw || "").trim();
     if (!text) return;
     const key = factFor(text) ? text : resolveIngredient(text);
-    const label = key
-      ? (INGREDIENT_FACTS[key]?.[lang] || INGREDIENT_FACTS[key]?.en || text)
-      : text.slice(0, 40);
+    // The label comes from whichever table knows the key — a saved product is
+    // not in INGREDIENT_FACTS, and without this its chip read "p-vegan-ham".
+    const fact = key ? factFor(key) : null;
+    const label = fact ? (fact[lang] || fact.en) : text.slice(0, 40);
     setPins(previous => (
       previous.some(pin => (key ? pin.key === key : pin.label.toLowerCase() === label.toLowerCase()))
         ? previous
@@ -104,6 +112,20 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
     setPinDraft("");
   };
   const removePin = id => setPins(previous => previous.filter(pin => pin.id !== id));
+  // A product saved a moment ago is registered by the data hook, not by this
+  // screen, so the list is rebuilt when the shelf changes as well.
+  const productSignature = (app.products || []).map(product => `${product.key}:${product.nameEn}`).join("|");
+  const pickerRows = useMemo(() => matchIngredients(pinDraft, {
+    facts: allFacts(),
+    lang,
+    limit: 8,
+    exclude: pinKeys,
+  }), [pinDraft, lang, pinKeyString, productSignature]);
+  const chooseRow = row => {
+    addPin(row.key);
+    setPickerOpen(false);
+    setPickerIndex(-1);
+  };
   // A product that was just saved is not in the registry yet, so it is pinned
   // from its own fact instead of waiting for the next refresh.
   const addPinFact = fact => setPins(previous => (
@@ -111,10 +133,21 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
       ? [...previous, { id: fact.key, key: fact.key, label: fact[lang] || fact.en }].slice(0, 5)
       : previous
   ));
+  // After an edit the product is already pinned; only its name may have moved.
+  const refreshPinFact = fact => setPins(previous => previous.map(pin => (
+    fact && pin.key === fact.key ? { ...pin, label: fact[lang] || fact.en } : pin
+  )));
+
+  // The calorie box may be empty for a moment while it is being retyped; the
+  // engine still needs a number, and the default is what the card shows.
+  const safeTarget = useMemo(() => ({
+    ...target,
+    kcal: Number(target.kcal) > 0 ? Number(target.kcal) : 500,
+  }), [target]);
 
   const ideaSummary = [
     wish.course === "sweet" ? `🍰 ${t.courseSweet}` : wish.course === "savoury" ? `🥘 ${t.courseSavoury}` : (SLOT_META[slot]?.[lang] || slot),
-    `${fmtNum(target.kcal)} ${t.kcal}`,
+    `${fmtNum(safeTarget.kcal)} ${t.kcal}`,
     maxMinutes ? `${maxMinutes} ${t.minutes}` : t.anyTime,
     pins.length ? `${t.ideaWith} ${pins.map(pin => pin.label).join(" + ")}` : null,
     wish.excludes.length ? `✕ ${wish.excludes.map(key => INGREDIENT_FACTS[key]?.en || key).join(", ")}` : null,
@@ -132,7 +165,7 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
     ].filter(Boolean);
     try {
       const draft = await app.generateIdea({
-        slot, target, filters, seed, excludeNames,
+        slot, target: safeTarget, filters, seed, excludeNames,
         notes: wishText.trim(), wish, avoidKeys: usedKeys, maxMinutes,
         mustInclude: pinKeys,
         mustNames: pins.filter(pin => !pin.key).map(pin => pin.label),
@@ -186,6 +219,7 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
       : idea?.aiNote === "unavailable"
         ? "aiNoteUnavailable"
         : null;
+  const reasonKey = aiNoteKey ? aiReasonKey(idea?.aiReason) : null;
 
   return (
     <div className="fade-in">
@@ -213,7 +247,7 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
             <div className="row" style={{ gap: 5, flexWrap: "wrap", marginBottom: 6 }}>
               {pins.map(pin => (
                 <span key={pin.id} className={`pin-chip ${pin.key ? "" : "unknown"}`}>
-                  {pin.key ? "✓" : "✎"} {pin.label}
+                  <span className="pin-chip-label">{pin.key ? "✓" : "✎"} {pin.label}</span>
                   <button type="button" onClick={() => removePin(pin.id)} aria-label={`${t.remove} ${pin.label}`}>✕</button>
                 </span>
               ))}
@@ -223,33 +257,97 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
             <input
               className="input"
               data-field="must"
-              list="sous-ingredients"
               value={pinDraft}
               maxLength={40}
               placeholder={t.mustIncludePlaceholder}
-              onChange={event => setPinDraft(event.target.value)}
+              autoComplete="off"
+              role="combobox"
+              aria-expanded={pickerOpen}
+              aria-controls="sous-ingredients"
+              aria-autocomplete="list"
+              onFocus={() => setPickerOpen(true)}
+              onClick={() => setPickerOpen(true)}
+              onChange={event => {
+                setPinDraft(event.target.value);
+                setPickerOpen(true);
+                setPickerIndex(-1);
+              }}
+              onBlur={() => {
+                // A tap on a row has to win the race against the blur.
+                setTimeout(() => setPickerOpen(false), 180);
+              }}
               onKeyDown={event => {
+                if (event.key === "Escape") { setPickerOpen(false); setPickerIndex(-1); return; }
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  if (!pickerOpen) { setPickerOpen(true); return; }
+                  const count = pickerRows.length;
+                  if (!count) return;
+                  setPickerIndex(previous => (event.key === "ArrowDown"
+                    ? (previous < count - 1 ? previous + 1 : 0)
+                    : (previous > 0 ? previous - 1 : count - 1)));
+                  return;
+                }
                 if (event.key === "Enter") {
                   event.preventDefault();
-                  addPin(pinDraft);
+                  const row = pickerOpen && pickerIndex >= 0 ? pickerRows[pickerIndex] : null;
+                  if (row) chooseRow(row); else addPin(pinDraft);
+                  setPickerOpen(false);
+                  setPickerIndex(-1);
                 }
               }}
             />
             <button
               type="button"
+              className="btn btn-sm btn-ghost picker-toggle"
+              data-action="toggle-picker"
+              aria-label={t.mustInclude}
+              aria-expanded={pickerOpen}
+              onClick={() => { setPickerOpen(open => !open); setPickerIndex(-1); }}
+            >
+              ▾
+            </button>
+            <button
+              type="button"
               className="btn btn-sm btn-soft"
               data-action="add-must"
               disabled={!pinDraft.trim() || pins.length >= 5}
-              onClick={() => addPin(pinDraft)}
+              onClick={() => { addPin(pinDraft); setPickerOpen(false); setPickerIndex(-1); }}
             >
               ＋ {t.add}
             </button>
           </div>
-          <datalist id="sous-ingredients">
-            {Object.values(allFacts()).map(fact => (
-              <option key={fact.en} value={fact.en} />
-            ))}
-          </datalist>
+          {/* Sometimes the obvious name is not the one in the table ("goat
+              cheese" vs "Halloumi"), so typing something unknown still allows
+              adding it as free text below the list. */}
+          {pickerOpen && !pickerRows.length && pinDraft.trim() && (
+            <p className="tiny picker-empty" data-picker="empty">
+              {t.pickerNoMatch}
+            </p>
+          )}
+          {pickerOpen && pickerRows.length > 0 && (
+            <div className="picker-list" id="sous-ingredients" role="listbox" data-picker="must">
+              {pickerRows.map((row, index) => (
+                <button
+                  key={row.key}
+                  type="button"
+                  role="option"
+                  aria-selected={index === pickerIndex}
+                  data-pick={row.key}
+                  className={`picker-row ${index === pickerIndex ? "is-active" : ""} ${row.pinned ? "is-pinned" : ""}`}
+                  onPointerDown={event => { event.preventDefault(); if (!row.pinned) chooseRow(row); }}
+                  onMouseDown={event => { event.preventDefault(); if (!row.pinned) chooseRow(row); }}
+                  onClick={() => { if (!row.pinned) chooseRow(row); }}
+                >
+                  <span className="picker-name">
+                    {row.product ? "🏷️ " : ""}{row.label}
+                    {row.pinned ? <span className="picker-taken"> ✓ {t.alreadyAdded}</span> : null}
+                  </span>
+                  <span className="picker-meta">{Math.round(row.kcal)} {t.kcal} · {row.protein} g</span>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="row" style={{ gap: 4, flexWrap: "wrap", marginTop: 6 }}>
             {["vegan-meat", "natural-tofu", "canned-chickpeas", "lentils", "eggs", "curd"].map(key => (
               <button
@@ -275,9 +373,9 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
           </div>
 
           {(app.products || []).length > 0 && (
-            <div style={{ marginTop: 8 }}>
+            <div style={{ marginTop: 8 }} data-shelf>
               <div className="row-between" style={{ marginBottom: 5 }}>
-                <div className="eyebrow">🏷️ {t.myProducts}</div>
+                <div className="eyebrow">🏷️ {t.myProducts} <span className="shelf-count">{app.products.length}</span></div>
                 <button
                   type="button"
                   className="btn btn-xs btn-ghost"
@@ -287,22 +385,24 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
                   ⚙️ {t.manageProducts}
                 </button>
               </div>
-              <div className="row" style={{ gap: 4, flexWrap: "wrap" }} data-products="saved">
-                {(app.products || []).map(product => {
+              {/* One line that scrolls sideways. A shelf of twenty products
+                  used to push the rest of the page off the screen. */}
+              <div className="product-shelf" data-products="saved">
+                {app.products.map(product => {
                   const active = pinKeys.includes(product.key);
+                  const name = lang === "lt" && product.nameLt ? product.nameLt : product.nameEn;
                   return (
                     <button
                       key={product.key}
                       type="button"
                       data-product={product.key}
-                      className={`chip ${active ? "active" : "sage"}`}
-                      style={{ minHeight: 27, padding: "0 9px", fontSize: 10 }}
+                      title={name}
+                      className={`chip product-chip ${active ? "active" : "sage"}`}
                       onClick={() => (active ? removePin(product.key) : addPinFact(productFact(product)))}
                     >
-                      {active ? "✓ " : ""}{lang === "lt" && product.nameLt ? product.nameLt : product.nameEn}
-                      <span style={{ opacity: .65, fontWeight: 500 }}>
-                        {Math.round(product.kcal)} kcal · {product.protein}g
-                      </span>
+                      {active ? "✓ " : ""}
+                      <span className="product-chip-name">{name}</span>
+                      <span className="product-chip-meta">{Math.round(product.kcal)} · {product.protein}g</span>
                     </button>
                   );
                 })}
@@ -487,7 +587,10 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
             </p>
           )}
           {aiNoteKey && (
-            <p className="ai-note-line">{t[aiNoteKey]}</p>
+            <p className="ai-note-line">
+              {t[aiNoteKey]}
+              {reasonKey ? <span className="ai-reason"> {t[reasonKey]}</span> : null}
+            </p>
           )}
 
           <div className="row" style={{ gap: 6, marginTop: 10 }}>
@@ -573,7 +676,11 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
         }}
         onSave={async input => {
           const saved = await app.saveProduct(input);
-          if (saved) addPinFact(productFact(saved));
+          if (saved) {
+            const fact = productFact(saved);
+            addPinFact(fact);
+            refreshPinFact(fact);
+          }
           return saved;
         }}
       />

@@ -127,6 +127,10 @@ export async function requestRecipeIdea({
   );
 
   let aiNote = "unavailable";
+  // Why the model was not used, in one word: bad_key, quota, model, network,
+  // unreadable_result, ignored… The card turns this into a sentence a person
+  // can act on instead of one shrug for every possible failure.
+  let aiReason = "";
   if (api?.generateRecipe) {
     try {
       const result = await api.generateRecipe({
@@ -165,9 +169,11 @@ export async function requestRecipeIdea({
         aiNote = "ignored";
       } else {
         aiNote = "unavailable";
+        aiReason = result?.reason || "ai_offline";
       }
-    } catch {
+    } catch (error) {
       aiNote = "failed";
+      aiReason = error?.reason || "unknown";
       // A missing function, quota error or offline network all fall through to
       // the local engine — generating an idea must never dead-end.
     }
@@ -188,5 +194,5 @@ export async function requestRecipeIdea({
   // built-in table does not know can only be cooked by the model; saying so is
   // better than handing back a dish that quietly lacks it.
   const missing = requested.filter(name => !draftContains(draft, name));
-  return { ...draft, ai: false, aiNote, requested, missing };
+  return { ...draft, ai: false, aiNote, aiReason, requested, missing };
 }
