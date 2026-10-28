@@ -261,22 +261,62 @@ Optional extras, same screen: `AI_MODEL` = `gpt-4o-mini`, `AI_BASE_URL` =
 
 **Without installing anything (recommended):**
 
-1. Supabase → **Edge Functions** → **Deploy a new function** → **Via editor**.
-2. Name it exactly `recipe-ai`.
-3. Delete the sample code, paste the whole of
+First, get the code onto your clipboard — this step is the same every time:
+
+1. Open this address in the browser address bar:
    `https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/functions/recipe-ai/index.ts`
-   → **Deploy**.
-4. Repeat with name `nutrition-scan` and
+   It is a **plain page of code**, not a download and not a menu.
+2. `Ctrl+A` / `Cmd+A` (select everything on that page), then `Ctrl+C` / `Cmd+C`.
+
+> The address is **not** the code. Pasting the link into the Supabase editor gives
+> you a function whose whole body is one URL — it deploys, and then fails every
+> time. Always copy the *text of the page* the link opens.
+
+Then, the first time:
+
+3. Supabase → **Edge Functions** → **Deploy a new function** → **Via editor**.
+4. Name it exactly `recipe-ai`, delete the sample code, paste → **Deploy**.
+5. Then do the same for the second function: copy
+   `https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/functions/nutrition-scan/index.ts`,
+   **Deploy a new function** → **Via editor**, name it `nutrition-scan`, paste, **Deploy**.
+6. Leave **Verify JWT** ON for both (the app sends the signed-in user’s token).
+
+### 7c-bis. Keeping it fresh — updating a function you already deployed
+
+Not a new function. Not a new name. You are replacing the code inside the one the
+app already calls.
+
+1. **Copy the code.** Open
+   `https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/functions/recipe-ai/index.ts`
+   → `Ctrl+A` / `Cmd+A` → `Ctrl+C` / `Cmd+C`. (The page itself is the code.)
+2. **Open the function you have.** Supabase → **Edge Functions** → tap **`recipe-ai`**
+   in the list. *Not* “Deploy a new function” — a second function with a different
+   name is never called by the app.
+3. **Select everything in the editor.** Click inside the code, `Ctrl+A` / `Cmd+A`.
+   The blue selection must cover the whole file. If you paste without selecting
+   first, you end up with two `Deno.serve` blocks and the deploy fails with a
+   syntax error.
+4. **Paste** (`Ctrl+V` / `Cmd+V`). The editor now shows the new file, starting with
+   the comment `// Supabase Edge Function: recipe-ai`.
+5. Press **Deploy** (the button may say **Deploy updates**). Wait for the green tick,
+   about ten seconds.
+6. Repeat 1–5 for `nutrition-scan` and
    `https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/functions/nutrition-scan/index.ts`.
-5. Leave **Verify JWT** ON for both (the app sends the signed-in user’s token).
 
-### 7c-bis. Keeping it fresh
+Nothing else has to be redone: `AI_API_KEY`, `AI_MODEL`, `AI_BASE_URL` and
+`ALLOW_ORIGIN` are **secrets and settings**, stored beside the code rather than in
+it, so they survive a redeploy untouched.
 
-The functions change as the app does. If you deployed them before, paste `recipe-ai`
-once more: **Edge Functions → recipe-ai → edit → select all → paste the file from
-`main` → Deploy updates**.
+How to know it worked: open the app → **✨ Sous-chef** → **✨ Generate recipe**. If the
+AI still cannot answer, the card now names the cause (“…rejected the key”, “…quota is
+used up”, “…refused the request”) instead of the old shrug. The table in *If the AI
+says it did not answer* (below) maps each message to its fix.
 
-What the new version adds:
+If the card still says only “did not answer”, the function stopped before it could
+answer at all: Supabase → **Edge Functions** → `recipe-ai` → **Logs**, and read the
+last line of the last invocation.
+
+What the current version adds:
 
 - the **“Anything you feel like?”** line is sent to the model and treated as a hard
   requirement — ask for curd and it must be in the ingredients;
@@ -546,8 +586,9 @@ The card under the idea now names the cause, so the fix is usually one line:
 | **The AI function is not set up** | No `AI_API_KEY` at all | Phase 7b |
 
 The reason only appears in full after you redeploy both functions once — the
-older deployment could only say “did not answer”. The redeploy is the same two
-commands as Phase 7c.
+older deployment could only say “did not answer”. The redeploy is the copy-and-paste
+recipe in **7c-bis**: open the link, select all, copy, select all inside the
+function’s editor, paste, Deploy.
 
 Two other things the function now does by itself: it retries without
 `response_format` when a provider refuses that field (some OpenAI-compatible

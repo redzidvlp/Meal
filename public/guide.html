@@ -346,21 +346,59 @@ Edge Functions → Secrets).</li>
 <code>https://api.openai.com/v1</code>, <code>ALLOW_ORIGIN</code> = <code>https://redzidvlp.github.io</code>.</p>
 <h3>7c. Deploy the two functions</h3>
 <p><strong>Without installing anything (recommended):</strong></p>
+<p>First, get the code onto your clipboard — this step is the same every time:</p>
 <ol>
-<li>Supabase → <strong>Edge Functions</strong> → <strong>Deploy a new function</strong> → <strong>Via editor</strong>.</li>
-<li>Name it exactly <code>recipe-ai</code>.</li>
-<li>Delete the sample code, paste the whole of
+<li>Open this address in the browser address bar:
 <code>https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/functions/recipe-ai/index.ts</code>
-→ <strong>Deploy</strong>.</li>
-<li>Repeat with name <code>nutrition-scan</code> and
-<code>https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/functions/nutrition-scan/index.ts</code>.</li>
+It is a <strong>plain page of code</strong>, not a download and not a menu.</li>
+<li><code>Ctrl+A</code> / <code>Cmd+A</code> (select everything on that page), then <code>Ctrl+C</code> / <code>Cmd+C</code>.</li>
+</ol>
+<blockquote>
+<p>The address is <strong>not</strong> the code. Pasting the link into the Supabase editor gives
+you a function whose whole body is one URL — it deploys, and then fails every
+time. Always copy the <em>text of the page</em> the link opens.</p>
+</blockquote>
+<p>Then, the first time:</p>
+<ol start="3">
+<li>Supabase → <strong>Edge Functions</strong> → <strong>Deploy a new function</strong> → <strong>Via editor</strong>.</li>
+<li>Name it exactly <code>recipe-ai</code>, delete the sample code, paste → <strong>Deploy</strong>.</li>
+<li>Then do the same for the second function: copy
+<code>https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/functions/nutrition-scan/index.ts</code>,
+<strong>Deploy a new function</strong> → <strong>Via editor</strong>, name it <code>nutrition-scan</code>, paste, <strong>Deploy</strong>.</li>
 <li>Leave <strong>Verify JWT</strong> ON for both (the app sends the signed-in user’s token).</li>
 </ol>
-<h3>7c-bis. Keeping it fresh</h3>
-<p>The functions change as the app does. If you deployed them before, paste <code>recipe-ai</code>
-once more: <strong>Edge Functions → recipe-ai → edit → select all → paste the file from
-<code>main</code> → Deploy updates</strong>.</p>
-<p>What the new version adds:</p>
+<h3>7c-bis. Keeping it fresh — updating a function you already deployed</h3>
+<p>Not a new function. Not a new name. You are replacing the code inside the one the
+app already calls.</p>
+<ol>
+<li><strong>Copy the code.</strong> Open
+<code>https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/functions/recipe-ai/index.ts</code>
+→ <code>Ctrl+A</code> / <code>Cmd+A</code> → <code>Ctrl+C</code> / <code>Cmd+C</code>. (The page itself is the code.)</li>
+<li><strong>Open the function you have.</strong> Supabase → <strong>Edge Functions</strong> → tap <strong><code>recipe-ai</code></strong>
+in the list. <em>Not</em> “Deploy a new function” — a second function with a different
+name is never called by the app.</li>
+<li><strong>Select everything in the editor.</strong> Click inside the code, <code>Ctrl+A</code> / <code>Cmd+A</code>.
+The blue selection must cover the whole file. If you paste without selecting
+first, you end up with two <code>Deno.serve</code> blocks and the deploy fails with a
+syntax error.</li>
+<li><strong>Paste</strong> (<code>Ctrl+V</code> / <code>Cmd+V</code>). The editor now shows the new file, starting with
+the comment <code>// Supabase Edge Function: recipe-ai</code>.</li>
+<li>Press <strong>Deploy</strong> (the button may say <strong>Deploy updates</strong>). Wait for the green tick,
+about ten seconds.</li>
+<li>Repeat 1–5 for <code>nutrition-scan</code> and
+<code>https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/functions/nutrition-scan/index.ts</code>.</li>
+</ol>
+<p>Nothing else has to be redone: <code>AI_API_KEY</code>, <code>AI_MODEL</code>, <code>AI_BASE_URL</code> and
+<code>ALLOW_ORIGIN</code> are <strong>secrets and settings</strong>, stored beside the code rather than in
+it, so they survive a redeploy untouched.</p>
+<p>How to know it worked: open the app → <strong>✨ Sous-chef</strong> → <strong>✨ Generate recipe</strong>. If the
+AI still cannot answer, the card now names the cause (“…rejected the key”, “…quota is
+used up”, “…refused the request”) instead of the old shrug. The table in <em>If the AI
+says it did not answer</em> (below) maps each message to its fix.</p>
+<p>If the card still says only “did not answer”, the function stopped before it could
+answer at all: Supabase → <strong>Edge Functions</strong> → <code>recipe-ai</code> → <strong>Logs</strong>, and read the
+last line of the last invocation.</p>
+<p>What the current version adds:</p>
 <ul>
 <li>the <strong>“Anything you feel like?”</strong> line is sent to the model and treated as a hard
 requirement — ask for curd and it must be in the ingredients;</li>
@@ -667,8 +705,9 @@ check the draft → <strong>Save</strong>. The meal appears on that day, with it
 </tr>
 </tbody></table>
 <p>The reason only appears in full after you redeploy both functions once — the
-older deployment could only say “did not answer”. The redeploy is the same two
-commands as Phase 7c.</p>
+older deployment could only say “did not answer”. The redeploy is the copy-and-paste
+recipe in <strong>7c-bis</strong>: open the link, select all, copy, select all inside the
+function’s editor, paste, Deploy.</p>
 <p>Two other things the function now does by itself: it retries without
 <code>response_format</code> when a provider refuses that field (some OpenAI-compatible
 providers do), and it unwraps an answer that came back inside a ``` fence.
