@@ -90,7 +90,8 @@ await act(async () => {
 });
 
 // Open the first meal recipe and close it.
-const recipeButton = [...container.querySelectorAll("button")].find(button => button.textContent.trim() === "Recipe");
+// A meal card opens its recipe from the dish name, not a "Recipe" button.
+const recipeButton = container.querySelector(".meal-name-btn");
 if (recipeButton) {
   await act(async () => {
     recipeButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
@@ -125,6 +126,89 @@ if (recipeButton) {
   if (document.body.classList.contains("is-locked")) throw new Error("Page stayed locked after closing the recipe");
   if (document.body.style.position === "fixed") throw new Error("Page stayed pinned after closing the recipe");
   console.log("RECIPE CLOSE UNLOCKS: ok");
+
+  // Swipe-to-close: the grabber has always looked grabbable, so it must work.
+  // jsdom has no Touch constructor; the handlers only read clientX/clientY, so
+  // a plain Event with a touches array is enough to drive them.
+  const touch = y => ({ clientX: 220, clientY: y });
+  const fire = (target, type, y) => {
+    const event = new dom.window.Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "touches", { value: type === "touchend" ? [] : [touch(y)], configurable: true });
+    target.dispatchEvent(event);
+  };
+  const openRecipeAgain = async () => {
+    const again = container.querySelector(".meal-name-btn");
+    await act(async () => {
+      again.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+      await new Promise(resolve => setTimeout(resolve, 120));
+    });
+  };
+
+  await openRecipeAgain();
+  const head = document.querySelector(".sheet-head");
+  if (!head) throw new Error("Recipe sheet has no head to grab");
+  await act(async () => {
+    fire(head, "touchstart", 100);
+    await new Promise(resolve => setTimeout(resolve, 60));
+    fire(head, "touchmove", 118);
+    await new Promise(resolve => setTimeout(resolve, 60));
+    fire(head, "touchmove", 140);
+    await new Promise(resolve => setTimeout(resolve, 60));
+    fire(head, "touchend", 140);
+    await new Promise(resolve => setTimeout(resolve, 300));
+  });
+  if (!document.querySelector(".sheet")) throw new Error("A 40 px pull closed the recipe");
+  console.log("SHEET SWIPE: a short pull springs back");
+
+  const head2 = document.querySelector(".sheet-head");
+  await act(async () => {
+    fire(head2, "touchstart", 100);
+    await new Promise(resolve => setTimeout(resolve, 60));
+    fire(head2, "touchmove", 150);
+    if (!document.querySelector(".sheet")?.style.transform) throw new Error("The sheet does not follow the finger");
+    await new Promise(resolve => setTimeout(resolve, 60));
+    fire(head2, "touchmove", 260);
+    await new Promise(resolve => setTimeout(resolve, 60));
+    fire(head2, "touchend", 260);
+    await new Promise(resolve => setTimeout(resolve, 340));
+  });
+  if (document.querySelector(".sheet")) throw new Error("A full swipe down did not close the recipe");
+  if (document.body.style.position === "fixed") throw new Error("The page stayed pinned after a swipe-close");
+  console.log("SHEET SWIPE: pulled down → closed, page unlocked");
+
+  // A recipe that has been scrolled must keep scrolling: the drag belongs to
+  // the content there, not to the sheet.
+  await openRecipeAgain();
+  const scrolledBody = document.querySelector(".sheet-body");
+  scrolledBody.scrollTop = 140;
+  await act(async () => {
+    fire(scrolledBody, "touchstart", 100);
+    await new Promise(resolve => setTimeout(resolve, 60));
+    fire(scrolledBody, "touchmove", 200);
+    await new Promise(resolve => setTimeout(resolve, 60));
+    fire(scrolledBody, "touchmove", 320);
+    await new Promise(resolve => setTimeout(resolve, 60));
+    fire(scrolledBody, "touchend", 320);
+    await new Promise(resolve => setTimeout(resolve, 300));
+  });
+  if (!document.querySelector(".sheet")) throw new Error("A scrolled recipe was closed by a scroll gesture");
+  console.log("SHEET SWIPE: a scrolled recipe is not dragged away");
+
+  // At the very top of the content the same pull does close it.
+  const topBody = document.querySelector(".sheet-body");
+  topBody.scrollTop = 0;
+  await act(async () => {
+    fire(topBody, "touchstart", 100);
+    await new Promise(resolve => setTimeout(resolve, 60));
+    fire(topBody, "touchmove", 200);
+    await new Promise(resolve => setTimeout(resolve, 60));
+    fire(topBody, "touchmove", 320);
+    await new Promise(resolve => setTimeout(resolve, 60));
+    fire(topBody, "touchend", 320);
+    await new Promise(resolve => setTimeout(resolve, 340));
+  });
+  if (document.querySelector(".sheet")) throw new Error("A pull from the top of the content did not close the sheet");
+  console.log("SHEET SWIPE: from the top of the content it closes too");
 }
 
 // Pantry: press a + stepper.

@@ -438,7 +438,17 @@ img { max-width: 100%; }
   color: var(--ink-soft); cursor: pointer; font-size: 13px;
   display: flex; align-items: center; justify-content: center;
 }
-.grabber { width: 42px; height: 5px; border-radius: 3px; background: #d5d0ea; margin: 8px auto 0; flex-shrink: 0; }
+/* The bar is 42x5, but the part you can grab is 130x23: a 5 px target is not
+   something a thumb can find, and the strip above the title is where a phone
+   user reaches to pull a sheet down. */
+.grabber {
+  width: 42px; height: 5px; border-radius: 3px;
+  background: #d5d0ea; background-clip: content-box;
+  margin: 2px auto 0; padding: 8px 44px; box-sizing: content-box;
+  flex-shrink: 0; touch-action: none; cursor: grab;
+}
+.sheet-head { touch-action: none; cursor: grab; }
+.sheet-head .close-btn, .sheet-head .close-btn * { cursor: pointer; }
 
 @keyframes fadeIn { from { opacity: 0; } }
 @keyframes slideUp { from { transform: translateY(30px); opacity: .5; } }
@@ -770,6 +780,8 @@ body.is-dragging-meal { cursor: grabbing; }
   border-radius: 12px; background: var(--surface-soft);
 }
 .product-name { font-size: 12px; font-weight: 700; }
+.product-row.asking { border-color: var(--danger, #b4453d); background: #fdf1ef; }
+.product-ask { color: var(--danger, #b4453d); font-weight: 700; }
 .pin-chip {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 4px 6px 4px 9px; border-radius: 10px;

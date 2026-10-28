@@ -468,8 +468,8 @@ export function useAppData(t = {}) {
   }, [refresh]);
 
   const deleteProduct = useCallback(async key => {
-    await guarded(() => api.deleteProduct(key));
-  }, [guarded]);
+    await guarded(() => api.deleteProduct(key), t.productDeleted);
+  }, [guarded, t.productDeleted]);
 
   const saveRecipe = useCallback(async input => {
     try {

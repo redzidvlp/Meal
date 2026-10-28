@@ -19,6 +19,10 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
   // The label photo exists only until the numbers are read out of it.
   const [photo, setPhoto] = useState(null);
   const [reading, setReading] = useState("");
+  // Which saved product is asking "remove me?" — an accidental tap on ✕ must
+  // not throw away the label someone just typed in.
+  const [confirmKey, setConfirmKey] = useState("");
+  const [removing, setRemoving] = useState("");
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
 
@@ -156,6 +160,19 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
     }
   };
 
+  const remove = async key => {
+    setRemoving(key);
+    setError("");
+    try {
+      await onDelete?.(key);
+      setConfirmKey("");
+    } catch {
+      setError(t.saveFailed);
+    } finally {
+      setRemoving("");
+    }
+  };
+
   const summary = useMemo(() => {
     if (!parsed || !parsed.found?.length) return "";
     return parsed.found.filter(key => key !== "fibre").join(" · ");
@@ -165,8 +182,8 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
     <Sheet
       open={open}
       onClose={closeSheet}
-      title={t.addProductTitle}
-      subtitle={t.addProductSub}
+      title={products.length ? t.myProducts : t.addProductTitle}
+      subtitle={products.length ? t.myProductsSub : t.addProductSub}
       footer={(
         <>
           <button type="button" className="btn btn-soft" style={{ flex: 1 }} onClick={closeSheet}>{t.cancel}</button>
@@ -176,6 +193,62 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
         </>
       )}
     >
+      {products.length > 0 && (
+        <>
+          {/* The list is the first thing you see, because "where did my product
+              go, and how do I get rid of it" is the question this sheet gets. */}
+          <div className="stack" style={{ gap: 6 }} data-products="list">
+            {products.map(product => {
+              const confirming = confirmKey === product.key;
+              return (
+                <div key={product.key} className={`product-row ${confirming ? "asking" : ""}`} data-product-row={product.key}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="product-name">{lang === "lt" && product.nameLt ? product.nameLt : product.nameEn}</div>
+                    {confirming ? (
+                      <div className="tiny product-ask">{t.deleteProductConfirm}</div>
+                    ) : (
+                      <div className="tiny">
+                        {Math.round(product.kcal)} kcal · 💪 {product.protein} g · 🌾 {product.carbs} g · 🫒 {product.fat} g
+                        {product.portionGrams ? ` · ${product.portionGrams} g` : ""}
+                        {(product.uses || []).length ? ` · ${product.uses.map(use => useLabel(use, lang)).join(", ")}` : ""}
+                      </div>
+                    )}
+                  </div>
+                  {confirming ? (
+                    <div className="row" style={{ gap: 5, flexShrink: 0 }}>
+                      <button type="button" className="btn btn-xs btn-ghost" onClick={() => setConfirmKey("")} disabled={removing === product.key}>
+                        {t.cancel}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-danger"
+                        data-action="delete-product"
+                        onClick={() => remove(product.key)}
+                        disabled={removing === product.key}
+                      >
+                        {removing === product.key ? t.saving : t.remove}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-ghost"
+                      aria-label={`${t.remove} ${product.nameEn}`}
+                      data-action="delete-product-ask"
+                      onClick={() => setConfirmKey(product.key)}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="divider" />
+          <div className="eyebrow" style={{ marginBottom: 8 }}>＋ {t.addAnotherProduct}</div>
+        </>
+      )}
+
       <div className="row" style={{ gap: 6, marginBottom: 8 }}>
         <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={onFile} data-photo="camera" />
         <input ref={galleryRef} type="file" accept="image/*" hidden onChange={onFile} data-photo="gallery" />
@@ -304,35 +377,6 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
         </div>
       </Field>
       {form.uses.length === 0 && <p className="tiny" style={{ marginTop: 6 }}>{t.productUsesEmpty}</p>}
-
-      {products.length > 0 && (
-        <>
-          <div className="divider" />
-          <div className="eyebrow" style={{ marginBottom: 7 }}>{t.myProducts}</div>
-          <div className="stack" style={{ gap: 6 }}>
-            {products.map(product => (
-              <div key={product.key} className="row-between product-row">
-                <div style={{ minWidth: 0 }}>
-                  <div className="product-name">{product.nameEn}</div>
-                  <div className="tiny">
-                    {Math.round(product.kcal)} kcal · 💪 {product.protein} g · 🌾 {product.carbs} g · 🫒 {product.fat} g
-                    {product.portionGrams ? ` · ${product.portionGrams} g` : ""}
-                    {(product.uses || []).length ? ` · ${product.uses.map(use => useLabel(use, lang)).join(", ")}` : ""}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-xs btn-ghost"
-                  aria-label={`${t.remove} ${product.nameEn}`}
-                  onClick={() => onDelete(product.key)}
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
     </Sheet>
   );
 }
