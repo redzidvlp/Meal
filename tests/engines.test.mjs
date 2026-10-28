@@ -1190,3 +1190,17 @@ test("a label photo is read once and then thrown away", async () => {
   delete globalThis.document;
   delete globalThis.createImageBitmap;
 });
+
+test("a shelf: swiping down closes it, a short wobble does not", async () => {
+  const { dismissOnRelease, DRAG_SLOP } = await import("../src/lib/gesture.js");
+  // A 520 px sheet: a fifth of it (104 px) is far enough.
+  assert.equal(dismissOnRelease({ y: 40, velocity: 0.1, height: 520 }), false, "a short, slow pull goes back");
+  assert.equal(dismissOnRelease({ y: 120, velocity: 0.1, height: 520 }), true, "a long pull closes");
+  assert.equal(dismissOnRelease({ y: 60, velocity: 0.9, height: 520 }), true, "a short flick closes");
+  assert.equal(dismissOnRelease({ y: 60, velocity: 0.5, height: 520 }), false, "a short, unhurried pull does not");
+  assert.equal(dismissOnRelease({ y: 400, velocity: 0.9, height: 1200 }), true, "a very tall sheet still closes well before the bottom");
+  assert.equal(dismissOnRelease({ y: 140, velocity: 0.1, height: 1200 }), false, "…but 150 px is the most a tall sheet ever asks for");
+  assert.equal(dismissOnRelease({ y: 0, velocity: 9, height: 520 }), false, "a tap is not a swipe");
+  assert.equal(dismissOnRelease({ y: -30, velocity: 0, height: 520 }), false, "dragging the sheet up never closes it");
+  assert.ok(DRAG_SLOP > 0 && DRAG_SLOP < 12, "there is a few pixels of tolerance before a drag starts");
+});

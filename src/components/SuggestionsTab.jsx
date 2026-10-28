@@ -276,7 +276,17 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
 
           {(app.products || []).length > 0 && (
             <div style={{ marginTop: 8 }}>
-              <div className="eyebrow" style={{ marginBottom: 5 }}>🏷️ {t.myProducts}</div>
+              <div className="row-between" style={{ marginBottom: 5 }}>
+                <div className="eyebrow">🏷️ {t.myProducts}</div>
+                <button
+                  type="button"
+                  className="btn btn-xs btn-ghost"
+                  data-action="manage-products"
+                  onClick={() => setProductSheet(true)}
+                >
+                  ⚙️ {t.manageProducts}
+                </button>
+              </div>
               <div className="row" style={{ gap: 4, flexWrap: "wrap" }} data-products="saved">
                 {(app.products || []).map(product => {
                   const active = pinKeys.includes(product.key);
@@ -555,7 +565,12 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
         lang={lang}
         t={t}
         app={app}
-        onDelete={key => app.deleteProduct(key)}
+        onDelete={async key => {
+          // A removed product must not stay pinned: the next idea would be
+          // built around something that no longer exists.
+          setPins(previous => previous.filter(pin => pin.key !== key));
+          await app.deleteProduct(key);
+        }}
         onSave={async input => {
           const saved = await app.saveProduct(input);
           if (saved) addPinFact(productFact(saved));

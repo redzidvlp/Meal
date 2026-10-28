@@ -610,6 +610,31 @@ await click(document.querySelector(`[data-product='${storedProduct.key}']`), 300
 assert(!document.querySelector(".sous-card .pin-chip"), "a second tap lets it go");
 console.log("MY PRODUCTS: shelf chip pins and unpins the saved ham");
 
+// Removing one: the list is the first thing the sheet shows, the ✕ asks before
+// it throws anything away, and a pin that pointed at it goes with it.
+await click(document.querySelector(`[data-product='${storedProduct.key}']`), 300);
+assert(/pjausniai/i.test(document.querySelector(".sous-card .pin-chip")?.textContent || ""), "pinned before the delete");
+await click(document.querySelector("[data-action='manage-products']"), 400);
+const list = document.querySelector("[data-products='list']");
+assert(list, "managing opens on the saved list, not on an empty form");
+// It has to be at the top: at the bottom of a long form nobody finds it.
+const photoButtonBelow = document.querySelector("[data-action='photo-label']");
+assert(
+  list.compareDocumentPosition(photoButtonBelow) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
+  "the saved list sits above the add-a-product form",
+);
+const productRow = document.querySelector(`[data-product-row='${storedProduct.key}']`);
+assert(productRow && /220 kcal/i.test(productRow.textContent), "the saved product is listed with its numbers");
+await click(productRow.querySelector("[data-action='delete-product-ask']"), 250);
+assert(/Remove this product/i.test(document.querySelector(`[data-product-row='${storedProduct.key}']`)?.textContent || ""), "it asks first");
+assert((state().products || []).some(row => row.key === storedProduct.key), "nothing is deleted by the first tap");
+await click(document.querySelector("[data-action='delete-product']"), 800);
+assert(!document.querySelector(`[data-product-row='${storedProduct.key}']`), "the row is gone from the list");
+assert(!(state().products || []).some(row => row.key === storedProduct.key), "the product is gone from storage");
+assert(!document.querySelector(".sous-card .pin-chip"), "and its pin went with it");
+console.log("DELETE PRODUCT: ✕ → asks → gone from the list, the shelf and the pins");
+await click(button("Cancel", document.querySelector(".sheet-foot")), 400);
+
 await click(button("Review & save"), 500);
 assert(text().includes("Offline idea engine"), "generated draft opens in the editor for review");
 assert([...document.querySelectorAll(".sheet-title")].some(el => el.textContent.includes("New recipe")), "draft uses the new-recipe editor");

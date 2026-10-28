@@ -391,6 +391,25 @@ about which product the sous-chef used.
 
 Nothing is picked at random: a saved product is only used when you ask for it.
 
+**Removing a product.** ⚙️ Sous-chef → **🏷️ My products** shelf → **⚙️ Manage**
+(or **＋ My product**, which opens the same sheet). The list of what you have
+saved is the first thing on that sheet, with a ✕ on each row. Press ✕ and the
+row asks **“Remove this product?”** — nothing is deleted until you press
+**Remove**, so a stray tap cannot throw away a label you just typed in. If the
+product was pinned, the pin disappears with it, so the next idea cannot be
+built around something that no longer exists. Deleting a product never touches
+a recipe you already saved.
+
+**Closing a sheet.** Every sheet that slides up from the bottom — a recipe, a
+product, the day camera — can be pushed back down the way a phone sheet should:
+put your thumb on the little grey bar at the top (or anywhere on the title bar)
+and swipe down. Pull it about a fifth of the way, or give it a quick flick, and
+it closes; a short pull springs back. Dragging inside the text itself scrolls
+the recipe, as it should — and when the recipe is already scrolled to the top,
+the same pull closes the sheet too. If a phone ever disagrees about that last
+part, the bar and the title bar always do the job. The ✕ in the corner and
+**Close** at the bottom work exactly as before.
+
 > **First time only:** this adds one table and one column, so the upgrade SQL
 > has to run once more. Supabase → SQL editor → paste
 > `https://raw.githubusercontent.com/redzidvlp/Meal/main/supabase/upgrade-existing-project.sql`

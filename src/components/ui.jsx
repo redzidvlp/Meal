@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { C, TAG_LABELS } from "../theme.js";
 import { tagLabel } from "../lib/labels.js";
+import { DRAG_SLOP, dismissOnRelease } from "../lib/gesture.js";
 import { fmtNum } from "../lib/format.js";
 
 
@@ -42,19 +43,181 @@ function useBodyLock(open) {
   }, [open]);
 }
 
-export function Sheet({ open, onClose, title, subtitle, children, footer, labelledBy = "sheet-title" }) {
+export function Sheet({ open, onClose, title, subtitle, children, footer, labelledBy = "sheet-title", dismissible = true }) {
+  const sheetRef = useRef(null);
+  const bodyRef = useRef(null);
+  const closeTimer = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
   useEffect(() => {
     if (!open) return undefined;
-    const onKey = event => { if (event.key === "Escape") onClose?.(); };
+    const onKey = event => { if (event.key === "Escape") closeRef.current?.(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open]);
   useBodyLock(open);
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
+
+  // A drag moves the element itself rather than React state: sixty re-renders
+  // a second would leave the sheet lagging behind the finger.
+  const moveTo = (y, animate) => {
+    const sheet = sheetRef.current;
+    if (!sheet) return;
+    sheet.style.transition = animate ? "transform .22s cubic-bezier(.2,.8,.2,1), opacity .22s ease" : "none";
+    sheet.style.transform = y ? `translateY(${y}px)` : "";
+  };
+
+  const sheetHeight = () => sheetRef.current?.getBoundingClientRect().height || 520;
+
+  const finishDrag = ({ y, velocity }) => {
+    if (!(y > 0)) { moveTo(0, true); return; }
+    if (!dismissOnRelease({ y, velocity, height: sheetHeight() })) { moveTo(0, true); return; }
+    // Far enough, or flicked: slide it out and close.
+    moveTo(sheetHeight(), true);
+    if (sheetRef.current) sheetRef.current.style.opacity = "0";
+    clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => {
+      closeRef.current?.();
+      // A parent that ignores onClose must not leave an invisible sheet behind.
+      closeTimer.current = setTimeout(() => {
+        const sheet = sheetRef.current;
+        if (!sheet?.isConnected) return;
+        sheet.style.opacity = "";
+        moveTo(0, true);
+      }, 260);
+    }, 170);
+  };
+
+  /**
+   * Touch is handled natively, not through React: React registers touchmove as
+   * passive, and a passive listener cannot stop the page from scrolling while
+   * the sheet is being dragged.
+   */
+  useEffect(() => {
+    if (!open || !dismissible) return undefined;
+    const sheet = sheetRef.current;
+    if (!sheet) return undefined;
+
+    let gesture = null;
+
+    function stop() {
+      gesture = null;
+      sheet.removeEventListener("touchmove", onMove);
+      sheet.removeEventListener("touchend", onEnd);
+      sheet.removeEventListener("touchcancel", onEnd);
+    }
+
+    function onMove(event) {
+      if (!gesture) return;
+      const touch = event.touches?.[0];
+      if (!touch) return;
+      const dy = touch.clientY - gesture.y0;
+      const dx = touch.clientX - gesture.x0;
+      if (!gesture.claimed) {
+        if (dy <= DRAG_SLOP) { if (Math.abs(dx) > 12) stop(); return; }
+        if (Math.abs(dx) > dy) { stop(); return; }
+        // A drag may only start from the head, or from the body when it is at
+        // its very top; anywhere else the finger is scrolling, and that has to
+        // keep working.
+        if (!gesture.inHandle && (bodyRef.current?.scrollTop || 0) > 0) { stop(); return; }
+        gesture.claimed = true;
+      }
+      event.preventDefault();
+      gesture.y = Math.max(0, dy);
+      const now = Date.now();
+      const since = now - gesture.sampledAt;
+      if (since > 0) gesture.velocity = (gesture.y - gesture.sampledY) / Math.max(16, since);
+      gesture.sampledY = gesture.y;
+      gesture.sampledAt = now;
+      moveTo(gesture.y, false);
+    }
+
+    function onEnd() {
+      const finished = gesture;
+      stop();
+      // A finger that dragged and then held still has no speed left, and must
+      // be judged on distance alone.
+      if (finished?.claimed) finishDrag({ y: finished.y, velocity: Date.now() - finished.sampledAt > 90 ? 0 : finished.velocity });
+    }
+
+    function onStart(event) {
+      if (event.touches?.length !== 1) return;
+      const target = event.target;
+      if (typeof target?.closest !== "function") return;
+      // Buttons, fields and links keep their own taps.
+      if (target.closest("button, a, input, textarea, select, label")) return;
+      const inHandle = !!target.closest(".sheet-head, .grabber");
+      if (!inHandle && (bodyRef.current?.scrollTop || 0) > 0) return;
+      const touch = event.touches[0];
+      gesture = {
+        x0: touch.clientX, y0: touch.clientY, t0: Date.now(),
+        inHandle, claimed: false, y: 0, velocity: 0,
+        sampledY: 0, sampledAt: Date.now(),
+      };
+      // Only while a drag is possible, so ordinary scrolling keeps the
+      // browser's fast path.
+      sheet.addEventListener("touchmove", onMove, { passive: false });
+      sheet.addEventListener("touchend", onEnd);
+      sheet.addEventListener("touchcancel", onEnd);
+    }
+
+    sheet.addEventListener("touchstart", onStart, { passive: true });
+    return () => {
+      sheet.removeEventListener("touchstart", onStart);
+      stop();
+    };
+  }, [open, dismissible]);
+
+  // The same gesture with a mouse, for the desktop preview.
+  const onPointerDown = event => {
+    if (event.pointerType === "touch" || event.button !== 0 || !dismissible) return;
+    const target = event.target;
+    if (typeof target?.closest !== "function") return;
+    if (!target.closest(".sheet-head, .grabber") || target.closest("button, a, input")) return;
+    const startY = event.clientY;
+    let claimed = false;
+    let y = 0;
+    let velocity = 0;
+    let sampledY = 0;
+    let sampledAt = Date.now();
+    const move = moveEvent => {
+      const dy = moveEvent.clientY - startY;
+      if (!claimed) {
+        if (dy <= DRAG_SLOP) return;
+        claimed = true;
+      }
+      y = Math.max(0, dy);
+      const now = Date.now();
+      const since = now - sampledAt;
+      if (since > 0) velocity = (y - sampledY) / Math.max(16, since);
+      sampledY = y;
+      sampledAt = now;
+      moveTo(y, false);
+    };
+    const up = upEvent => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      if (!claimed) return;
+      finishDrag({ y, velocity: Date.now() - sampledAt > 90 ? 0 : velocity });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
 
   if (!open) return null;
   return createPortal(
     <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose?.(); }}>
-      <div className="sheet" role="dialog" aria-modal="true" aria-labelledby={title ? labelledBy : undefined}>
+      <div
+        className="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? labelledBy : undefined}
+        ref={sheetRef}
+        onPointerDown={onPointerDown}
+      >
         <div className="grabber" aria-hidden="true" />
         {(title || onClose) && (
           <div className="sheet-head">
@@ -65,7 +228,7 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, labell
             <button type="button" className="close-btn" onClick={onClose} aria-label="Close">✕</button>
           </div>
         )}
-        <div className="sheet-body" style={SCROLL_LOCK_STYLE}>{children}</div>
+        <div className="sheet-body" style={SCROLL_LOCK_STYLE} ref={bodyRef}>{children}</div>
         {footer && <div className="sheet-foot">{footer}</div>}
       </div>
     </div>,
