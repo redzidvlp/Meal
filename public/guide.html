@@ -480,6 +480,17 @@ there and it is pinned for the next idea, tap again and it lets go. That shelf
 is where “the ham and the bread I actually buy” live — no typing, and no doubt
 about which product the sous-chef used.</p>
 <p>Nothing is picked at random: a saved product is only used when you ask for it.</p>
+<p><strong>The shelf is one line.</strong> However many products you save, they sit in a single
+row that scrolls sideways, with the count next to the heading. Your card stays
+the same size; nothing is pushed off the screen. Long packaging names are cut
+with “…” inside their chip — tap one and it is still the whole product that is
+pinned. <strong>⚙️ Manage</strong> opens the list, where every name is shown in full.</p>
+<p><strong>Editing a product.</strong> ⚙️ Sous-chef → <strong>🏷️ My products</strong> shelf → <strong>⚙️ Manage</strong> →
+<strong>✏️</strong> on the row. The sheet fills with what is saved: name, the four numbers,
+the pack size and the dishes it belongs in. Change anything — a typo in the
+name, a wrong calorie, the uses — and press <strong>Save changes</strong>. It stays the
+<em>same</em> product: if it was pinned, the pin is still there and still points at it.
+Editing never creates a second copy.</p>
 <p><strong>Removing a product.</strong> ⚙️ Sous-chef → <strong>🏷️ My products</strong> shelf → <strong>⚙️ Manage</strong>
 (or <strong>＋ My product</strong>, which opens the same sheet). The list of what you have
 saved is the first thing on that sheet, with a ✕ on each row. Press ✕ and the
@@ -526,11 +537,18 @@ reuse something.</p>
 <p>Under the wish box there is a <strong>⭐ Must include</strong> row. It is the direct answer to
 <em>“build me a meal around this product, but keep it in my calories and protein.”</em></p>
 <ol>
-<li>Type the product — <code>vegan meat</code>, <code>tempeh</code>, <code>skyr</code> — or tap one of the quick suggestions.</li>
-<li>Press <strong>＋ Add</strong>. It appears as a chip with a ✓, which means the app knows its
-nutrition and will do the maths with it. Up to five ingredients.</li>
+<li>Tap the box (or the <strong>▾</strong> beside it): a list of ingredients opens with their
+calories and protein. Type anything and the list narrows as you type — one
+tap pins the ingredient. The same list works on a phone; it is drawn by the
+app, not by the browser, which is why it no longer matters what you open the
+page in. Something the list does not know (a brand, a spread) can still be
+typed and pressed <strong>＋ Add</strong> — it goes to the model as a hard requirement.</li>
+<li>The pinned ingredient appears as a chip with a ✓, which means the app knows
+its nutrition and will do the maths with it. Up to five.</li>
 <li>Set your calories and (under <em>More nutrition</em>) the protein you want, then press
-<strong>✨ Generate recipe</strong>.</li>
+<strong>✨ Generate recipe</strong>. The calorie box can be emptied while you retype it:
+clear it, type <code>450</code>, and it stays 450 — not 0450. If you leave it empty, 500
+is used and the line under the button says so.</li>
 </ol>
 <p>What the engine does with it, in this order:</p>
 <ul>
@@ -606,6 +624,55 @@ correct recipe in the meantime.</li>
 estimates calories and protein for what is in the photo → press <strong>✓</strong> →
 check the draft → <strong>Save</strong>. The meal appears on that day, with its numbers.</li>
 </ol>
+<hr>
+<h3>If the AI says it did not answer</h3>
+<p>The card under the idea now names the cause, so the fix is usually one line:</p>
+<table>
+<thead>
+<tr>
+<th>What the card says</th>
+<th>What it means</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>…rejected the key (HTTP 401/403)</strong></td>
+<td>The provider refused <code>AI_API_KEY</code></td>
+<td>Supabase → Edge Functions → Secrets → <code>AI_API_KEY</code>; paste a fresh key, redeploy <code>recipe-ai</code></td>
+</tr>
+<tr>
+<td><strong>…quota or rate limit is used up (HTTP 429)</strong></td>
+<td>The key works, the account is empty or throttled</td>
+<td>Wait, or check the plan on the provider&#39;s dashboard</td>
+</tr>
+<tr>
+<td><strong>…refused the request (HTTP 400/404)</strong></td>
+<td>Usually the model name</td>
+<td>Leave <code>AI_MODEL</code> unset (the default is <code>gpt-4o-mini</code>), or set a model your key can use</td>
+</tr>
+<tr>
+<td><strong>…could not be reached at all</strong></td>
+<td>No function, no network, or an origin the function does not allow</td>
+<td>Check that <code>recipe-ai</code> is deployed; open the app from its own address</td>
+</tr>
+<tr>
+<td><strong>…answer could not be read</strong></td>
+<td>It replied with something that was not the JSON asked for</td>
+<td>Press ✨ again — the function asks a second time by itself</td>
+</tr>
+<tr>
+<td><strong>The AI function is not set up</strong></td>
+<td>No <code>AI_API_KEY</code> at all</td>
+<td>Phase 7b</td>
+</tr>
+</tbody></table>
+<p>The reason only appears in full after you redeploy both functions once — the
+older deployment could only say “did not answer”. The redeploy is the same two
+commands as Phase 7c.</p>
+<p>Two other things the function now does by itself: it retries without
+<code>response_format</code> when a provider refuses that field (some OpenAI-compatible
+providers do), and it unwraps an answer that came back inside a ``` fence.
+Either of those used to be a silent “did not answer”.</p>
 <hr>
 <h2>Phase 8 — Prove the update button works (2 min)</h2>
 <p>This matters to you: your partner must never see changes without pressing a button.</p>

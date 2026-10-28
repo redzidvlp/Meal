@@ -238,6 +238,9 @@ img { max-width: 100%; }
   border: 1.5px solid var(--line-soft); background: var(--surface);
   font-size: 11px; font-weight: 600; color: var(--ink-soft);
   cursor: pointer; white-space: nowrap;
+  /* A chip can never be wider than the column it sits in: a product with a
+     long packaging name used to run off the side of the phone. */
+  max-width: 100%; min-width: 0;
 }
 .chip.active { background: var(--ink); border-color: var(--ink); color: var(--sage); }
 .chip.sage { background: var(--sage-soft); border-color: #cfe89a; color: #4a5f14; }
@@ -779,8 +782,65 @@ body.is-dragging-meal { cursor: grabbing; }
   padding: 7px 9px; border: 1.5px solid var(--line-soft);
   border-radius: 12px; background: var(--surface-soft);
 }
-.product-name { font-size: 12px; font-weight: 700; }
+.product-name { font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+.product-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .product-row.asking { border-color: var(--danger, #b4453d); background: #fdf1ef; }
+.product-row .product-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+/* ── My products shelf ─────────────────────────────────────────────────── */
+.shelf-count {
+  display: inline-block; min-width: 16px; padding: 0 5px; margin-left: 2px;
+  border-radius: 999px; background: var(--sage-soft); color: #4a5f14;
+  font-size: 9.5px; font-weight: 800; text-align: center;
+}
+.product-shelf {
+  display: flex; gap: 6px; align-items: center;
+  overflow-x: auto; overflow-y: hidden;
+  padding-bottom: 3px;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.product-shelf::-webkit-scrollbar { display: none; }
+/* ── Anything a person typed has to wrap inside its box ────────────────── */
+.sheet-title, .modal-title, .meal-name-btn, .idea-name, .idea-ingredients,
+.recipe-hero, .menu-name, .product-name, .pin-chip-label, .picker-name {
+  overflow-wrap: anywhere;
+}
+
+.product-shelf .product-chip { flex: 0 0 auto; max-width: 78%; }
+.product-chip-name {
+  min-width: 0; max-width: 20ch;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.product-chip-meta { opacity: .65; font-weight: 500; flex-shrink: 0; }
+
+/* ── Ingredient picker (Must include) ──────────────────────────────────── */
+.picker-toggle {
+  min-width: 34px; padding: 0 8px; font-size: 13px; line-height: 1;
+  color: var(--muted); flex-shrink: 0;
+}
+.picker-empty {
+  margin: 6px 0 0; padding: 7px 9px; border-radius: 10px;
+  background: var(--surface-soft); border: 1px dashed var(--line-soft);
+}
+.picker-list {
+  margin-top: 6px; border: 1.5px solid var(--line-soft); border-radius: 14px;
+  background: var(--surface); overflow: hidden;
+  max-height: 218px; overflow-y: auto; overscroll-behavior: contain;
+}
+.picker-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; padding: 9px 11px; border: none; background: transparent;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px; font-weight: 600; color: var(--ink); text-align: left; cursor: pointer;
+}
+.picker-row:last-child { border-bottom: none; }
+.picker-row.is-active, .picker-row:hover { background: var(--sage-soft); }
+.picker-row.is-pinned { opacity: .6; cursor: default; }
+.picker-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-taken { color: #4a5f14; font-weight: 800; font-size: 10px; }
+.picker-meta { flex-shrink: 0; font-size: 10px; font-weight: 500; color: var(--muted); }
 .product-ask { color: var(--danger, #b4453d); font-weight: 700; }
 .pin-chip {
   display: inline-flex; align-items: center; gap: 5px;
@@ -794,6 +854,8 @@ body.is-dragging-meal { cursor: grabbing; }
   font-size: 10px; line-height: 1; padding: 2px; color: inherit; opacity: .7;
 }
 .pin-chip button:hover { opacity: 1; }
+.pin-chip { max-width: 100%; overflow: hidden; }
+.pin-chip > span, .pin-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pin-line {
   margin: 9px 0 0; padding: 7px 9px; border-radius: 9px;
   font-size: 10.5px; line-height: 1.45;
@@ -805,6 +867,7 @@ body.is-dragging-meal { cursor: grabbing; }
   font-size: 10.5px; line-height: 1.45; color: #8a4a10;
   background: var(--amber-soft); border: 1px solid #f3cfae; border-radius: 9px;
 }
+.ai-reason { display: block; margin-top: 3px; opacity: .85; }
 .ai-explain > summary {
   cursor: pointer; font-size: 11px; font-weight: 600; color: var(--muted);
   list-style: none; display: flex; align-items: center; gap: 5px;

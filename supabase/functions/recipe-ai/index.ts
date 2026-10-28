@@ -151,31 +151,65 @@ Deno.serve(async request => {
   const baseUrl = (Deno.env.get("AI_BASE_URL") || "https://api.openai.com/v1").replace(/\/$/, "");
   const model = Deno.env.get("AI_MODEL") || "gpt-4o-mini";
 
-  async function ask(messages) {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        temperature: messages.length > 1 ? 0.5 : 0.9,
-        max_tokens: 900,
-        response_format: { type: "json_object" },
-        messages,
-      }),
-    });
-    if (!response.ok) return { error: "upstream_failed" };
+  /**
+   * Calls the provider once. `jsonMode` is attempted first because it is what
+   * keeps a model from answering with prose; some OpenAI-compatible providers
+   * reject the field outright, so the caller retries without it rather than
+   * failing the whole recipe.
+   */
+  async function callModel(messages, jsonMode) {
+    let response;
+    try {
+      response = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          temperature: messages.length > 1 ? 0.5 : 0.9,
+          // A full recipe with a method is longer than 900 tokens on a bad day,
+          // and a truncated JSON object reads as "the model broke".
+          max_tokens: 1200,
+          ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+          messages,
+        }),
+      });
+    } catch {
+      return { status: 0, reason: "network" };
+    }
+    if (!response.ok) {
+      const reason = response.status === 401 || response.status === 403
+        ? "bad_key"
+        : response.status === 429
+          ? "quota"
+          : response.status === 400 || response.status === 404 || response.status === 422
+            ? "model"
+            : "upstream_failed";
+      return { status: response.status, reason };
+    }
     try {
       const data = await response.json();
-      return { parsed: JSON.parse(data?.choices?.[0]?.message?.content || "{}") };
+      const raw = String(data?.choices?.[0]?.message?.content || "{}");
+      // A model that wraps JSON in ```json fences is common enough to unwrap.
+      const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+      return { parsed: JSON.parse(cleaned || "{}") };
     } catch {
-      return { error: "unreadable_result" };
+      return { reason: "unreadable_result" };
     }
+  }
+
+  async function ask(messages) {
+    let attempt = await callModel(messages, true);
+    // Only the request shape is retried, never a bad key or an empty quota.
+    if (attempt.reason === "model") attempt = await callModel(messages, false);
+    return attempt;
   }
 
   const basePrompt = prompt({ slot, target, filters, pantry, avoid, notes, must, banned, variety, wish, course, modifiers, maxMinutes });
   let attempt = await ask([{ role: "user", content: basePrompt }]);
-  if (attempt.error) {
-    return json({ available: true, error: attempt.error === "upstream_failed" ? "upstream_failed" : "unreadable_result" }, 502, origin);
+  if (attempt.reason) {
+    // The app turns this word into a sentence: a wrong key, an empty quota and
+    // a wrong model name need three different fixes.
+    return json({ available: true, error: "upstream_failed", reason: attempt.reason }, 502, origin);
   }
 
   // Did it actually include what was asked for? If not, say so plainly and ask
@@ -197,8 +231,20 @@ Deno.serve(async request => {
         content: `That recipe did not contain ${missingFrom(attempt.parsed).join(" or ")}. Return the whole JSON again, and this time ${missingFrom(attempt.parsed).join(" and ")} must be one of the ingredients with a metric amount.`,
       },
     ]);
-    if (attempt.error) {
-      return json({ available: true, error: "unreadable_result" }, 502, origin);
+    if (attempt.reason) {
+      return json({ available: true, error: "upstream_failed", reason: attempt.reason }, 502, origin);
+    }
+  }
+
+  // A 200 with an empty object is the other way a model "does not answer": it
+  // replied, but with nothing usable. Ask once more, plainly, before giving up.
+  if (!clean(attempt.parsed?.name_en, 90)) {
+    attempt = await callModel([
+      { role: "user", content: basePrompt },
+      { role: "user", content: "Return the recipe as ONE JSON object starting with name_en. No prose, no markdown, no code fences." },
+    ], false);
+    if (attempt.reason) {
+      return json({ available: true, error: "upstream_failed", reason: attempt.reason }, 502, origin);
     }
   }
 
@@ -207,7 +253,7 @@ Deno.serve(async request => {
   const nameEn = clean(parsed.name_en, 90);
   const nameLt = clean(parsed.name_lt, 90) || nameEn;
   if (nameEn.length < 2) {
-    return json({ available: true, error: "unreadable_result" }, 502, origin);
+    return json({ available: true, error: "upstream_failed", reason: "unreadable_result" }, 502, origin);
   }
 
   const ingredients = (Array.isArray(parsed.ingredients) ? parsed.ingredients : [])

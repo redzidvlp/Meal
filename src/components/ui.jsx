@@ -394,7 +394,45 @@ export function Field({ label, hint, error, children, htmlFor }) {
   );
 }
 
-export function NumberInput({ value, onChange, min = 0, max = 9999, step = 1, id, ariaLabel }) {
+// "" and 0 mean the same thing to a number field that is allowed to be empty,
+// which is what stops a cleared calorie box from snapping back to a 0.
+const token = value => {
+  if (value === "" || value === null || value === undefined) return "";
+  const number = Number(value);
+  return Number.isFinite(number) && number === 0 ? "" : String(value);
+};
+
+/**
+ * A number field that can be emptied.
+ *
+ * The field used to render the parent's number straight back: clearing it sent
+ * `""`, the parent stored `0`, and a 0 appeared again — so the last digit could
+ * never be deleted and 450 became 0450. What is being typed is kept locally,
+ * and only the cleaned number is reported upwards. Leading zeros are dropped on
+ * the way up, so "0450" arrives as 450.
+ */
+export function NumberInput({ value, onChange, min = 0, max = 9999, step = 1, id, ariaLabel, placeholder = "" }) {
+  const [text, setText] = useState(() => token(value));
+  const last = useRef(token(value));
+
+  // An outside change (a reroll, a base meal, a photo read) still shows up; the
+  // echo of our own number does not fight the person's fingers.
+  useEffect(() => {
+    const next = token(value);
+    if (next === last.current) return;
+    last.current = next;
+    setText(next);
+  }, [value]);
+
+  const report = next => {
+    setText(next);
+    // "" stays "" so the field can be empty; "0450" is reported as 450.
+    const number = Number(String(next).replace(",", "."));
+    const out = next === "" || !Number.isFinite(number) ? "" : String(number);
+    last.current = token(out);
+    onChange?.(out);
+  };
+
   return (
     <input
       id={id}
@@ -405,8 +443,9 @@ export function NumberInput({ value, onChange, min = 0, max = 9999, step = 1, id
       min={min}
       max={max}
       step={step}
-      value={value}
-      onChange={event => onChange(event.target.value)}
+      placeholder={placeholder}
+      value={text}
+      onChange={event => report(event.target.value)}
     />
   );
 }

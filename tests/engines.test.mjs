@@ -1204,3 +1204,120 @@ test("a shelf: swiping down closes it, a short wobble does not", async () => {
   assert.equal(dismissOnRelease({ y: -30, velocity: 0, height: 520 }), false, "dragging the sheet up never closes it");
   assert.ok(DRAG_SLOP > 0 && DRAG_SLOP < 12, "there is a few pixels of tolerance before a drag starts");
 });
+
+// ── Must include: the suggestion list has to exist on a phone too ─────────
+const { matchIngredients } = await import("../src/lib/picker.js");
+
+test("the ingredient list ranks what was typed first", () => {
+  const facts = {
+    "natural-tofu": { en: "Natural tofu", lt: "Natūralus tofu", shortEn: "Tofu", kcal: 144, protein: 15.8, group: "protein" },
+    "smoked-tofu": { en: "Smoked tofu", lt: "Rūkytas tofu", kcal: 172, protein: 17, group: "protein" },
+    "canned-chickpeas": { en: "Canned chickpeas", lt: "Avinžirniai (konservuoti)", shortEn: "Chickpeas", kcal: 139, protein: 7.5, group: "protein" },
+    avocado: { en: "Avocado", lt: "Avokadas", kcal: 160, protein: 2, group: "fat" },
+  };
+  const top = matchIngredients("tofu", { facts, lang: "en" });
+  assert.equal(top[0].key, "natural-tofu", "an exact short name wins");
+  assert.ok(top.some(row => row.key === "smoked-tofu"), "the other tofu is still offered");
+  assert.ok(!top.some(row => row.key === "avocado"), "an unrelated ingredient is not offered");
+
+  const chick = matchIngredients("chick", { facts, lang: "en" });
+  assert.deepEqual(chick.map(row => row.key), ["canned-chickpeas"], "a prefix finds one row");
+
+  // Lithuanian is typed with its own letters, and folding has to cope.
+  assert.equal(matchIngredients("avokad", { facts, lang: "lt" })[0].label, "Avokadas");
+  assert.equal(matchIngredients("AVOKADAS", { facts, lang: "lt" }).length, 1, "case does not matter");
+});
+
+test("an empty box offers a starter list, proteins first", () => {
+  const facts = {
+    oregano: { en: "Oregano", kcal: 265, protein: 9, group: "flavor" },
+    tofu: { en: "Natural tofu", kcal: 144, protein: 15.8, group: "protein" },
+    rice: { en: "Brown rice", kcal: 360, protein: 7.5, group: "carb" },
+  };
+  const rows = matchIngredients("", { facts, lang: "en", limit: 2 });
+  assert.equal(rows.length, 2, "the list is capped");
+  assert.equal(rows[0].key, "tofu", "a protein comes before a grain");
+  assert.equal(rows[1].key, "rice", "…and a grain before a herb");
+});
+
+test("an ingredient already pinned is shown as taken, not hidden", () => {
+  const facts = { tofu: { en: "Natural tofu", kcal: 144, protein: 15.8, group: "protein" } };
+  const [row] = matchIngredients("tofu", { facts, lang: "en", exclude: ["tofu"] });
+  assert.equal(row.pinned, true, "the row says it is already in the box");
+});
+
+test("a saved product is offered with its own numbers", () => {
+  const facts = {
+    "p-ham": { key: "p-ham", en: "Veganiški pjausniai kumpio stiliaus", lt: "Veganiški pjausniai", kcal: 220, protein: 24.3, group: "protein", product: true },
+  };
+  const row = matchIngredients("pjausniai", { facts, lang: "lt" })[0];
+  assert.equal(row.label, "Veganiški pjausniai", "the Lithuanian name is used in Lithuanian");
+  assert.equal(row.product, true);
+  assert.equal(row.protein, 24.3);
+});
+
+// ── Why the AI did not answer ─────────────────────────────────────────────
+const { functionErrorReason } = await import("../src/lib/supabaseBackend.js");
+
+test("a function that fails with a reason is not a shrug", async () => {
+  const response = new Response(JSON.stringify({ available: true, error: "upstream_failed", reason: "bad_key" }), {
+    status: 502,
+    headers: { "Content-Type": "application/json" },
+  });
+  assert.equal(await functionErrorReason({ name: "FunctionsHttpError", context: response }), "bad_key");
+
+  const quota = new Response(JSON.stringify({ error: "upstream_failed", reason: "quota" }), {
+    status: 429,
+    headers: { "Content-Type": "application/json" },
+  });
+  assert.equal(await functionErrorReason({ name: "FunctionsHttpError", context: quota }), "quota");
+
+  // A dead network has no body at all; the error type still says something.
+  assert.equal(await functionErrorReason({ name: "FunctionsFetchError", context: new Error("offline") }), "network");
+  assert.equal(await functionErrorReason({ name: "FunctionsRelayError", context: {} }), "relay");
+});
+
+test("the idea carries the reason forward instead of one vague note", async () => {
+  const blocked = await requestRecipeIdea({
+    api: { generateRecipe: async () => { throw Object.assign(new Error("nope"), { reason: "bad_key" }); } },
+    slot: "lunch",
+    target: { kcal: 500, protein: 30, carbs: 45, fat: 20 },
+    seed: 3,
+  });
+  assert.equal(blocked.ai, false, "the offline engine still produced a dish");
+  assert.equal(blocked.aiNote, "failed");
+  assert.equal(blocked.aiReason, "bad_key", "the card can now say which key is wrong");
+
+  const quota = await requestRecipeIdea({
+    api: { generateRecipe: async () => ({ available: false, reason: "quota" }) },
+    slot: "lunch",
+    target: { kcal: 500, protein: 30, carbs: 45, fat: 20 },
+    seed: 4,
+  });
+  assert.equal(quota.aiReason, "quota");
+});
+
+test("every screen can be read in both languages", async () => {
+  const { T } = await import("../src/data/translations.js");
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const english = new Set(Object.keys(T.en));
+  const lithuanian = new Set(Object.keys(T.lt));
+  const missingInLt = [...english].filter(key => !lithuanian.has(key));
+  const missingInEn = [...lithuanian].filter(key => !english.has(key));
+  assert.deepEqual(missingInLt, [], "nothing is left English-only");
+  assert.deepEqual(missingInEn, [], "nothing is left Lithuanian-only");
+
+  // A key the code asks for but the table does not have renders as "undefined"
+  // on screen, which is how the new photo labels could have shipped.
+  const files = readdirSync("src/components")
+    .filter(name => name.endsWith(".jsx"))
+    .map(name => `src/components/${name}`)
+    .concat(["src/App.jsx"]);
+  const used = new Set();
+  for (const file of files) {
+    const source = readFileSync(file, "utf8");
+    for (const match of source.matchAll(/\bt\.([a-zA-Z_][a-zA-Z0-9_]*)/g)) used.add(match[1]);
+  }
+  const unknown = [...used].filter(key => !english.has(key) && !lithuanian.has(key));
+  assert.deepEqual(unknown, [], `screens ask for keys that do not exist: ${unknown.join(", ")}`);
+});

@@ -3,6 +3,7 @@ import { C } from "../theme.js";
 import { PRODUCT_USES, parseNutritionLabel, useLabel } from "../lib/products.js";
 import { discardImage, prepareImage } from "../lib/photo.js";
 import { Field, NumberInput, Sheet } from "./ui.jsx";
+import { aiReasonKey } from "../lib/aiReasons.js";
 
 const EMPTY = { name: "", kcal: "", protein: "", carbs: "", fat: "", portion: "", uses: [] };
 
@@ -19,16 +20,30 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
   // The label photo exists only until the numbers are read out of it.
   const [photo, setPhoto] = useState(null);
   const [reading, setReading] = useState("");
+  // Why the reading failed, when the machine can say: a wrong key is worth
+  // knowing about, and a quota error is worth waiting out.
+  const [readReason, setReadReason] = useState("");
   // Which saved product is asking "remove me?" — an accidental tap on ✕ must
   // not throw away the label someone just typed in.
   const [confirmKey, setConfirmKey] = useState("");
   const [removing, setRemoving] = useState("");
+  // The key of the product being changed, if any. Keeping the key is what
+  // stops an edit from turning one product into a second one under a new slug
+  // and leaving every pin pointing at the old name.
+  const [editing, setEditing] = useState("");
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
 
   const closeSheet = () => {
     setPhoto(current => discardImage(current));
     setReading("");
+    setReadReason("");
+    setEditing("");
+    setConfirmKey("");
+    setForm(EMPTY);
+    setLabelText("");
+    setParsed(null);
+    setError("");
     onClose();
   };
 
@@ -45,6 +60,7 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
         discardImage(previous);
         return prepared;
       });
+      setReadReason("");
       setReading("ready");
     } catch {
       setError(t.scanFailed);
@@ -61,10 +77,12 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
     if (!photo?.data) { setError(t.scanNoImage); return; }
     if (!app?.analyzePhoto) { setError(t.photoNeedsAi); return; }
     setError("");
+    setReadReason("");
     setReading("reading");
     try {
       const result = await app.analyzePhoto({ image: photo.data, mode: "label" });
       if (!result?.available) {
+        setReadReason(result?.reason || "");
         setReading("offline");
         return;
       }
@@ -88,7 +106,8 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
         portion: previous.portion || (serving ? String(serving) : ""),
       }));
       setReading("done");
-    } catch {
+    } catch (cause) {
+      setReadReason(cause?.reason || "");
       setReading("offline");
     } finally {
       // The picture has served its purpose either way.
@@ -133,6 +152,8 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
     setError("");
     try {
       await onSave({
+        // An edit keeps the row it came from, even when the name changes.
+        key: editing || undefined,
         nameEn: name,
         nameLt: name,
         kcal: kcal || Math.round((Number(form.protein) || 0) * 4 + (Number(form.carbs) || 0) * 4 + (Number(form.fat) || 0) * 9),
@@ -146,6 +167,7 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
       setForm(EMPTY);
       setLabelText("");
       setParsed(null);
+      setEditing("");
       // Whatever happened in the sheet, no picture leaves it.
       setPhoto(current => discardImage(current));
       setReading("");
@@ -158,6 +180,37 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
     } finally {
       setBusy(false);
     }
+  };
+
+  const startEdit = product => {
+    setConfirmKey("");
+    setEditing(product.key);
+    setLabelText("");
+    setParsed(null);
+    setError("");
+    setForm({
+      name: product.nameEn || "",
+      kcal: product.kcal ? String(Math.round(product.kcal)) : "",
+      protein: product.protein ? String(product.protein) : "",
+      carbs: product.carbs ? String(product.carbs) : "",
+      fat: product.fat ? String(product.fat) : "",
+      portion: product.portionGrams ? String(product.portionGrams) : "",
+      uses: Array.isArray(product.uses) ? [...product.uses] : [],
+    });
+    // The form is below the list, so bring it into view after it has rendered.
+    setTimeout(() => {
+      const field = document.querySelector("[data-field='product-name']");
+      field?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+      field?.focus?.({ preventScroll: true });
+    }, 60);
+  };
+
+  const stopEditing = () => {
+    setEditing("");
+    setForm(EMPTY);
+    setLabelText("");
+    setParsed(null);
+    setError("");
   };
 
   const remove = async key => {
@@ -182,13 +235,17 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
     <Sheet
       open={open}
       onClose={closeSheet}
-      title={products.length ? t.myProducts : t.addProductTitle}
-      subtitle={products.length ? t.myProductsSub : t.addProductSub}
+      title={editing ? t.editProductTitle : products.length ? t.myProducts : t.addProductTitle}
+      subtitle={editing
+        ? t.editProductSub
+        : products.length ? t.myProductsSub : t.addProductSub}
       footer={(
         <>
-          <button type="button" className="btn btn-soft" style={{ flex: 1 }} onClick={closeSheet}>{t.cancel}</button>
-          <button type="button" className="btn btn-primary" style={{ flex: 1.4 }} onClick={save} disabled={busy}>
-            {busy ? t.saving : t.saveProduct}
+          <button type="button" className="btn btn-soft" style={{ flex: 1 }} onClick={editing ? stopEditing : closeSheet}>
+            {editing ? t.cancel : t.cancel}
+          </button>
+          <button type="button" className="btn btn-primary" style={{ flex: 1.4 }} onClick={save} disabled={busy} data-action="save-product">
+            {busy ? t.saving : editing ? t.saveChanges : t.saveProduct}
           </button>
         </>
       )}
@@ -230,22 +287,39 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
                       </button>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      className="btn btn-xs btn-ghost"
-                      aria-label={`${t.remove} ${product.nameEn}`}
-                      data-action="delete-product-ask"
-                      onClick={() => setConfirmKey(product.key)}
-                    >
-                      ✕
-                    </button>
+                    <div className="product-actions">
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-ghost"
+                        aria-label={`${t.editProduct} ${product.nameEn}`}
+                        data-action="edit-product"
+                        onClick={() => startEdit(product)}
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-ghost"
+                        aria-label={`${t.remove} ${product.nameEn}`}
+                        data-action="delete-product-ask"
+                        onClick={() => setConfirmKey(product.key)}
+                      >
+                        ✕
+                      </button>
+                    </div>
                   )}
                 </div>
               );
             })}
           </div>
           <div className="divider" />
-          <div className="eyebrow" style={{ marginBottom: 8 }}>＋ {t.addAnotherProduct}</div>
+          {editing ? (
+            <button type="button" className="btn btn-xs btn-ghost" data-action="new-product" style={{ marginBottom: 8 }} onClick={stopEditing}>
+              {t.backToAdd}
+            </button>
+          ) : (
+            <div className="eyebrow" style={{ marginBottom: 8 }}>＋ {t.addAnotherProduct}</div>
+          )}
         </>
       )}
 
@@ -295,7 +369,12 @@ export default function ProductSheet({ open, onClose, onSave, onDelete, products
       )}
 
       {reading === "done" && <p className="tiny" style={{ color: C.leaf, marginBottom: 8 }} data-note="photo-read">✓ {t.photoReadAndDiscarded}</p>}
-      {reading === "offline" && <p className="tiny" style={{ color: C.amber, marginBottom: 8 }}>{t.photoNeedsAi}</p>}
+      {reading === "offline" && (
+        <p className="tiny" style={{ color: C.amber, marginBottom: 8 }}>
+          {t.photoNeedsAi}
+          {aiReasonKey(readReason) ? ` ${t[aiReasonKey(readReason)]}` : ""}
+        </p>
+      )}
 
       <Field label={t.pasteLabel} hint={t.pasteLabelHint}>
         <textarea
