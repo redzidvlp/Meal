@@ -124,3 +124,42 @@ export function createReloader(run, options = {}) {
     },
   };
 }
+
+
+/**
+ * Collects which tables a batch of reloads is about.
+ *
+ * Any number of narrow requests merge into one read of those tables. A request
+ * that does not say which table moved — another tab wrote, an older backend —
+ * must widen the read to everything, and it must stay widened even if narrow
+ * requests arrive after it.
+ */
+export function createTableBatch() {
+  let tables = new Set();
+  let full = false;
+  return {
+    add(list) {
+      if (!Array.isArray(list)) {
+        full = true;
+        tables = new Set();
+        return;
+      }
+      if (full) return;
+      for (const table of list) if (table) tables.add(table);
+    },
+    /** Returns the tables to read, or null for a full kitchen read. */
+    take() {
+      const result = full || tables.size === 0 ? null : [...tables];
+      tables = new Set();
+      full = false;
+      return result;
+    },
+    reset() {
+      tables = new Set();
+      full = false;
+    },
+    get pending() {
+      return full || tables.size > 0;
+    },
+  };
+}

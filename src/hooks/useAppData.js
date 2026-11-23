@@ -5,7 +5,7 @@ import { buildPlan } from "../engine/plan.js";
 import { buildShoppingList } from "../engine/shopping.js";
 import { lowItems } from "../engine/pantry.js";
 import { mergeMenus } from "../lib/menus.js";
-import { createReloader } from "../lib/reload.js";
+import { createReloader, createTableBatch } from "../lib/reload.js";
 import {
   applySlot as optimisticSlot,
   applyMenu as optimisticMenu,
@@ -222,21 +222,20 @@ export function useAppData(t = {}) {
   // wire becomes exactly one follow-up instead of a queue.
   const reloaderRef = useRef(null);
   if (!reloaderRef.current) {
-    let wantedTables = new Set();
+    const batch = createTableBatch();
     const reloader = createReloader(async () => {
-      const tables = wantedTables.size ? [...wantedTables] : null;
-      wantedTables = new Set();
-      await reloadRef.current({ silent: true, tables });
+      // take() must happen when the read starts, not when it was asked for, so
+      // everything that arrived in the window is included exactly once.
+      await reloadRef.current({ silent: true, tables: batch.take() });
     }, { wait: 250 });
     reloaderRef.current = {
       request(delay = 250, tables = null) {
-        if (Array.isArray(tables)) for (const table of tables) if (table) wantedTables.add(table);
-        else wantedTables = null; // anything unknown means a full read
+        batch.add(tables);
         reloader.request(delay);
       },
       flush: reloader.flush,
       cancel: () => {
-        wantedTables = new Set();
+        batch.reset();
         reloader.cancel();
       },
     };

@@ -17,7 +17,7 @@ import { parseWish, wishSatisfied, containsExcluded, wishChips, resolveIngredien
 import { requestRecipeIdea } from "../src/lib/ideas.js";
 import { PRODUCT_USES, parseNutritionLabel, productFact, sanitizeProduct } from "../src/lib/products.js";
 import { registerProductFacts, factFor } from "../src/data/ingredientFacts.js";
-import { createReloader } from "../src/lib/reload.js";
+import { createReloader, createTableBatch } from "../src/lib/reload.js";
 import { applySlot, applyMenu, applyMove, applySectionHidden, applyEaten, applyResetWeek } from "../src/lib/optimistic.js";
 
 const makeRecipe = (overrides = {}) => ({
@@ -1533,4 +1533,22 @@ test("resetting the week puts the pantry back and keeps notes", () => {
   assert.deepEqual(reset.assignments, []);
   assert.deepEqual(reset.eaten, []);
   assert.equal(reset.notes.length, 1, "notes are not part of the week");
+});
+
+
+test("a reload batch widens to the whole kitchen when a table is unknown", () => {
+  const batch = createTableBatch();
+  batch.add(["pantry"]);
+  batch.add(["recipes", "pantry"]);
+  assert.deepEqual(batch.take().sort(), ["pantry", "recipes"], "narrow requests merge into one slice");
+  assert.equal(batch.take(), null, "the batch is emptied when it is taken");
+
+  batch.add(["pantry"]);
+  batch.add(null); // another tab wrote; its table is unknown
+  batch.add(["water"]); // a later narrow request must not shrink the read
+  assert.equal(batch.take(), null, "an unknown table means read everything");
+  assert.equal(batch.pending, false, "and the batch is empty afterwards");
+
+  batch.add([]);
+  assert.equal(batch.take(), null, "an empty batch is a safe full read, never a crash");
 });
