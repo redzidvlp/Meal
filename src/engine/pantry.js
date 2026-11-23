@@ -1,4 +1,5 @@
 import { shoppingItemKey } from "./shopping.js";
+import { toStock } from "../lib/units.js";
 
 export function pantryKey(key, unit) {
   return `${key}|${unit}`;
@@ -7,10 +8,15 @@ export function pantryKey(key, unit) {
 /** Ingredient deltas for marking one meal eaten (factor = portions). */
 export function consumptionForRecipe(recipe, factor = 1) {
   if (!recipe) return [];
-  return (recipe.ingredients || []).map(ing => ({
-    itemKey: shoppingItemKey(ing),
-    delta: -(Math.round(ing.amount * factor * 10) / 10),
-  }));
+  // A tablespoon leaves the pantry as millilitres — the same row the shopping
+  // list put there — never as a "spoon" row that no shelf has.
+  return (recipe.ingredients || []).map(raw => {
+    const ing = toStock(raw);
+    return {
+      itemKey: shoppingItemKey(ing),
+      delta: -(Math.round(ing.amount * factor * 10) / 10),
+    };
+  });
 }
 
 /**
@@ -82,7 +88,7 @@ export function pantryCoverage(item, plan, days = [0, 1, 2, 3, 4, 5, 6]) {
           ];
       for (const { recipe, people } of recipes) {
         if (!recipe) continue;
-        const match = (recipe.ingredients || []).find(ing => shoppingItemKey(ing) === target);
+        const match = (recipe.ingredients || []).find(ing => shoppingItemKey(toStock(ing)) === target);
         if (!match) continue;
         uses += 1;
         portions += people;

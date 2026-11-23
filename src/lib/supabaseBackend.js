@@ -17,6 +17,10 @@ const mapHousehold = row => row && ({
   extraPortions: Number(row.extra_portions) || 0,
 });
 
+// Older rows may hold a spoon unit. The database now accepts tsp/tbsp in a
+// recipe, but anything unexpected falls back to grams rather than propagating.
+const recipeUnit = unit => (["g", "ml", "vnt", "tsp", "tbsp"].includes(unit) ? unit : "g");
+
 export const mapRecipeRow = row => row && ({
   id: row.id,
   householdId: row.household_id,
@@ -33,7 +37,7 @@ export const mapRecipeRow = row => row && ({
     en: ing.en,
     lt: ing.lt || ing.en,
     amount: Number(ing.amount) || 0,
-    unit: ing.unit,
+    unit: recipeUnit(ing.unit),
   })) : [],
   method: { en: row.method_en || "", lt: row.method_lt || row.method_en || "" },
   tags: Array.isArray(row.tags) ? row.tags : ["vegetarian"],

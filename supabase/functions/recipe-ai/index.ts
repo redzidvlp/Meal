@@ -5,7 +5,7 @@
 // Deploy:  supabase functions deploy recipe-ai
 // Secrets: supabase secrets set AI_API_KEY=...   (optional AI_BASE_URL, AI_MODEL, ALLOW_ORIGIN)
 
-const UNITS = ["g", "ml", "vnt"];
+const UNITS = ["g", "ml", "vnt", "tsp", "tbsp"];
 const SLOTS = ["breakfast", "lunch", "snack", "dinner"];
 
 // Hard guard: a generated recipe can never contain meat or fish.
@@ -63,8 +63,8 @@ const prompt = input => [
   "Reply with JSON only, no prose, no markdown.",
   "The recipe must be strictly vegetarian (no meat, no fish, no seafood, no gelatin).",
   "Prefer low-FODMAP ingredients when the filter says so; keep it gluten-free unless told otherwise.",
-  "Use metric amounts in g, ml or vnt. Exact Lithuanian translations are welcome.",
-  'Schema: {"name_en":string,"name_lt":string,"emoji":string,"slot":string,"course":"sweet"|"savoury","kcal":number,"protein":number,"carbs":number,"fat":number,"prep_minutes":number,"ingredients":[{"en":string,"lt":string,"amount":number,"unit":"g"|"ml"|"vnt"}],"method_en":string,"method_lt":string,"tags":string[]}',
+  "Use metric amounts in g, ml or vnt; spoons (tsp, tbsp) are fine for oil, spices and sauces. Exact Lithuanian translations are welcome.",
+  'Schema: {"name_en":string,"name_lt":string,"emoji":string,"slot":string,"course":"sweet"|"savoury","kcal":number,"protein":number,"carbs":number,"fat":number,"prep_minutes":number,"ingredients":[{"en":string,"lt":string,"amount":number,"unit":"g"|"ml"|"vnt"|"tsp"|"tbsp"}],"method_en":string,"method_lt":string,"tags":string[]}',
   `Slot: ${input.slot}. Target per person: ${input.target.kcal} kcal, ${input.target.protein} g protein, ${input.target.carbs} g carbs, ${input.target.fat} g fat.`,
   `Filters: ${input.filters.lowFodmap ? "low-FODMAP" : "no FODMAP restriction"}, ${input.maxMinutes ? `ready in ${input.maxMinutes} minutes or less` : input.filters.quick ? "ready in 15 minutes or less" : "any prep time"}, ${input.filters.highProtein ? "high protein" : "normal protein"}.`,
   (input.must || []).length

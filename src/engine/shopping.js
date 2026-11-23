@@ -1,6 +1,7 @@
 import { SLOTS } from "../theme.js";
 import { ingredientLabel } from "../lib/ingredients.js";
 import { fmtNum } from "../lib/format.js";
+import { toStock } from "../lib/units.js";
 
 export function shoppingItemKey(ingredient) {
   return `${ingredient.key}|${ingredient.unit}`;
@@ -65,7 +66,11 @@ export function buildShoppingList({
         if (!recipe) return;
         const factor = portions[index] ?? 0;
 
-        for (const ing of recipe.ingredients || []) {
+        // Spoons are converted here, once: two recipes that each use a
+        // tablespoon of oil must add up to 30 ml of oil on the list, and the
+        // pantry row it is checked against is in millilitres too.
+        for (const raw of recipe.ingredients || []) {
+          const ing = toStock(raw);
           const key = shoppingItemKey(ing);
           if (!map.has(key)) {
             map.set(key, {

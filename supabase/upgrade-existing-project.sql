@@ -910,11 +910,18 @@ begin
     raise exception 'assignment_mismatch';
   end if;
 
+  -- A recipe may measure in spoons (1 tbsp = 15 ml, 1 tsp = 5 ml); the pantry
+  -- is counted in millilitres, so a spoon is converted on the way out. This
+  -- rule lives in src/lib/units.js too — the two must agree.
   select coalesce(
            jsonb_agg(
              jsonb_build_object(
-               'itemKey', (i->>'key') || '|' || (i->>'unit'),
-               'delta', -round(((i->>'amount')::numeric * v_factor), 1)
+               'itemKey', (i->>'key') || '|' ||
+                 case when (i->>'unit') in ('tsp', 'tbsp') then 'ml' else (i->>'unit') end,
+               'delta', -round(
+                 (i->>'amount')::numeric
+                 * v_factor
+                 * (case (i->>'unit') when 'tbsp' then 15 when 'tsp' then 5 else 1 end), 1)
              )
            ),
            '[]'::jsonb
@@ -922,7 +929,7 @@ begin
     into v_applied
     from jsonb_array_elements(v_recipe.ingredients) i
    where (i->>'key') ~ '^[a-z0-9-]{1,80}$'
-     and (i->>'unit') in ('g', 'ml', 'vnt')
+     and (i->>'unit') in ('g', 'ml', 'vnt', 'tsp', 'tbsp')
      and (i->>'amount') ~ '^[0-9]+(\.[0-9]+)?$';
 
   if jsonb_array_length(v_applied) > 0 then

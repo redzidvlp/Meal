@@ -1,6 +1,7 @@
 import { findForbiddenIngredients } from "../lib/ingredients.js";
 import { SLOTS } from "../theme.js";
 import { shoppingItemKey } from "./shopping.js";
+import { toStock } from "../lib/units.js";
 import { isLow } from "./pantry.js";
 import { allPlannedRecipes } from "./plan.js";
 
@@ -96,7 +97,7 @@ export function suggestRecipes({
       reasons.push({ key: "reasonSlot" });
     }
 
-    const pantryHits = (recipe.ingredients || []).filter(ing => pantryKeys.has(shoppingItemKey(ing))).length;
+    const pantryHits = (recipe.ingredients || []).filter(ing => pantryKeys.has(shoppingItemKey(toStock(ing)))).length;
     if (pantryHits > 0) score += Math.min(15, pantryHits * 3);
     if (pantryHits >= 2) reasons.push({ key: "reasonPantry", values: { n: pantryHits } });
 
@@ -149,7 +150,7 @@ export function pantryWatchlist(pantry, plan, days = [0, 1, 2, 3, 4, 5, 6]) {
         const list = entry.mode === "both" ? [entry.recipes.R] : [entry.recipes.R, entry.recipes.I];
         for (const recipe of list) {
           if (!recipe) continue;
-          if ((recipe.ingredients || []).some(ing => shoppingItemKey(ing) === shoppingItemKey(item))) {
+          if ((recipe.ingredients || []).some(ing => shoppingItemKey(toStock(ing)) === shoppingItemKey(item))) {
             uses.push({ day, slot, recipe });
           }
         }

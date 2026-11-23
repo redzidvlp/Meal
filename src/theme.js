@@ -27,7 +27,9 @@ export const SLOT_META = {
 };
 
 export const SLOTS = ["breakfast", "lunch", "snack", "dinner"];
-export const UNITS = ["g", "ml", "vnt"];
+// Units a recipe may use. Spoons are a real unit: the recipe says "1 tbsp",
+// the shopping list buys millilitres (see lib/units.js).
+export const UNITS = ["g", "ml", "vnt", "tsp", "tbsp"];
 
 // The app is built for exactly two people, so "portions" shown to the user is
 // always one each plus whatever they add for leftovers.

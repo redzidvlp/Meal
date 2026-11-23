@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { C, UNITS } from "../theme.js";
+import { C } from "../theme.js";
+import { STOCK_UNITS } from "../lib/units.js";
 import { fmtNum, interpolate } from "../lib/format.js";
 import { isLow, pantryCoverage, stockRatio } from "../engine/pantry.js";
 import { sanitizeSearch } from "../lib/validate.js";
@@ -77,7 +78,7 @@ function ItemForm({ open, item, lang, t, onClose, onSave, onDelete }) {
             </Field>
             <Field label={t.unit}>
               <select className="select" value={form.unit} onChange={event => setForm({ ...form, unit: event.target.value })}>
-                {UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                {STOCK_UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
               </select>
             </Field>
           </div>
