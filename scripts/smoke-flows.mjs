@@ -334,7 +334,9 @@ const ingredientInputs = [...document.querySelectorAll(".sheet .card-soft input"
 await setInput(ingredientInputs[0], "Smoked tofu");
 await setInput(ingredientInputs[1], "Rūkytas tofu");
 await setInput(ingredientInputs[2], "120");
-const textareas = [...document.querySelectorAll(".sheet textarea")];
+// The paste-a-recipe box is a textarea too, so the method fields are picked
+// from everything that is not it.
+const textareas = [...document.querySelectorAll(".sheet textarea:not([data-import-text])")];
 await setInput(textareas[0], "Slice and fry.");
 await setInput(textareas[1], "Supjaustyti ir pakepinti.");
 const labelInput = document.querySelector('.sheet input[placeholder="e.g. 10-minute meal"]');
@@ -425,13 +427,22 @@ console.log("RECIPE BOOK: 🗑 asked → recipe left the book, the week and the 
 // empty now — that is the point. Put a meal back so the rest of the suite finds
 // a full day, exactly as a person would.
 await nav("Plan");
-const emptySlot = document.querySelector("[data-drop-slot='breakfast'] .empty-slot");
-assert(emptySlot, "deleting the recipe emptied the breakfast slot it was planned in");
-await click(emptySlot, 350);
+const activeDayDrop = document.querySelector("[data-drop-slot]");
+assert(activeDayDrop, "the day on screen is open");
+const activeDayIndex = todayIndex();
+const daySlots = ["breakfast", "lunch", "snack", "dinner"];
+const emptiedSlotName = daySlots.find(slot => {
+  const onPlan = state().assignments.some(row => Number(row.day) === activeDayIndex && row.slot === slot);
+  return !onPlan && document.querySelector(`[data-drop-slot='${slot}']`);
+});
+assert(emptiedSlotName, "the recipe left a gap on the day on screen");
+const emptiedSlot = document.querySelector(`[data-drop-slot='${emptiedSlotName}'] .empty-slot`);
+assert(emptiedSlot, "that gap is drawn as an empty slot");
+await click(emptiedSlot, 350);
 const firstOpen = [...document.querySelectorAll(".recipe-option")].find(option => !option.disabled);
 assert(firstOpen, "the picker opens for the emptied slot");
 await click(firstOpen, 700);
-assert(document.querySelector("[data-drop-slot='breakfast'] .meal-grip"), "the slot is filled again for the rest of the run");
+assert(state().assignments.some(row => Number(row.day) === activeDayIndex && row.slot === emptiedSlotName), "the slot is filled again for the rest of the run");
 
 // 5e. A bored-of-it library dish: hide it, prove it left the pool and that a
 // day menu no longer hands it back, then put it back.
@@ -907,6 +918,62 @@ await click(confirm(), 900);
 assert(state().assignments.length === 0, "plan cleared");
 assert(state().pantry.length === pantryBefore, "pantry kept");
 console.log("RESET WEEK: plan cleared, pantry kept");
+
+// 9. A whole recipe pasted into one box fills the fields by itself — from the
+// recipe book, which is where a person writes a recipe from scratch.
+await nav("Recipes");
+const bookAdd = [...document.querySelectorAll("button")].find(el => /^\s*[+＋]\s*New\s*$/i.test(el.textContent));
+assert(bookAdd, "the recipe book offers a new recipe");
+await click(bookAdd, 450);
+const importSheet = [...document.querySelectorAll(".sheet")].at(-1);
+const pasteToggle = importSheet.querySelector("[data-import-recipe]");
+assert(pasteToggle, "the editor offers to read a pasted recipe");
+await click(pasteToggle, 200);
+const pasteBox = importSheet.querySelector("[data-import-text]");
+assert(pasteBox, "the paste box opened");
+await setInput(pasteBox, `Creamy Chickpea Bowl (Kreminis avinžirnių dubenėlis)
+Serves 2
+Prep time: 20 minutes
+Ingredients
+- 150 g canned chickpeas
+- 2 tbsp olive oil
+- 1 1/2 tsp ground cumin
+- 1 onion
+Method
+1. Warm the oil, add the onion and cook softly.
+2. Add the chickpeas and cumin, simmer ten minutes.
+Per serving: 420 kcal, 18 g protein, 48 g carbs, 17 g fat`);
+await click(importSheet.querySelector("[data-import-apply]"), 400);
+assert(importSheet.querySelector("[data-import-note]"), "the import reports what it read");
+const importedName = importSheet.querySelector("input");
+assert(importedName.value === "Creamy Chickpea Bowl", `name filled from the paste (${importedName.value})`);
+// Prep minutes, then kcal/protein/carbs/fat — the form's own order.
+const importedNumbers = [...importSheet.querySelectorAll("input[type=number]")].map(input => input.value);
+assert(importedNumbers.slice(0, 5).join("/") === "20/420/18/48/17", `prep and macros filled from the paste (${importedNumbers.slice(0, 5).join("/")})`);
+const importedRows = [...importSheet.querySelectorAll(".card-soft")].filter(card => card.querySelector("select"));
+assert(importedRows.length >= 4, "ingredient rows created from the paste");
+const importedUnits = importedRows.map(row => row.querySelector("select").value);
+assert(importedUnits.includes("tbsp") && importedUnits.includes("tsp"), `spoons kept as written (${importedUnits.join(",")})`);
+const spoonOption = [...importedRows[1].querySelector("select").options].map(option => option.value);
+assert(spoonOption.includes("tbsp") && spoonOption.includes("tsp"), "both spoons are offered in the unit list");
+await click(button("Save", document.querySelector(".sheet-foot")), 900);
+const importedRecipe = state().recipes.find(recipe => recipe.name.en === "Creamy Chickpea Bowl");
+assert(importedRecipe, "the pasted recipe saved");
+assert(importedRecipe.kcal === 420 && importedRecipe.protein === 18, "the saved recipe kept its nutrition");
+assert(importedRecipe.ingredients.some(item => item.unit === "tbsp" && item.amount === 2), "the saved recipe kept the spoon");
+console.log(`IMPORT: pasted recipe saved as "${importedRecipe.name.en}" with ${importedRecipe.ingredients.length} ingredients, ${importedRecipe.kcal} kcal`);
+
+// 10. The pantry counts volume, not spoons: a tbsp there would be a new kind of stock.
+await nav("Pantry");
+const pantryAdd = [...document.querySelectorAll("button")].find(el => /Add (an )?item|Add to pantry/i.test(el.textContent));
+if (pantryAdd) {
+  await click(pantryAdd, 350);
+  const pantrySheet = [...document.querySelectorAll(".sheet")].at(-1);
+  const unitOptions = [...pantrySheet.querySelectorAll("select option")].map(option => option.value);
+  assert(!unitOptions.includes("tbsp") && !unitOptions.includes("tsp"), `the pantry offers no spoons (${unitOptions.join(",")})`);
+  await click(pantrySheet.querySelector(".sheet .close-btn") || button("Cancel", pantrySheet), 300);
+  console.log("PANTRY UNITS: g / ml / vnt only, spoons are converted before they get there");
+}
 
 assert(errors.length === 0, `console errors: ${errors.slice(0, 3).join(" | ")}`);
 root.unmount();

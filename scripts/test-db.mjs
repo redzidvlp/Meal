@@ -245,6 +245,63 @@ await scenario("a household can remove a library recipe without touching anyone 
   await db.close();
 });
 
+await scenario("spoons in a recipe are converted when the pantry is used", async () => {
+  const db = await freshDatabase();
+  await db.exec(readSql("schema.sql"));
+  await db.exec(readSql("seed.sql"));
+  await db.exec(`
+    create or replace function auth.uid() returns uuid language sql stable as $$ select '${REGITA}'::uuid $$;
+    insert into auth.users (id, email) values ('${REGITA}', 'regita@example.com');
+    insert into public.households (id, name, invite_code) values ('${HOUSEHOLD}', 'Mūsų virtuvė', 'TEST01');
+    insert into public.profiles (id, household_id, person_key, display_name)
+      values ('${REGITA}', '${HOUSEHOLD}', 'R', 'Regita');
+  `);
+
+  // A recipe written in spoons saves fine…
+  const spooned = "spooned-own-recipe";
+  await db.exec(`
+    insert into public.recipes (id, household_id, name_en, name_lt, slot, kcal, ingredients)
+      values ('${spooned}', '${HOUSEHOLD}', 'Spooned bowl', 'Šaukštų dubenėlis', 'lunch', 420,
+              '[{"key":"olive-oil","en":"Olive oil","lt":"Aliejus","amount":2,"unit":"tbsp"},
+                {"key":"salt","en":"Salt","lt":"Druska","amount":1,"unit":"tsp"}]'::jsonb);
+  `);
+
+  // …and eating it takes millilitres out of millilitre pantry rows: 2 tbsp of
+  // oil is 30 ml, 1 tsp of salt is 5 ml. No "tbsp|" row is ever written.
+  await db.exec(`
+    insert into public.pantry (household_id, ingredient_key, item_key, name_en, name_lt, quantity, unit, low_threshold, updated_by)
+      values ('${HOUSEHOLD}', 'olive-oil', 'olive-oil|ml', 'Olive oil', 'Aliejus', 100, 'ml', 10, '${REGITA}'),
+             ('${HOUSEHOLD}', 'salt', 'salt|ml', 'Salt', 'Druska', 50, 'ml', 5, '${REGITA}');
+  `);
+  // The dish has to be on the menu for the day the pantry is used.
+  await db.exec(`select public.apply_day_menu(1, '{"lunch": [{"person_key": "both", "recipe_id": "${spooned}"}]}'::jsonb);`);
+  await db.exec(`select public.toggle_eaten(1, 'lunch', 'both', 1, '${spooned}');`);
+  const applied = await one(db, `select applied from public.eaten where day_index = 1 and slot = 'lunch'`);
+  assert.deepEqual(
+    applied.applied,
+    [{ itemKey: "olive-oil|ml", delta: -30 }, { itemKey: "salt|ml", delta: -5 }],
+    "spoons leave the pantry as the millilitres they stand for",
+  );
+  const oil = await one(db, `select quantity from public.pantry where item_key = 'olive-oil|ml'`);
+  assert.equal(Number(oil.quantity), 70, "2 tbsp came out of the 100 ml bottle");
+  const spoons = await one(db, `select count(*)::int as n from public.pantry where unit in ('tsp', 'tbsp')`);
+  assert.equal(Number(spoons.n), 0, "the pantry never holds a spoon row");
+
+  // The pantry itself still refuses spoons: it is counted in g/ml/vnt.
+  let refused = false;
+  try {
+    await db.exec(`
+      insert into public.pantry (household_id, ingredient_key, item_key, name_en, name_lt, quantity, unit, low_threshold, updated_by)
+        values ('${HOUSEHOLD}', 'soy-sauce', 'soy-sauce|tbsp', 'Soy sauce', 'Sojų padažas', 2, 'tbsp', 0, '${REGITA}');
+    `);
+  } catch {
+    refused = true;
+  }
+  assert.equal(refused, true, "a pantry row measured in spoons is rejected by the database");
+
+  await db.close();
+});
+
 await scenario("old project without households, without display names", async () => {
   const db = await freshDatabase();
   await seedOldApp(db, { withHouseholds: false, withNames: false });

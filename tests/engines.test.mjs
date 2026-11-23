@@ -23,6 +23,9 @@ import {
   removedIds, isRemoved, poolRecipes, menuWithoutRemoved, menuRemovedCount,
   removalRow, removedRecipeView, removedOwnRecipes, restorableRecipe,
 } from "../src/lib/library.js";
+import { UNITS } from "../src/theme.js";
+import { STOCK_UNITS, stockUnit, toStock } from "../src/lib/units.js";
+import { parseRecipeText, parseIngredientLine, estimateMacros, readMacroLines, parseAmount } from "../src/lib/recipeText.js";
 
 const makeRecipe = (overrides = {}) => ({
   id: "test-a",
@@ -1627,4 +1630,138 @@ test("an old label-only marker still lists the dish but does not invent it", () 
   assert.equal(view.restorable, false, "no ingredients means it cannot be rebuilt");
   assert.equal(restorableRecipe(old), null, "the caller clears the marker instead of saving an empty dish");
   assert.equal(restorableRecipe({ recipeId: "x", snapshot: null }), null);
+});
+
+// ── Spoons, and pasting a recipe in ─────────────────────────────────────────
+test("a spoon is a recipe unit and millilitres in the stock", () => {
+  assert.deepEqual(UNITS, ["g", "ml", "vnt", "tsp", "tbsp"], "the editor offers spoons");
+  assert.deepEqual(STOCK_UNITS, ["g", "ml", "vnt"], "the pantry and the shop do not");
+  assert.equal(stockUnit("tbsp"), "ml");
+  assert.equal(stockUnit("tsp"), "ml");
+  assert.equal(stockUnit("g"), "g");
+  assert.deepEqual(toStock({ key: "olive-oil", amount: 2, unit: "tbsp" }),
+    { key: "olive-oil", amount: 30, unit: "ml" }, "1 tbsp = 15 ml");
+  assert.deepEqual(toStock({ key: "salt", amount: 1, unit: "tsp" }),
+    { key: "salt", amount: 5, unit: "ml" }, "1 tsp = 5 ml");
+  assert.deepEqual(toStock({ key: "tofu", amount: 100, unit: "g" }),
+    { key: "tofu", amount: 100, unit: "g" }, "a gram is untouched");
+});
+
+test("a recipe's spoons and grams add up on one shopping line", () => {
+  const recipe = makeRecipe({
+    id: "spooned",
+    ingredients: [
+      { key: "olive-oil", en: "Olive oil", lt: "Aliejus", amount: 1, unit: "tbsp" },
+    ],
+  });
+  const grams = makeRecipe({
+    id: "grams",
+    ingredients: [{ key: "olive-oil", en: "Olive oil", lt: "Aliejus", amount: 10, unit: "g" }],
+  });
+  const plan = buildPlan(
+    [
+      { day: 0, slot: "lunch", personKey: "both", recipeId: "spooned" },
+      { day: 1, slot: "lunch", personKey: "both", recipeId: "grams" },
+    ],
+    new Map([["spooned", recipe], ["grams", grams]]),
+  );
+  const list = buildShoppingList({ plan, days: [0, 1] });
+  const oil = list.find(item => item.key === "olive-oil|ml");
+  assert.ok(oil, "a tablespoon of oil is bought in millilitres, not in spoons");
+  assert.equal(oil.total, 30, "2 portions × 15 ml");
+  assert.equal(list.filter(item => /tbsp|tsp/.test(item.key)).length, 0, "no spoon rows reach the shop");
+
+  // Eating the dish takes millilitres out of the millilitre pantry row.
+  const deltas = consumptionForRecipe(recipe, 2);
+  assert.deepEqual(deltas, [{ itemKey: "olive-oil|ml", delta: -30 }]);
+});
+
+test("a recipe pasted into one box is sorted into the right fields", () => {
+  const parsed = parseRecipeText(`Creamy Chickpea Bowl (Kreminis avinžirnių dubenėlis)
+Serves 2
+Prep time: 20 minutes
+
+Ingredients
+- 150 g canned chickpeas
+- 2 tbsp olive oil
+- 1 1/2 tsp ground cumin
+- 1 onion
+- Salt to taste
+
+Method
+1. Heat the oil and soften the onion.
+2. Add the chickpeas and cumin, then simmer.
+
+Nutrition per serving
+Energy: 420 kcal
+Protein: 18 g
+Carbs: 48 g
+Fat: 17 g`);
+
+  assert.equal(parsed.name.en, "Creamy Chickpea Bowl");
+  assert.equal(parsed.name.lt, "Kreminis avinžirnių dubenėlis", "the Lithuanian name in brackets is kept");
+  assert.equal(parsed.servings, 2);
+  assert.equal(parsed.prepMinutes, 20);
+  assert.equal(parsed.ingredients.length, 5);
+  assert.deepEqual(
+    parsed.ingredients.map(item => [item.en, item.amount, item.unit]),
+    [
+      ["canned chickpeas", 150, "g"],
+      ["olive oil", 2, "tbsp"],
+      ["ground cumin", 1.5, "tsp"],
+      ["onion", 1, "vnt"],
+      ["Salt", 1, "g"],
+    ],
+  );
+  assert.equal(parsed.ingredients[0].key, "canned-chickpeas", "a known ingredient is recognised, not just named");
+  assert.match(parsed.method.en, /Heat the oil/);
+  assert.deepEqual(parsed.macros, { kcal: 420, protein: 18, carbs: 48, fat: 17 });
+  assert.equal(parsed.found.macros, true, "written nutrition is used as written");
+});
+
+test("pasting without nutrition estimates the macros and says what it could not count", () => {
+  const parsed = parseRecipeText(`Quick tofu scramble
+Ingredients:
+1 tbsp olive oil
+200 g firm tofu
+1 tsp turmeric
+
+Method: Crumble the tofu into a hot pan, add turmeric, cook five minutes.`);
+  assert.equal(parsed.found.macros, false);
+  assert.equal(parsed.found.method, true, "an inline Method: line still fills the method");
+  assert.equal(parsed.ingredients.length, 3, "the method line is not read as an ingredient");
+
+  const estimate = estimateMacros(parsed.ingredients);
+  assert.ok(estimate.kcal > 200, `oil and tofu together are a real meal (${estimate.kcal} kcal)`);
+  assert.equal(estimate.known.length, 2, "the tofu and the spoon of oil were recognised");
+  assert.ok(estimate.unknown.includes("turmeric"), "the spice is reported, not silently counted as zero");
+  assert.equal(estimate.kcal, Math.round(15 * 8.84 + 200 * 1.44), "spoons land as 15 ml of oil, not as 1 unit");
+});
+
+test("a macro line written as '22 g protein' is read like 'Protein 22 g'", () => {
+  const written = readMacroLines("Per serving: 310 kcal, 22 g protein, 8 g carbs, 21 g fat");
+  assert.deepEqual(written, { kcal: 310, protein: 22, carbs: 8, fat: 21 });
+  const labelled = readMacroLines("Energinė vertė 420 kcal\nBaltymai 18 g\nAngliavandeniai 48 g\nRiebalai 17 g");
+  assert.deepEqual(labelled, { kcal: 420, protein: 18, carbs: 48, fat: 17 });
+});
+
+test("awkward quantities in a pasted recipe still become numbers", () => {
+  assert.equal(parseAmount("1 1/2"), 1.5);
+  assert.equal(parseAmount("½"), 0.5);
+  assert.equal(parseAmount("1½"), 1.5);
+  assert.equal(parseAmount("3/4"), 0.75);
+  assert.equal(parseAmount("1,5"), 1.5);
+  assert.equal(parseAmount("two"), 0);
+
+  const cup = parseIngredientLine("1 cup rolled oats");
+  assert.equal(cup.amount, 240, "a cup is 240 ml");
+  assert.equal(cup.unit, "ml");
+  const handful = parseIngredientLine("2 handfuls spinach");
+  assert.equal(handful.amount, 60, "a handful is about 30 g");
+  const packs = parseIngredientLine("2 x 400 g canned tomatoes");
+  assert.equal(packs.amount, 800, "two tins are 800 g");
+  const juice = parseIngredientLine("Juice of ½ lemon");
+  assert.equal(juice.amount, 15);
+  assert.equal(juice.unit, "ml");
+  assert.equal(juice.key, "lemon-juice");
 });

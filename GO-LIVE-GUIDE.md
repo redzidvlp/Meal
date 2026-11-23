@@ -246,6 +246,33 @@ narrow it by meal type (breakfast, lunch, snack, dinner) and by label (*Low-FODM
 **Add a recipe.** **＋ New** at the top right of the tab — the same sheet the picker opens.
 Saved, it is in the book and in the picker immediately; there is no separate “publish” step.
 
+**Have the recipe already written? Paste it once.** At the top of the editor there is
+**📋 Paste a recipe**. Copy the whole thing — a cooking site, a message from a friend, the
+answer an AI wrote — and drop it in the box: title, “Serves 2”, a list of ingredients, the
+method and “420 kcal, 18 g protein…” all in one go. **Read it into the form** then fills the
+name (both languages, when the text has both), prep time, every ingredient row with its
+amount and unit, the method, and the four nutrition boxes. Nothing is saved until you press
+**Save**, so the pasted draft is still yours to correct.
+
+> **Where the numbers come from matters, and the app says so.** If the pasted text contains
+> a nutrition line — *420 kcal · 18 g protein · 48 g carbs · 17 g fat*, in English or
+> Lithuanian, written either way round, in kcal or kJ — those numbers are used exactly as
+> written. If there is no nutrition line, the app works the calories out from the
+> ingredients using the same food table the offline recipe generator uses, and the note tells
+> you how many ingredients it recognised and **names the ones it could not count** (“olive
+> oil, tofu; turmeric could not be counted”). Check those totals before saving rather than
+> trusting a number that was a guess.
+
+**Spoons: tsp and tbsp.** The recipe editor’s unit picker now offers **tsp (5 ml)** and
+**tbsp (15 ml)** next to g, ml and vnt. You can write “2 tbsp olive oil” and keep it that way:
+the recipe shows the spoon, while the shopping list and the pantry add it up in millilitres,
+because that is what a bottle is sold in. Mark the dish eaten and the millilitres leave the
+pantry; undo it and exactly the same millilitres come back. The pantry and shopping list
+themselves stay in **g / ml / vnt** — a spoon is how a recipe is written, not how a shelf is
+counted. A **cup**, a **handful**, a **pinch**, **cloves** and **slices** in a pasted recipe are
+turned into the grams or millilitres they stand for (1 cup = 240 ml, a handful ≈ 30 g,
+a pinch ≈ 0.5 g), so nothing on the shopping list is a mystery measure.
+
 **Change a recipe.** **✏️** on its row. The editor opens with everything already filled in and
 **Save** writes over the same recipe, so every meal already planned with it changes too — and
 so does the shopping list, because it is built from the recipes in the plan.

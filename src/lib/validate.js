@@ -1,4 +1,5 @@
-import { ALL_TAGS, SLOTS, UNITS } from "../theme.js";
+import { ALL_TAGS, SLOTS } from "../theme.js";
+import { RECIPE_UNITS, STOCK_UNITS } from "./units.js";
 import { labelKey, MAX_LABEL_LENGTH } from "./labels.js";
 import { findForbiddenIngredients, ingredientKey, slugify } from "./ingredients.js";
 import { clamp } from "./format.js";
@@ -60,7 +61,7 @@ export function sanitizeIngredient(input) {
     en,
     lt: lt || en,
     amount: toNumber(input?.amount, 0.1, 5000, 0),
-    unit: UNITS.includes(input?.unit) ? input.unit : "g",
+    unit: RECIPE_UNITS.includes(input?.unit) ? input.unit : "g",
   };
 }
 
@@ -144,7 +145,7 @@ export function sanitizePantryItem(input) {
   const nameEn = cleanText(input?.nameEn ?? input?.name?.en, LIMITS.ingredientName);
   if (!nameEn) return { ok: false, errors: { nameEn: "required" } };
   const nameLt = cleanText(input?.nameLt ?? input?.name?.lt, LIMITS.ingredientName) || nameEn;
-  const unit = UNITS.includes(input?.unit) ? input.unit : "g";
+  const unit = STOCK_UNITS.includes(input?.unit) ? input.unit : "g";
   const providedKey = input?.key || input?.itemKey;
   const key = providedKey && PANTRY_KEY_RE.test(providedKey) ? providedKey : ingredientKey(nameEn);
   const item = {

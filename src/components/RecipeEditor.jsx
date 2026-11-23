@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
-import { ALL_TAGS, C, SLOT_META, SLOTS, TAG_LABELS, UNITS } from "../theme.js";
+import { ALL_TAGS, C, SLOT_META, SLOTS, TAG_LABELS } from "../theme.js";
 import { sanitizeRecipe, sanitizeLabel } from "../lib/validate.js";
 import { customTag, tagLabel } from "../lib/labels.js";
 import { Field, Sheet, ConfirmDialog, parseNumber } from "./ui.jsx";
+import { RECIPE_UNITS, spoonHint } from "../lib/units.js";
+import { parseRecipeText, estimateMacros, describeImport } from "../lib/recipeText.js";
+import { interpolate } from "../lib/format.js";
 import PhotoSheet from "./PhotoSheet.jsx";
 
 const EMOJI_CHOICES = ["🥗", "🥣", "🍲", "🌯", "🍚", "🫘", "🍳", "🥑", "🍽️", "🥦"];
@@ -64,6 +67,10 @@ export default function RecipeEditor({ open, recipe, defaultSlot, lang, t, app, 
   const [scanOpen, setScanOpen] = useState(false);
   const [labelDraft, setLabelDraft] = useState("");
   const [labelBusy, setLabelBusy] = useState(false);
+  // Paste a whole recipe: one box, the editor sorts it into the fields below.
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importNote, setImportNote] = useState(null);
 
   useEffect(() => {
     if (!open) return;
@@ -72,6 +79,9 @@ export default function RecipeEditor({ open, recipe, defaultSlot, lang, t, app, 
     setGeneralError("");
     setConfirmDelete(false);
     setLabelDraft("");
+    setImportOpen(false);
+    setImportText("");
+    setImportNote(null);
   }, [open, recipe, defaultSlot]);
 
   const update = (patch) => setForm(previous => ({ ...previous, ...patch }));
@@ -112,6 +122,65 @@ export default function RecipeEditor({ open, recipe, defaultSlot, lang, t, app, 
     } finally {
       setLabelBusy(false);
     }
+  };
+
+  /**
+   * Read the pasted text into the form.
+   *
+   * Written nutrition wins. When the text has no nutrition line, the macros are
+   * estimated from the ingredients — and the note says exactly which
+   * ingredients were recognised, so a number is never presented as fact when
+   * it was a guess. Unknown ingredients are named, not silently counted as 0.
+   */
+  const applyImport = () => {
+    const parsed = parseRecipeText(importText, { slot: form.slot });
+    if (!parsed.found.ingredients && !parsed.found.name && !parsed.found.method) {
+      setImportNote({ kind: "error", text: t.importNothing });
+      return;
+    }
+    const estimate = estimateMacros(parsed.ingredients);
+    const macros = parsed.found.macros ? parsed.macros : estimate;
+    const usedEstimate = !parsed.found.macros && macros.kcal > 0;
+    if (!parsed.found.macros && macros.kcal <= 0) {
+      setImportNote({ kind: "warn", text: t.importNoMacrosText });
+    } else {
+      setImportNote({
+        kind: usedEstimate ? "warn" : "ok",
+        text: interpolate(usedEstimate ? t.importDoneEstimate : t.importDone, {
+          parts: describeImport(parsed),
+          n: estimate.known.length,
+          unknown: estimate.unknown.slice(0, 3).join(", "),
+        }),
+      });
+    }
+    setForm(previous => ({
+      ...previous,
+      name: {
+        en: parsed.name.en || previous.name.en,
+        lt: parsed.name.lt || previous.name.lt,
+      },
+      slot: parsed.slot || previous.slot,
+      prepMinutes: parsed.prepMinutes ? String(parsed.prepMinutes) : previous.prepMinutes,
+      ingredients: parsed.ingredients.length
+        ? parsed.ingredients.map(ingredient => ({
+            en: ingredient.en,
+            lt: ingredient.lt || "",
+            amount: String(ingredient.amount ?? ""),
+            unit: ingredient.unit || "g",
+          }))
+        : previous.ingredients,
+      method: {
+        en: parsed.method.en || previous.method.en,
+        lt: parsed.method.lt || previous.method.lt,
+      },
+      kcal: macros.kcal ? String(Math.round(macros.kcal)) : previous.kcal,
+      protein: macros.protein ? String(macros.protein) : previous.protein,
+      carbs: macros.carbs ? String(macros.carbs) : previous.carbs,
+      fat: macros.fat ? String(macros.fat) : previous.fat,
+    }));
+    setErrors({});
+    setGeneralError("");
+    setImportOpen(false);
   };
 
   const submit = async event => {
@@ -187,6 +256,60 @@ export default function RecipeEditor({ open, recipe, defaultSlot, lang, t, app, 
               <span>{t.presetNotice}</span>
             </div>
           )}
+
+          {/* Paste a whole recipe. Sits above the fields because it fills them. */}
+          <div className="card-soft" style={{ padding: 10 }}>
+            <div className="row-between" style={{ gap: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div className="eyebrow">📋 {t.importRecipe}</div>
+                <div className="tiny">{t.importRecipeHint}</div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-xs btn-soft"
+                onClick={() => { setImportOpen(previous => !previous); setImportNote(null); }}
+                data-import-recipe
+                aria-expanded={importOpen}
+              >
+                {importOpen ? t.cancel : t.importRecipeOpen}
+              </button>
+            </div>
+            {importOpen && (
+              <div style={{ marginTop: 8 }}>
+                <textarea
+                  className="textarea"
+                  rows={6}
+                  value={importText}
+                  maxLength={12000}
+                  placeholder={t.importRecipePlaceholder}
+                  aria-label={t.importRecipe}
+                  onChange={event => setImportText(event.target.value)}
+                  data-import-text
+                />
+                <div className="row" style={{ gap: 6, marginTop: 6 }}>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    style={{ flex: 1 }}
+                    onClick={applyImport}
+                    disabled={!importText.trim()}
+                    data-import-apply
+                  >
+                    {t.importRecipeApply}
+                  </button>
+                </div>
+              </div>
+            )}
+            {importNote && (
+              <p
+                className="tiny"
+                style={{ margin: "7px 0 0", color: importNote.kind === "error" ? C.danger : importNote.kind === "warn" ? C.amber : C.forest }}
+                data-import-note
+              >
+                {importNote.text}
+              </p>
+            )}
+          </div>
 
           {recipe?.generated && (
             <div className="demo-banner" style={{ margin: 0, background: "var(--sage-soft)", borderColor: "var(--sage)", color: "var(--forest-deep)" }}>
@@ -281,7 +404,7 @@ export default function RecipeEditor({ open, recipe, defaultSlot, lang, t, app, 
                       onChange={event => updateIngredient(index, { amount: event.target.value })} style={{ flex: 1 }} />
                     <select className="select input-sm" aria-label={t.unit} value={ingredient.unit}
                       onChange={event => updateIngredient(index, { unit: event.target.value })} style={{ width: 76 }}>
-                      {UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                      {RECIPE_UNITS.map(unit => <option key={unit} value={unit}>{spoonHint(unit, lang)}</option>)}
                     </select>
                     <button type="button" className="btn btn-sm btn-ghost" style={{ color: C.danger }}
                       onClick={() => setForm(previous => ({ ...previous, ingredients: previous.ingredients.filter((_, i) => i !== index) }))}
