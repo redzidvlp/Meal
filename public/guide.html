@@ -324,6 +324,42 @@ shopping list already filled from the plan.</p>
 <p>From then on it opens without a browser bar. The first launch downloads ~0.4 MB and then
 works from the phone’s cache; later launches are immediate.</p>
 <hr>
+<h2>Phase 6b — The recipe book (2 min to learn, then it is just tapping)</h2>
+<p>The recipes the picker offers live in <strong>one list</strong>, and that list is now a tab of its own:
+<strong>📖 Recipes</strong>, the second icon in the bar at the bottom.</p>
+<p><strong>What is on the screen.</strong> Every recipe the kitchen can cook, your own first and the shared
+library ones after them. The badge at the top says how many are yours, e.g. <em>“3 of 41 are
+yours”</em>. The search box finds a dish by name or by an ingredient, and the two rows of chips
+narrow it by meal type (breakfast, lunch, snack, dinner) and by label (<em>Low-FODMAP</em>,
+<em>Gluten-free</em>, your own labels). Every row says where it is used: <strong>📅 planned 2× this week</strong>.</p>
+<p><strong>Add a recipe.</strong> <strong>＋ New</strong> at the top right of the tab — the same sheet the picker opens.
+Saved, it is in the book and in the picker immediately; there is no separate “publish” step.</p>
+<p><strong>Change a recipe.</strong> <strong>✏️</strong> on its row. The editor opens with everything already filled in and
+<strong>Save</strong> writes over the same recipe, so every meal already planned with it changes too — and
+so does the shopping list, because it is built from the recipes in the plan.</p>
+<p><strong>Take a recipe out of the pool.</strong> <strong>🗑</strong> on its row. It asks once, and it tells you what it
+will cost: <em>“Delete ‘Smoke test bowl’? It disappears from the picker, the sous-chef and from 2
+planned meal(s) this week.”</em> Confirm and the recipe is gone — from the book, from the picker,
+from the sous-chef’s suggestions, and from any day it was planned on. The shopping list
+drops its ingredients on the next visit. <strong>The recipe itself is the only thing deleted</strong>: your
+pantry numbers, your notes history and every other recipe are untouched.</p>
+<blockquote>
+<p><strong>Nothing is deleted by accident.</strong> The 🗑 asks first, with the dish name in the question.
+If nothing is planned with it, the question says so instead of pretending the week changes.</p>
+</blockquote>
+<p><strong>The 📚 library.</strong> Recipes marked <strong>📚 library</strong> are shared by everyone using the app; they
+are read-only on purpose, so nobody can delete a dish the other household still plans. They
+show a 📚 instead of a 🗑. Tap <strong>✏️</strong> on one and the editor opens with a green note: <em>“Library
+recipes are shared read-only. Saving creates your own editable copy.”</em> <strong>Save</strong> makes your
+copy — the original stays in the list for everyone, and your copy (no 📚) can be deleted
+like any other. That is the whole distinction: <strong>📚 = read-only, no 📚 = yours</strong>.</p>
+<p><strong>From the picker.</strong> When you are choosing a meal and realise a recipe needs fixing, the
+<strong>⚙️ Manage</strong> button next to the search box jumps straight to 📖 Recipes — the picker closes
+by itself, so there is no sheet left open behind you.</p>
+<p><strong>Speed.</strong> Choosing a meal now paints the day before the write finishes; the save happens in
+the background and the screen reconciles a moment later. That is why the tab bar no longer
+feels like it is thinking.</p>
+<hr>
 <h2>Phase 7 — The AI agent (optional, 15 min)</h2>
 <p>The app works without this: suggestions, new recipe ideas and photo reading all have an
 offline fallback. The AI simply writes nicer, more varied recipes and reads photos properly.</p>
@@ -824,6 +860,16 @@ SQL by hand — and it only does something when <code>main</code> contains a <co
 <td>AI key or function missing</td>
 <td>Phase 7b and 7c; redeploy both functions after changing secrets</td>
 </tr>
+<tr>
+<td>I cannot delete a recipe</td>
+<td>it is a 📚 library recipe (read-only for everyone)</td>
+<td>tap <strong>✏️</strong> to save your own copy, then delete the copy (Phase 6b)</td>
+</tr>
+<tr>
+<td>A tap still feels slow on mobile data</td>
+<td>the write is waiting for the network, not the screen</td>
+<td>the screen is already updated; if it takes longer than ~2 s the connection is the cause — nothing is lost, the save retries on the next visit</td>
+</tr>
 </tbody></table>
 <p>When asking for help, send: the connection screen with <strong>Details</strong> open, the result of
 <code>doctor.sql</code>, and the failed step from the <strong>Actions</strong> tab.</p>
@@ -932,6 +978,27 @@ includes it.</p>
 <p>Nothing is deleted. Every old table is renamed into the <code>legacy</code> schema and stays readable in
 <strong>Table Editor → schema <code>legacy</code></strong>. When you are confident, remove them with
 <code>drop schema legacy cascade;</code>.</p>
+<hr>
+<h2>Phase 10 — A minute a day, once it is set up</h2>
+<p>Nothing here is required on day one. This is the loop the app is built around, in the order
+that costs the fewest taps:</p>
+<ol>
+<li><strong>Morning.</strong> Open the app on <strong>🗓️ Plan</strong>. The day is already there. If a meal is wrong,
+tap <strong>Change</strong> on that meal and pick another — the day repaints before the save finishes.</li>
+<li><strong>While cooking or eating.</strong> <strong>🍴 Mark eaten</strong> on the meal. The ingredients come out of
+<strong>🥫 Pantry</strong> at the same moment, so the pantry stays true without a second trip.</li>
+<li><strong>Before shopping.</strong> <strong>🛒 Shopping</strong> builds itself from the week: every ingredient, minus
+what the pantry already holds. Tick as you buy — ticking restocks the pantry.
+<strong>🥫 Pantry → ＋</strong> to add something you bought outside the list.</li>
+<li><strong>Once a week.</strong> <strong>📖 Recipes</strong> — the moment a dish stops being one you want, 🗑 it out of
+the pool; the picker and the sous-chef stop offering it at once. Add the new thing you
+cooked with <strong>＋ New</strong>.</li>
+<li><strong>When something changes.</strong> Your partner sees it within a second or two on her phone
+without pressing anything; both phones read the same household.</li>
+</ol>
+<p>The two things that are <strong>not</strong> in this loop on purpose: nothing needs to be “saved” before
+closing the app, and nothing needs a reload. If you ever want to start a fresh week, <strong>⚙️
+Settings → Clear the current week</strong> keeps the recipes and the pantry and empties the plan.</p>
 <hr>
 <h2>This page on your phone</h2>
 <p>The same guide, formatted for a phone screen:</p>

@@ -8,7 +8,7 @@ import { Chip, EmptyState, Segmented, Sheet } from "./ui.jsx";
 
 export default function RecipePicker({
   open, onClose, day, slot, mode, person, currentRecipe, recipes, recipesById, menus = [], labels = [], lang, t, people = {}, initialTab = "recipes",
-  onSelect, onApplyMenu, onCreateNew, onCreateMenu, onEditMenu, onResetMenu,
+  onSelect, onApplyMenu, onCreateNew, onCreateMenu, onEditMenu, onResetMenu, onManageRecipes,
 }) {
   const [tab, setTab] = useState(initialTab);
   const [applyDay, setApplyDay] = useState(day ?? 0);
@@ -99,7 +99,13 @@ export default function RecipePicker({
               aria-label={t.searchRecipes}
               style={{ flex: 1 }}
             />
+            {onManageRecipes && (
+              <button type="button" className="btn btn-sm btn-soft manage-recipes-btn" onClick={onManageRecipes} title={t.manageRecipesHint}>
+                ⚙️ {t.manageRecipes}
+              </button>
+            )}
           </div>
+          {onManageRecipes && <p className="tiny" style={{ margin: "-4px 0 8px" }}>{t.manageRecipesHint}</p>}
           <div className="row" style={{ gap: 5, overflowX: "auto", paddingBottom: 4, marginBottom: 8 }}>
             <Chip active={filterSlot === "all"} onClick={() => setFilterSlot("all")}>{t.filterAll}</Chip>
             {SLOTS.map(slotKey => (

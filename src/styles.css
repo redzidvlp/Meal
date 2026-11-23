@@ -141,7 +141,7 @@ img { max-width: 100%; }
   width: min(430px, calc(100% - 24px));
 }
 .bottom-nav-inner {
-  display: grid; grid-template-columns: repeat(5, 1fr);
+  display: grid; grid-template-columns: repeat(6, 1fr);
   background: var(--ink); border-radius: 24px;
   padding: 7px 6px; gap: 2px;
   box-shadow: 0 12px 30px rgba(20, 18, 28, .35);
@@ -150,10 +150,13 @@ img { max-width: 100%; }
   position: relative;
   border: none; background: transparent; color: #a9a4c0;
   display: flex; flex-direction: column; align-items: center; gap: 3px;
-  padding: 7px 2px 6px; border-radius: 17px; cursor: pointer;
+  padding: 7px 1px 6px; border-radius: 17px; cursor: pointer;
   font-size: 9.5px; font-weight: 600; letter-spacing: .01em;
   transition: color .16s ease, background .16s ease;
 }
+/* Six tabs on a 360 px phone: the label must not wrap ("Sous-chef",
+   "Apsipirkimas") or push the bar taller. It shrinks instead. */
+.nav-label { font-size: 8.6px; line-height: 1.2; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nav-icon { font-size: 18px; line-height: 1; filter: grayscale(.5) opacity(.8); transition: transform .16s ease, filter .16s ease; }
 .nav-item.active { color: var(--ink); background: var(--sage); }
 .nav-item.active .nav-icon { filter: none; transform: translateY(-1px); }
@@ -1030,3 +1033,40 @@ body.is-dragging-meal { cursor: grabbing; }
   max-width: 260px; margin: 0; text-align: center;
   font-size: 11px; line-height: 1.55; color: var(--muted);
 }
+
+/* ── The recipe book (📖 tab) ────────────────────────────────────────────── */
+/* One row per recipe: the name opens the card, the two small buttons edit and
+   delete in place, so managing the pool never needs a picker detour. */
+.recipe-row {
+  display: flex; align-items: stretch; gap: 4px;
+  padding: 3px 5px 3px 3px; border-radius: 16px;
+}
+.recipe-row-main {
+  display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;
+  padding: 8px; border: none; background: transparent; text-align: left;
+  cursor: pointer; border-radius: 13px;
+}
+.recipe-row-main:active { background: var(--surface-soft); }
+.recipe-row-main .opt-name { display: block; }
+.recipe-row-main .opt-meta { display: flex; flex-wrap: wrap; gap: 7px; }
+.recipe-row-btn {
+  width: 34px; height: 34px; align-self: center; border-radius: 11px;
+  font-size: 14px; box-shadow: none; background: var(--surface-soft);
+  border: 1px solid var(--line-soft); color: var(--ink);
+}
+.recipe-row-btn:active { transform: translateY(1px); }
+.recipe-row-delete { color: var(--danger); }
+.recipe-lock { width: 34px; text-align: center; align-self: center; font-size: 14px; opacity: .55; }
+.recipe-row-actions { display: flex; align-items: center; gap: 3px; padding-right: 3px; }
+.recipe-used { color: var(--forest); font-weight: 700; }
+
+/* The way back from 📖 Recipes to the meal that was being chosen. */
+.back-to-picker {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  margin: 0 0 12px; padding: 10px 12px; text-align: left; cursor: pointer;
+  border: 1.5px solid #cfe0c6; border-radius: 14px;
+  background: linear-gradient(150deg, #eef4e8, #faf7ec); color: var(--ink);
+  font-size: 12px;
+}
+.back-to-picker > span:first-child { font-size: 18px; color: var(--forest); }
+.back-to-picker:active { transform: scale(.995); }

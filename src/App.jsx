@@ -11,6 +11,7 @@ import SuggestionsTab from "./components/SuggestionsTab.jsx";
 import ShoppingTab from "./components/ShoppingTab.jsx";
 import PantryTab from "./components/PantryTab.jsx";
 import TipsTab from "./components/TipsTab.jsx";
+import RecipesTab from "./components/RecipesTab.jsx";
 import SettingsSheet from "./components/SettingsSheet.jsx";
 import RecipeModal from "./components/RecipeModal.jsx";
 import RecipeEditor from "./components/RecipeEditor.jsx";
@@ -23,8 +24,11 @@ import ConnectionScreen, { SchemaNotice } from "./components/ConnectionScreen.js
 import { setOverrideDemo } from "./lib/errors.js";
 import "./styles.css";
 
+// The recipe book is its own tab: "how do I remove a recipe from the pool?"
+// needs one obvious place to stand, not a detour through the picker.
 const TABS = [
   { id: "plan", icon: "🗓️" },
+  { id: "recipes", icon: "📖" },
   { id: "suggest", icon: "✨" },
   { id: "shopping", icon: "🛒" },
   { id: "pantry", icon: "🥫" },
@@ -105,12 +109,16 @@ export default function App() {
   const [menuEditor, setMenuEditor] = useState({ open: false, menu: null });
   const [editor, setEditor] = useState({ open: false, recipe: null, slot: null, context: null });
   const [picker, setPicker] = useState({ open: false, day: todayIdx, slot: null, mode: "empty", person: null, initialTab: "recipes" });
+  // Remembered when someone steps out of the picker into 📖 Recipes, so they can
+  // come back to the same slot without choosing the day and meal again.
+  const [lastPicker, setLastPicker] = useState(null);
 
   const pickerEntry = picker.open ? app.plan[picker.day]?.[picker.slot] : null;
   const pickerCurrent = picker.person ? pickerEntry?.recipes?.[picker.person] : pickerEntry?.recipes?.R;
 
   const tabLabels = useMemo(() => ({
     plan: t.navPlan,
+    recipes: t.navRecipes,
     suggest: t.navSuggest,
     shopping: t.navShopping,
     pantry: t.navPantry,
@@ -367,6 +375,25 @@ export default function App() {
             />
           )}
 
+          {tab === "recipes" && (
+            <RecipesTab
+              app={app}
+              lang={lang}
+              t={t}
+              onOpenRecipe={recipe => openViewer(recipe)}
+              onEditRecipe={recipe => { setViewer(null); setEditor({ open: true, recipe, slot: recipe.slot, context: null }); }}
+              onCreateRecipe={context => openNewRecipe(context)}
+              lastPicker={lastPicker}
+              onBackToPlan={() => {
+                setTab("plan");
+                if (lastPicker?.slot) {
+                  openPicker({ ...lastPicker, return_to_picker: false });
+                }
+                setLastPicker(null);
+              }}
+            />
+          )}
+
           {tab === "suggest" && (
             <SuggestionsTab
               app={app}
@@ -400,7 +427,7 @@ export default function App() {
                 aria-current={tab === item.id ? "page" : undefined}
               >
                 <span className="nav-icon" aria-hidden="true">{item.icon}</span>
-                <span>{tabLabels[item.id]}</span>
+                <span className="nav-label">{tabLabels[item.id]}</span>
                 {item.id === "pantry" && lowCount > 0 && (
                   <span className="nav-badge" aria-label={t.lowItems.replace("{n}", lowCount)}>{lowCount}</span>
                 )}
@@ -454,6 +481,11 @@ export default function App() {
         onCreateMenu={openMenuEditor}
         onEditMenu={menu => openMenuEditor(menu)}
         onResetMenu={key => app.resetMenu(key).catch(() => {})}
+        onManageRecipes={() => {
+          setLastPicker({ day: picker.day, slot: picker.slot, mode: picker.mode, person: picker.person, initialTab: picker.initialTab });
+          setPicker(previous => ({ ...previous, open: false }));
+          setTab("recipes");
+        }}
       />
 
       <SettingsSheet

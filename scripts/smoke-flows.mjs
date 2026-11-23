@@ -362,6 +362,77 @@ assert(filteredNames.includes("Smoke test bowl"), "label filter shows the labell
 await click(document.querySelector(".sheet .close-btn"), 300);
 console.log("LABELS: custom label saved and filters the recipe book");
 
+// 5c. The 📖 Recipes tab is the one place to see, add, edit and delete.
+await nav("Recipes");
+const bookRows = [...document.querySelectorAll("[data-recipe-row]")];
+const totalRecipes = state().recipes.length;
+assert(bookRows.length === totalRecipes, `the book lists every recipe (${bookRows.length} of ${totalRecipes})`);
+assert(text().includes("Your recipe book"), "the recipe book tab is open");
+assert(text().includes(`${saved ? "" : ""}${totalRecipes}`), "the book shows how many recipes it holds");
+const ownRow = document.querySelector(`[data-recipe-row="${saved.id}"]`);
+assert(ownRow, "a recipe you made is in the book");
+assert(ownRow.querySelector(".recipe-row-delete"), "your own recipe offers a delete button in place");
+assert(!document.querySelector(`[data-recipe-row="${state().recipes.find(r => r.householdId === null).id}"] .recipe-row-delete`), "a library recipe cannot be deleted from the book");
+await click(ownRow.querySelector(".recipe-row-btn"), 450);
+assert([...document.querySelectorAll(".sheet-title")].some(el => el.textContent.includes("Edit recipe")), "✏️ opens the editor from the book");
+await click(button("Cancel", document.querySelector(".sheet-foot")), 300);
+console.log(`RECIPE BOOK: ${bookRows.length} recipes listed, your own ones editable in place`);
+
+// 5d. Stepping out of the picker into the book and back to the same meal.
+await nav("Plan");
+await click(button("Change"), 350);
+await click(document.querySelector(".sheet .manage-recipes-btn"), 400);
+assert(!document.querySelector(".sheet"), "the picker closed itself");
+assert(text().includes("Your recipe book"), "Manage landed on the recipe book");
+const back = document.querySelector("[data-back-to-picker]");
+assert(back, "the book offers the way back to the meal being chosen");
+await click(back, 400);
+assert(text().includes("Choose a recipe"), "back returns to the picker, not the top of the plan");
+assert(!document.querySelector("[data-back-to-picker]"), "and the way back is gone until it is needed again");
+await click(document.querySelector(".sheet .close-btn"), 400);
+console.log("RECIPE BOOK: ⚙️ Manage from the picker, and back to the same slot");
+
+// The recipe is on tomorrow's breakfast, so deleting it has to clear that slot too.
+// "Change" opens the picker already on its Recipes tab.
+await nav("Plan");
+await click(button("Change"), 350);
+assert(text().includes("Choose a recipe"), "picker opened from the plan");
+const pickBefore = [...document.querySelectorAll(".recipe-option .opt-name")].map(el => el.textContent.trim());
+assert(pickBefore.includes("Smoke test bowl"), "the recipe is in the picker before deleting");
+await click(document.querySelector(".sheet .close-btn"), 400);
+assert(!document.querySelector(".sheet"), "the picker really closed");
+
+await nav("Recipes");
+const deleteRow = document.querySelector(`[data-recipe-row="${saved.id}"]`);
+await click(deleteRow.querySelector(".recipe-row-delete"), 350);
+assert(text().includes("Delete this recipe?"), "deleting asks first");
+await click(confirm(), 900);
+assert(!state().recipes.some(recipe => recipe.id === saved.id), "the recipe is gone from the library");
+assert(!state().assignments.some(row => row.recipeId === saved.id), "and gone from the plan it was on");
+assert(!document.querySelector(`[data-recipe-row="${saved.id}"]`), "and gone from the book on screen");
+
+await nav("Plan");
+await click(button("Change"), 350);
+assert(text().includes("Choose a recipe"), "picker opened after the delete");
+const pickAfter = [...document.querySelectorAll(".recipe-option .opt-name")].map(el => el.textContent.trim());
+assert(!pickAfter.includes("Smoke test bowl"), "the picker no longer offers it");
+assert(pickAfter.length === pickBefore.length - 1, `the pool shrank by exactly one (${pickBefore.length} → ${pickAfter.length})`);
+await click(document.querySelector(".sheet .close-btn"), 400);
+assert(!document.querySelector(".sheet"), "the picker closed again after checking the pool");
+console.log("RECIPE BOOK: 🗑 asked → recipe left the book, the week and the picker");
+
+// The deleted recipe had been dropped onto today's breakfast, and its slot is
+// empty now — that is the point. Put a meal back so the rest of the suite finds
+// a full day, exactly as a person would.
+await nav("Plan");
+const emptySlot = document.querySelector("[data-drop-slot='breakfast'] .empty-slot");
+assert(emptySlot, "deleting the recipe emptied the breakfast slot it was planned in");
+await click(emptySlot, 350);
+const firstOpen = [...document.querySelectorAll(".recipe-option")].find(option => !option.disabled);
+assert(firstOpen, "the picker opens for the emptied slot");
+await click(firstOpen, 700);
+assert(document.querySelector("[data-drop-slot='breakfast'] .meal-grip"), "the slot is filled again for the rest of the run");
+
 // 6. Non-vegetarian input is blocked client-side.
 await click(button("Change"), 300);
 await click(button("New recipe", [...document.querySelectorAll(".sheet")].at(-1)), 400);

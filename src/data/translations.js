@@ -64,6 +64,7 @@ export const T = {
     navShopping: "Shopping",
     navPantry: "Pantry",
     navTips: "Tips",
+    navRecipes: "Recipes",
 
     // Common
     save: "Save",
@@ -220,6 +221,23 @@ export const T = {
     weekCleared: "Week cleared",
     dayProgress: "{done} of {total} meals eaten",
 
+    // The recipe book (📖 tab)
+    recipesTitle: "Your recipe book",
+    recipesSub: "Everything this kitchen can cook. Add a recipe, change one, or take one out of the pool — the picker and the sous-chef follow at once.",
+    recipesOwnCount: "{own} of {all} are yours",
+    recipesAllLibrary: "all from the library",
+    recipesEmptyTitle: "The book is empty",
+    recipesEmptyBody: "Add your first recipe and it appears in the picker for every meal.",
+    newRecipeShort: "New",
+    recipeLibrary: "library",
+    recipeLibraryLocked: "Library recipe — saving a change makes your own copy",
+    recipeUsedTimes: "planned {n}× this week",
+    recipesDeleteBody: "Delete “{name}”? It disappears from the picker, the sous-chef and from {n} planned meal(s) this week. The ingredients stay in your pantry records.",
+    recipesDeleteNone: "Delete “{name}”? It disappears from the picker and the sous-chef. Nothing planned uses it, so the week does not change.",
+    recipesDeleteTitle: "Delete this recipe?",
+    recipesLibraryHint: "📚 Recipe library items are shared and read-only. Tap ✏️ to save your own copy — the original stays for everyone. Your own recipes (no 📚) can be deleted with 🗑.",
+    recipeInSlot: "Kept for this slot in the picker",
+
     // Recipe picker
     pickRecipe: "Choose a recipe",
     pickRecipeSub: "For {slot} on {day}",
@@ -232,6 +250,10 @@ export const T = {
     recipesCount: "{n} recipes",
     current: "current",
     useRecipe: "Use recipe",
+    manageRecipes: "Manage",
+    backToPicker: "Back to choosing a meal",
+    backToPickerHint: "Your day and slot are still waiting — pick a recipe when you are done here.",
+    manageRecipesHint: "Add, edit or delete recipes in 📖 Recipes.",
 
     // Recipe modal / editor
     ingredientsTitle: "Ingredients",
@@ -602,6 +624,7 @@ export const T = {
     navShopping: "Apsipirkimas",
     navPantry: "Atsargos",
     navTips: "Patarimai",
+    navRecipes: "Receptai",
 
     save: "Išsaugoti",
     saving: "Saugoma…",
@@ -756,6 +779,22 @@ export const T = {
     weekCleared: "Savaitė išvalyta",
     dayProgress: "Suvalgyta {done} iš {total} patiekalų",
 
+    recipesTitle: "Jūsų receptų knyga",
+    recipesSub: "Viskas, ką ši virtuvė gali pagaminti. Pridėkite receptą, pakeiskite arba pašalinkite jį iš pasiūlos — rinkiklis ir šefas atsinaujina iškart.",
+    recipesOwnCount: "{own} iš {all} — jūsų",
+    recipesAllLibrary: "visi iš bibliotekos",
+    recipesEmptyTitle: "Knyga tuščia",
+    recipesEmptyBody: "Pridėkite pirmą receptą — jis iškart atsiras rinkiklyje.",
+    newRecipeShort: "Naujas",
+    recipeLibrary: "biblioteka",
+    recipeLibraryLocked: "Bibliotekos receptas — išsaugojus bus sukurta jūsų kopija",
+    recipeUsedTimes: "suplanuota {n}× šią savaitę",
+    recipesDeleteBody: "Ištrinti „{name}“? Jis išnyks iš rinkiklio, šefo ir iš {n} suplanuotų patiekalų šią savaitę. Ingredientai liks atsargų įrašuose.",
+    recipesDeleteNone: "Ištrinti „{name}“? Jis išnyks iš rinkiklio ir šefo. Šią savaitę jis nenaudojamas, tad planas nesikeis.",
+    recipesDeleteTitle: "Ištrinti šį receptą?",
+    recipesLibraryHint: "📚 Bibliotekos receptai bendri ir tik skaitomi. Bakstelėkite ✏️, kad išsaugotumėte savo kopiją — originalas lieka visiems. Savo receptus (be 📚) galite ištrinti 🗑.",
+    recipeInSlot: "Rinkiklyje rodomas šiam patiekalo tipui",
+
     pickRecipe: "Pasirinkti receptą",
     pickRecipeSub: "{slot} · {day}",
     recipes: "Receptai",
@@ -767,6 +806,10 @@ export const T = {
     recipesCount: "{n} receptai",
     current: "dabartinis",
     useRecipe: "Naudoti receptą",
+    manageRecipes: "Tvarkyti",
+    backToPicker: "Grįžti prie patiekalo pasirinkimo",
+    backToPickerHint: "Diena ir patiekalo tipas dar neišnyko — baigę rinkitės receptą.",
+    manageRecipesHint: "Pridėti, redaguoti ar ištrinti receptus — 📖 Receptai.",
 
     ingredientsTitle: "Ingredientai",
     methodTitle: "Paruošimas",

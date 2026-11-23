@@ -17,6 +17,8 @@ import { parseWish, wishSatisfied, containsExcluded, wishChips, resolveIngredien
 import { requestRecipeIdea } from "../src/lib/ideas.js";
 import { PRODUCT_USES, parseNutritionLabel, productFact, sanitizeProduct } from "../src/lib/products.js";
 import { registerProductFacts, factFor } from "../src/data/ingredientFacts.js";
+import { createReloader } from "../src/lib/reload.js";
+import { applySlot, applyMenu, applyMove, applySectionHidden, applyEaten, applyResetWeek } from "../src/lib/optimistic.js";
 
 const makeRecipe = (overrides = {}) => ({
   id: "test-a",
@@ -1320,4 +1322,215 @@ test("every screen can be read in both languages", async () => {
   }
   const unknown = [...used].filter(key => !english.has(key) && !lithuanian.has(key));
   assert.deepEqual(unknown, [], `screens ask for keys that do not exist: ${unknown.join(", ")}`);
+});
+
+
+// ── The tap must not wait for the kitchen ───────────────────────────────────
+// A controlled clock instead of real timers, so these tests describe the
+// reloader exactly rather than racing it.
+function fakeClock() {
+  let now = 0;
+  let nextId = 1;
+  const timers = new Map();
+  return {
+    now: () => now,
+    setTimer(fn, ms) {
+      const id = nextId++;
+      timers.set(id, { at: now + Math.max(0, ms), fn });
+      return id;
+    },
+    clearTimer(id) { timers.delete(id); },
+    async advance(ms) {
+      const target = now + ms;
+      for (;;) {
+        const due = [...timers.entries()]
+          .filter(([, timer]) => timer.at <= target)
+          .sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due) break;
+        timers.delete(due[0]);
+        now = due[1].at;
+        due[1].fn();
+        // Let the run promise and the catch/finally chain settle.
+        for (let i = 0; i < 8; i += 1) await Promise.resolve();
+      }
+      now = target;
+      for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    },
+    pending: () => timers.size,
+  };
+}
+
+test("a burst of taps becomes one reload, not one per tap", async () => {
+  const clock = fakeClock();
+  let runs = 0;
+  const reloader = createReloader(async () => { runs += 1; }, { wait: 250, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+
+  for (let i = 0; i < 12; i += 1) reloader.request();
+  await clock.advance(249);
+  assert.equal(runs, 0, "nothing is read while the burst is still arriving");
+  await clock.advance(1);
+  assert.equal(runs, 1, "twelve requests cost exactly one read");
+  assert.equal(clock.pending(), 0, "and nothing is left waiting");
+});
+
+test("a realtime event asked for during a read becomes one follow-up", async () => {
+  const clock = fakeClock();
+  let runs = 0;
+  let release = null;
+  const reloader = createReloader(async () => {
+    runs += 1;
+    if (runs === 1) await new Promise(resolve => { release = resolve; });
+  }, { wait: 200, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+
+  reloader.request();
+  await clock.advance(200);
+  assert.equal(runs, 1, "the first read is on the wire");
+  // Three events land while the first read is still running.
+  reloader.request();
+  reloader.request();
+  reloader.request();
+  release();
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  await clock.advance(200);
+  assert.equal(runs, 2, "the whole in-flight burst collapses into one follow-up");
+});
+
+test("a later tap joins the waiting read instead of pushing it back", async () => {
+  const clock = fakeClock();
+  let runs = 0;
+  const reloader = createReloader(async () => { runs += 1; }, { wait: 250, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+  reloader.request();
+  await clock.advance(200);
+  reloader.request(); // a debounce would restart the 250 ms here and keep doing so
+  await clock.advance(50);
+  assert.equal(runs, 1, "the read still happened at the original deadline");
+  await clock.advance(1000);
+  assert.equal(runs, 1, "and the tap it absorbed did not earn a second read");
+});
+
+test("flushing on leaving the screen sends the pending read once", async () => {
+  const clock = fakeClock();
+  let runs = 0;
+  const reloader = createReloader(async () => { runs += 1; }, { wait: 250, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+  reloader.request();
+  await reloader.flush();
+  assert.equal(runs, 1, "flush does not wait for the window");
+  await clock.advance(1000);
+  assert.equal(runs, 1, "and the timer it replaced does not fire a second read");
+});
+
+test("cancelling drops the waiting read (signing out, changing household)", async () => {
+  const clock = fakeClock();
+  let runs = 0;
+  const reloader = createReloader(async () => { runs += 1; }, { wait: 250, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+  reloader.request();
+  reloader.cancel();
+  await clock.advance(1000);
+  assert.equal(runs, 0, "a cancelled read never runs");
+  assert.equal(reloader.pending, false, "and the reloader reports itself idle");
+});
+
+// ── Optimistic state must match what the database will do ───────────────────
+const baseState = () => ({
+  recipes: [],
+  assignments: [
+    { day: 0, slot: "breakfast", personKey: "both", recipeId: "porridge" },
+    { day: 0, slot: "lunch", personKey: "R", recipeId: "soup" },
+  ],
+  eaten: [],
+  water: [],
+  shoppingChecks: [],
+  hiddenSections: [],
+  notes: [],
+  pantry: [{ key: "oats", unit: "g", quantity: 200 }, { key: "tofu", unit: "g", quantity: 100 }],
+});
+
+test("choosing a meal paints the slot without waiting for a read", () => {
+  const before = baseState();
+  const next = applySlot(before, 0, "breakfast", [{ personKey: "both", recipeId: "eggs" }]);
+  assert.equal(next.assignments.filter(row => row.day === 0 && row.slot === "breakfast").length, 1);
+  assert.equal(next.assignments.find(row => row.slot === "breakfast").recipeId, "eggs");
+  assert.equal(before.assignments.find(row => row.slot === "breakfast").recipeId, "porridge", "the old state is not mutated");
+});
+
+test("a null recipe id leaves the other person's lunch alone", () => {
+  // "Keep R, forget I" arrives as rows for R only; nothing may be drawn for I
+  // because its recipe id is unknown on this device.
+  const before = baseState();
+  const next = applySlot(before, 0, "lunch", [{ personKey: "R", recipeId: "soup" }]);
+  assert.equal(next.assignments.find(row => row.slot === "lunch").personKey, "R");
+  assert.equal(next.assignments.filter(row => row.slot === "lunch").length, 1);
+});
+
+test("marking a meal eaten takes the ingredients out of the pantry at once", () => {
+  const recipe = { id: "porridge", ingredients: [
+    { key: "oats", unit: "g", amount: 60 },
+    { key: "tofu", unit: "g", amount: 40 },
+  ] };
+  const state = baseState();
+  const next = applyEaten(state, { day: 0, slot: "breakfast", personKey: "both", recipe, factor: 2 });
+  assert.equal(next.pantry.find(item => item.key === "oats").quantity, 80, "120 g of oats were used");
+  assert.equal(next.pantry.find(item => item.key === "tofu").quantity, 20, "80 g of tofu were used");
+  assert.equal(next.eaten.length, 1);
+  assert.equal(next.eaten[0].applied.length, 2, "the applied deltas are stored so undo can restore exactly");
+
+  const undone = applyEaten(next, { day: 0, slot: "breakfast", personKey: "both", recipe, factor: 2 });
+  assert.equal(undone.pantry.find(item => item.key === "oats").quantity, 200, "undo puts it all back");
+  assert.equal(undone.eaten.length, 0);
+});
+
+test("choosing a new meal for a slot that was eaten puts the ingredients back", () => {
+  const recipe = { id: "porridge", ingredients: [{ key: "oats", unit: "g", amount: 50 }] };
+  const eatenState = applyEaten(baseState(), { day: 0, slot: "breakfast", personKey: "both", recipe, factor: 1 });
+  assert.equal(eatenState.pantry.find(item => item.key === "oats").quantity, 150);
+  const switched = applySlot(eatenState, 0, "breakfast", [{ personKey: "both", recipeId: "eggs" }]);
+  assert.equal(switched.pantry.find(item => item.key === "oats").quantity, 200, "the cancelled meal returns its oats");
+  assert.equal(switched.eaten.length, 0, "and its eaten mark goes");
+});
+
+test("moving a meal swaps both slots and un-hides them", () => {
+  const state = {
+    ...baseState(),
+    assignments: [
+      { day: 0, slot: "breakfast", personKey: "both", recipeId: "porridge" },
+      { day: 0, slot: "lunch", personKey: "both", recipeId: "soup" },
+    ],
+    hiddenSections: [{ day: 0, slot: "dinner" }],
+  };
+  const next = applyMove(state, 0, "breakfast", "lunch");
+  assert.equal(next.assignments.find(row => row.slot === "breakfast").recipeId, "soup");
+  assert.equal(next.assignments.find(row => row.slot === "lunch").recipeId, "porridge");
+  assert.deepEqual(next.hiddenSections, [{ day: 0, slot: "dinner" }], "unrelated hidden sections stay hidden");
+});
+
+test("hiding a section clears it, restoring only drops the flag", () => {
+  const hidden = applySectionHidden(baseState(), 0, "breakfast", true);
+  assert.equal(hidden.assignments.filter(row => row.slot === "breakfast").length, 0);
+  assert.deepEqual(hidden.hiddenSections, [{ day: 0, slot: "breakfast" }]);
+  const shown = applySectionHidden(hidden, 0, "breakfast", false);
+  assert.deepEqual(shown.hiddenSections, []);
+  assert.equal(shown.assignments.filter(row => row.slot === "breakfast").length, 0, "restoring does not invent a meal");
+});
+
+test("applying a day menu fills four slots in one paint", () => {
+  const menu = { items: {
+    breakfast: { both: "porridge" },
+    lunch: { R: "soup", I: "salad" },
+    dinner: { both: "pasta" },
+  } };
+  const next = applyMenu(baseState(), 0, menu);
+  assert.equal(next.assignments.filter(row => row.day === 0 && row.slot === "lunch").length, 2);
+  assert.equal(next.assignments.find(row => row.slot === "dinner").recipeId, "pasta");
+  assert.equal(next.assignments.filter(row => row.slot === "breakfast").length, 1);
+});
+
+test("resetting the week puts the pantry back and keeps notes", () => {
+  const recipe = { id: "porridge", ingredients: [{ key: "oats", unit: "g", amount: 30 }] };
+  const eaten = applyEaten(baseState(), { day: 0, slot: "breakfast", personKey: "both", recipe, factor: 1 });
+  const withNote = { ...eaten, notes: [{ recipeId: "porridge", personKey: "both", note: "more honey" }] };
+  const reset = applyResetWeek(withNote);
+  assert.equal(reset.pantry.find(item => item.key === "oats").quantity, 200, "eaten meals are un-consumed");
+  assert.deepEqual(reset.assignments, []);
+  assert.deepEqual(reset.eaten, []);
+  assert.equal(reset.notes.length, 1, "notes are not part of the week");
 });
