@@ -110,16 +110,31 @@ export function createDemoBackend() {
   const listeners = new Set();
   let context = { householdId: state.household.id, personKey: "R", userId: "demo-user" };
 
-  const emit = () => {
+  let pendingTables = null;
+  let pendingFull = false;
+  const emit = tables => {
     saveState(state);
-    listeners.forEach(fn => fn());
+    // Merge everything that happened in the same tick into one notification. A
+    // write that does not say which table it touched (or another tab writing)
+    // means "read everything", and that wins over any list.
+    if (!tables) pendingFull = true;
+    else pendingTables = new Set([...(pendingTables || []), ...(Array.isArray(tables) ? tables : [tables])]);
+    queueMicrotask(() => {
+      const changed = pendingFull ? null : pendingTables;
+      const had = pendingFull || pendingTables;
+      pendingTables = null;
+      pendingFull = false;
+      if (!had) return;
+      listeners.forEach(fn => fn(changed));
+    });
   };
 
   if (typeof window !== "undefined") {
     window.addEventListener("storage", event => {
       if (event.key !== STORAGE_KEY) return;
       state = loadState();
-      listeners.forEach(fn => fn());
+      // Another tab wrote something; its table is unknown, so read everything.
+      listeners.forEach(fn => fn(null));
     });
   }
 
@@ -169,18 +184,47 @@ export function createDemoBackend() {
     async getProfile() { return getProfile(); },
     async createHousehold(name) {
       state.household.name = String(name || "Our kitchen").slice(0, 80);
-      emit();
+      emit(["households"]);
       return getProfile();
     },
     async joinHousehold() { return getProfile(); },
 
-    async loadAll() {
-      return { ...clone(fullState()), issues: [] };
+    // Mirrors the cloud backend: no argument reads everything, an argument
+    // reads only those slices (the demo data is local, but the shape must match
+    // so the hook cannot grow a cloud-only bug).
+    async loadAll({ tables = null } = {}) {
+      const full = fullState();
+      if (!Array.isArray(tables)) return { ...clone(full), issues: [] };
+      const keys = {
+        households: "household",
+        profiles: "profiles",
+        recipes: "recipes",
+        meal_assignments: "assignments",
+        eaten: "eaten",
+        water: "water",
+        recipe_notes: "notes",
+        shopping_checks: "shoppingChecks",
+        pantry: "pantry",
+        menus: "menus",
+        day_sections: "hiddenSections",
+        labels: "labels",
+        products: "products",
+      };
+      const slice = {};
+      for (const table of tables) {
+        const key = keys[table];
+        if (!key) return { ...clone(full), issues: [] };
+        slice[key] = clone(full[key]);
+      }
+      return { ...slice, issues: [] };
     },
 
+    // Hands over the tables that changed when they are known, exactly like the
+    // cloud channel, so one tick never costs a whole-kitchen read in either mode.
     subscribe(callback) {
-      listeners.add(callback);
-      return () => listeners.delete(callback);
+      const wrapped = tables => callback(tables);
+      listeners.add(wrapped);
+      return () => listeners.delete(wrapped);
     },
 
     async saveRecipe(input) {
@@ -192,7 +236,7 @@ export function createDemoBackend() {
         next.id = `${recipe.id}-${Math.random().toString(36).slice(2, 6)}`;
       }
       state.recipes = [...state.recipes.filter(r => r.id !== next.id), next];
-      emit();
+      emit(["recipes"]);
       return clone(next);
     },
 
@@ -202,7 +246,7 @@ export function createDemoBackend() {
       state.recipes = state.recipes.filter(r => r.id !== id);
       // Planned meals keep a snapshot so the plan never breaks.
       state.assignments = state.assignments.filter(row => row.recipeId !== id);
-      emit();
+      emit(["recipes", "meal_assignments", "eaten", "recipe_notes"]);
       return true;
     },
 
@@ -210,7 +254,7 @@ export function createDemoBackend() {
       state.eaten.filter(row => row.day === day && row.slot === slot)
         .forEach(row => restoreEaten(day, slot, row.personKey));
       state.eaten = state.eaten.filter(row => !(row.day === day && row.slot === slot));
-      emit();
+      emit(["eaten", "pantry"]);
     },
 
     async clearDay(day) {
@@ -219,7 +263,7 @@ export function createDemoBackend() {
           .forEach(row => restoreEaten(day, slot, row.personKey));
       }
       state.eaten = state.eaten.filter(row => row.day !== day);
-      emit();
+      emit(["eaten", "pantry"]);
     },
 
     async setSlot(day, slot, rows) {
@@ -230,7 +274,7 @@ export function createDemoBackend() {
         if (row.recipeId) state.assignments.push({ day, slot, personKey: row.personKey, recipeId: row.recipeId });
       }
       state.eaten = state.eaten.filter(row => !(row.day === day && row.slot === slot));
-      emit();
+      emit(["meal_assignments", "eaten", "pantry"]);
       return true;
     },
 
@@ -249,7 +293,7 @@ export function createDemoBackend() {
       }
       state.eaten = state.eaten.filter(row => row.day !== day);
       state.hiddenSections = (state.hiddenSections || []).filter(row => !(row.day === day && Object.prototype.hasOwnProperty.call(menu.items, row.slot)));
-      emit();
+      emit(["meal_assignments", "eaten", "pantry", "day_sections"]);
       return true;
     },
 
@@ -270,7 +314,7 @@ export function createDemoBackend() {
       for (const row of toRows) state.assignments.push({ day, slot: fromSlot, ...row });
       for (const row of fromRows) state.assignments.push({ day, slot: toSlot, ...row });
       state.hiddenSections = (state.hiddenSections || []).filter(row => !(row.day === day && [fromSlot, toSlot].includes(row.slot)));
-      emit();
+      emit(["meal_assignments", "eaten", "pantry"]);
       return true;
     },
 
@@ -286,7 +330,7 @@ export function createDemoBackend() {
       } else {
         state.hiddenSections = (state.hiddenSections || []).filter(row => !(row.day === day && row.slot === slot));
       }
-      emit();
+      emit(["meal_assignments", "eaten", "pantry", "day_sections"]);
       return true;
     },
 
@@ -295,7 +339,7 @@ export function createDemoBackend() {
       const existing = findEaten(day, slot, personKey);
       if (existing?.eaten) {
         restoreEaten(day, slot, personKey);
-        emit();
+        emit(["eaten", "pantry"]);
         return false;
       }
       const nominal = consumptionForRecipe(recipe, factor);
@@ -304,7 +348,7 @@ export function createDemoBackend() {
       const applied = result.applied;
       state.eaten = state.eaten.filter(row => !(row.day === day && row.slot === slot && row.personKey === personKey));
       state.eaten.push({ day, slot, personKey, eaten: true, applied, recipeId });
-      emit();
+      emit(["eaten", "pantry"]);
       return true;
     },
 
@@ -313,7 +357,7 @@ export function createDemoBackend() {
       const row = state.water.find(r => r.day === day && r.personKey === personKey);
       if (row) row.ml = value;
       else state.water.push({ day, personKey, ml: value });
-      emit();
+      emit(["water"]);
       return value;
     },
 
@@ -321,20 +365,20 @@ export function createDemoBackend() {
       const value = sanitizeNote(note);
       state.notes = state.notes.filter(row => !(row.recipeId === recipeId && row.personKey === personKey));
       if (value) state.notes.push({ recipeId, personKey, note: value });
-      emit();
+      emit(["recipe_notes"]);
       return value;
     },
 
     async setShoppingChecked(weekStart, itemKey, checked) {
       state.shoppingChecks = state.shoppingChecks.filter(row => !(row.weekStart === weekStart && row.itemKey === itemKey));
       if (checked) state.shoppingChecks.push({ weekStart, itemKey, checked: true });
-      emit();
+      emit(["shopping_checks"]);
       return checked;
     },
 
     async clearShoppingChecks(weekStart) {
       state.shoppingChecks = state.shoppingChecks.filter(row => row.weekStart !== weekStart);
-      emit();
+      emit(["shopping_checks"]);
     },
 
     async savePantryItem(input) {
@@ -343,13 +387,13 @@ export function createDemoBackend() {
       const itemKey = `${item.key}|${item.unit}`;
       state.pantry = state.pantry.filter(row => `${row.key}|${row.unit}` !== itemKey);
       state.pantry.push({ ...item, itemKey });
-      emit();
+      emit(["pantry"]);
       return clone(item);
     },
 
     async deletePantryItem(itemKey) {
       state.pantry = state.pantry.filter(row => `${row.key}|${row.unit}` !== itemKey);
-      emit();
+      emit(["pantry"]);
       return true;
     },
 
@@ -362,7 +406,7 @@ export function createDemoBackend() {
         if (existing) existing.quantity = Math.round((Number(existing.quantity) + Number(item.quantity)) * 10) / 10;
         else state.pantry.push({ ...item, itemKey });
       }
-      emit();
+      emit(["pantry"]);
       return state.pantry.length;
     },
 
@@ -371,19 +415,19 @@ export function createDemoBackend() {
       if (!ok) throw Object.assign(new Error("Invalid menu"), { errors });
       state.menus = (state.menus || []).filter(row => row.id !== menu.id && !(menu.presetKey && row.presetKey === menu.presetKey));
       state.menus.push({ ...menu, updatedAt: new Date().toISOString() });
-      emit();
+      emit(["menus"]);
       return clone(menu);
     },
 
     async deleteMenu(id) {
       state.menus = (state.menus || []).filter(row => row.id !== id);
-      emit();
+      emit(["menus"]);
       return true;
     },
 
     async resetMenu(presetKey) {
       state.menus = (state.menus || []).filter(row => row.presetKey !== presetKey);
-      emit();
+      emit(["menus"]);
       return true;
     },
 
@@ -391,7 +435,7 @@ export function createDemoBackend() {
       const { ok, errors, label } = sanitizeLabel(input);
       if (!ok) throw Object.assign(new Error("Invalid label"), { errors });
       state.labels = [...(state.labels || []).filter(row => row.key !== label.key), label];
-      emit();
+      emit(["labels"]);
       return clone(label);
     },
 
@@ -401,7 +445,7 @@ export function createDemoBackend() {
         ...recipe,
         tags: (recipe.tags || []).filter(tag => tag !== `x-${key}`),
       }));
-      emit();
+      emit(["labels", "recipes"]);
       return true;
     },
 
@@ -409,13 +453,13 @@ export function createDemoBackend() {
       const { ok, errors, product } = sanitizeProduct(input);
       if (!ok) throw Object.assign(new Error("Invalid product"), { errors });
       state.products = [...(state.products || []).filter(row => row.key !== product.key), product];
-      emit();
+      emit(["products"]);
       return clone(product);
     },
 
     async deleteProduct(key) {
       state.products = (state.products || []).filter(row => row.key !== key);
-      emit();
+      emit(["products"]);
       return true;
     },
 
@@ -433,7 +477,7 @@ export function createDemoBackend() {
 
     async setExtraPortions(value) {
       state.household.extraPortions = Math.max(0, Math.min(8, Math.round(Number(value) || 0)));
-      emit();
+      emit(["households"]);
       return state.household.extraPortions;
     },
 
@@ -442,14 +486,14 @@ export function createDemoBackend() {
       if (patch.extraPortions !== undefined) {
         state.household.extraPortions = Math.max(0, Math.min(8, Math.round(Number(patch.extraPortions) || 0)));
       }
-      emit();
+      emit(["households"]);
       return clone(state.household);
     },
 
     async updateProfile(patch = {}) {
       const profile = getProfile();
       if (profile && patch.displayName) profile.displayName = String(patch.displayName).slice(0, 40);
-      emit();
+      emit(["profiles"]);
       return clone(profile);
     },
 
@@ -461,7 +505,7 @@ export function createDemoBackend() {
       state.shoppingChecks = [];
       state.notes = [];
       state.hiddenSections = [];
-      emit();
+      emit(["meal_assignments", "eaten", "pantry", "water", "shopping_checks", "day_sections"]);
       return true;
     },
 

@@ -5,8 +5,17 @@ import { buildPlan } from "../engine/plan.js";
 import { buildShoppingList } from "../engine/shopping.js";
 import { lowItems } from "../engine/pantry.js";
 import { mergeMenus } from "../lib/menus.js";
+import { createReloader } from "../lib/reload.js";
+import {
+  applySlot as optimisticSlot,
+  applyMenu as optimisticMenu,
+  applyMove as optimisticMove,
+  applySectionHidden as optimisticSection,
+  applyEaten as optimisticEaten,
+  applyResetWeek as optimisticReset,
+} from "../lib/optimistic.js";
 import { PRESET_MENUS } from "../data/presets.js";
-import { mondayISO, debounce } from "../lib/format.js";
+import { mondayISO } from "../lib/format.js";
 import { requestRecipeIdea } from "../lib/ideas.js";
 import { productFact } from "../lib/products.js";
 import { registerProductFacts } from "../data/ingredientFacts.js";
@@ -39,6 +48,22 @@ const EMPTY = {
   hiddenSections: [],
 };
 
+/**
+ * On a failed write, put back only the rows that write could have changed —
+ * never the whole kitchen, because the partner may have changed something else
+ * while it was in flight.
+ */
+const ROLLBACK_KEYS = ["household", "eaten", "assignments", "pantry", "notes", "water", "shoppingChecks", "hiddenSections", "menus", "profiles", "recipes", "labels", "products"];
+
+function rollbackRows(before, current) {
+  const patch = {};
+  for (const key of ROLLBACK_KEYS) {
+    if (JSON.stringify(before[key]) === JSON.stringify(current[key])) continue;
+    patch[key] = before[key];
+  }
+  return patch;
+}
+
 export function useAppData(t = {}) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -46,6 +71,8 @@ export function useAppData(t = {}) {
   // Used to roll a failed optimistic write back without reloading everything.
   const householdRef = useRef(null);
   householdRef.current = data.household;
+  const dataRef = useRef(data);
+  dataRef.current = data;
   const [authLoading, setAuthLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState(null);
@@ -135,14 +162,26 @@ export function useAppData(t = {}) {
     // send the app back through the loading gate.
   }, [userId, profileNonce, applyProfile, notify]);
 
-  const loadAll = useCallback(async ({ silent = false, retried = false } = {}) => {
+  const loadAll = useCallback(async ({ silent = false, retried = false, tables = null } = {}) => {
     if (!profileRef.current?.householdId) return;
     if (!silent) setDataLoading(true);
     try {
-      const next = await withTimeout(Promise.resolve(api.loadAll()), 20000, "kitchen");
+      const next = await withTimeout(Promise.resolve(api.loadAll({ tables })), 20000, "kitchen");
       if (next) {
-        setData({ ...EMPTY, ...next });
-        setDataIssues(Array.isArray(next.issues) ? next.issues : []);
+        if (Array.isArray(tables)) {
+          // A slice: merge it over what is already on screen, so a pantry tick
+          // never blanks the plan while it lands.
+          const patch = { ...next };
+          delete patch.issues;
+          setData(previous => ({ ...previous, ...patch }));
+        } else {
+          setData({ ...EMPTY, ...next });
+        }
+        if (!Array.isArray(tables)) setDataIssues(Array.isArray(next.issues) ? next.issues : []);
+        else if (next.issues?.length) setDataIssues(previous => [
+          ...previous.filter(issue => !next.issues.some(fresh => fresh.table === issue.table && fresh.kind === issue.kind)),
+          ...next.issues,
+        ]);
         setLoadError(null);
       }
     } catch (error) {
@@ -152,7 +191,7 @@ export function useAppData(t = {}) {
         try {
           await api.refreshSession?.();
           setDataLoading(false);
-          return loadAll({ silent, retried: true });
+          return loadAll({ silent, retried: true, tables });
         } catch {
           // falls through to the error screen below
         }
@@ -176,17 +215,61 @@ export function useAppData(t = {}) {
   const reloadRef = useRef(loadAll);
   reloadRef.current = loadAll;
 
+  // ── One reload at a time ───────────────────────────────────────────────────
+  // Every write and every realtime event used to ask for its own full kitchen
+  // read: one tap could queue three of them, each thirteen queries. They now
+  // share a single trailing read, and a reload that arrives while one is on the
+  // wire becomes exactly one follow-up instead of a queue.
+  const reloaderRef = useRef(null);
+  if (!reloaderRef.current) {
+    let wantedTables = new Set();
+    const reloader = createReloader(async () => {
+      const tables = wantedTables.size ? [...wantedTables] : null;
+      wantedTables = new Set();
+      await reloadRef.current({ silent: true, tables });
+    }, { wait: 250 });
+    reloaderRef.current = {
+      request(delay = 250, tables = null) {
+        if (Array.isArray(tables)) for (const table of tables) if (table) wantedTables.add(table);
+        else wantedTables = null; // anything unknown means a full read
+        reloader.request(delay);
+      },
+      flush: reloader.flush,
+      cancel: () => {
+        wantedTables = new Set();
+        reloader.cancel();
+      },
+    };
+  }
+
+  /** Ask for a reload; `tables` narrows it to the tables that actually moved. */
+  const scheduleReload = useCallback((tables = null) => {
+    const wanted = Array.isArray(tables) ? tables.filter(Boolean) : null;
+    // One table that just changed does not need half a second of patience.
+    const delay = wanted && wanted.length <= 2 ? 120 : 250;
+    reloaderRef.current?.request(delay, wanted);
+  }, []);
+
   useEffect(() => {
     if (!profile?.householdId) return undefined;
-    const refresh = debounce(() => reloadRef.current({ silent: true }), 200);
-    const unsubscribe = api.subscribe(refresh);
+    reloaderRef.current?.cancel();
+    // The backend hands over the set of tables that changed, so one pantry
+    // tick reads the pantry and not the whole kitchen.
+    const unsubscribe = api.subscribe(tables => {
+      const rows = tables && tables.size ? [...tables] : null;
+      scheduleReload(rows);
+    });
     return () => {
-      refresh.flush?.();
       unsubscribe?.();
+      reloaderRef.current?.cancel();
     };
-  }, [profile?.householdId]);
+  }, [profile?.householdId, scheduleReload]);
 
   const refresh = useCallback(() => loadAll({ silent: true }), [loadAll]);
+
+  // A slice reload for tables the realtime channel does not filter by household
+  // (library recipes) or whose shape is better read back than guessed.
+  const refreshTables = useCallback(tables => loadAll({ silent: true, tables }), [loadAll]);
 
   // Used by the connection screen: re-read the profile and the kitchen instead
   // of leaving the person on a dead-end page.
@@ -295,26 +378,75 @@ export function useAppData(t = {}) {
   const sectionHidden = useCallback((day, slot) => !!hiddenMap[`${day}:${slot}`], [hiddenMap]);
 
   // ── Actions ───────────────────────────────────────────────────────────────
+  const describeFailure = useCallback(error => {
+    console.error(error);
+    const message = error?.message?.toLowerCase() || "";
+    if (message.includes("invalid_code")) notify(t.invalidCode || "That invite code was not found.", "error");
+    else if (message.includes("person_taken")) notify(t.personTaken || "That person slot is already taken.", "error");
+    else if (message.includes("already_linked")) notify(t.alreadyLinked || "This account is already linked to a kitchen.", "error");
+    else notify(error?.userMessage || t.savingFailed || "Could not save. Check your connection and try again.", "error");
+  }, [notify, t]);
+
+  /**
+   * The tap paints first, the write follows.
+   *
+   * Old shape: await the write, then reload all thirteen tables, then let the
+   * screen change. On a phone that was the whole complaint — a button that
+   * "takes a minute". New shape: `optimistic(data)` produces the new screen at
+   * once, the write runs in the background, and only a failure puts the old
+   * rows back. The realtime channel reconciles afterwards on its own.
+   */
+  const mutate = useCallback(async (optimistic, write, { successMessage = null, revertMessage = null, merge = null } = {}) => {
+    const before = dataRef.current;
+    let rollback = null;
+    if (typeof optimistic === "function") {
+      const next = optimistic(before);
+      if (next && next !== before) {
+        rollback = before;
+        setData(next);
+      }
+    }
+    try {
+      const result = await write();
+      // Some writes change what the screen is made of (a recipe's copy gets a
+      // new id when a library recipe is forked; a pantry row is created). Fold
+      // the server's answer in before anything has to be re-read.
+      if (merge && result && typeof result === "object") setData(previous => merge(previous, result));
+      if (successMessage) notify(successMessage);
+      return result;
+    } catch (error) {
+      if (rollback) {
+        // Put back exactly the rows this write touched, not the whole kitchen:
+        // the partner may have changed something else in the meantime.
+        setData(current => ({ ...current, ...rollbackRows(rollback, current) }));
+      }
+      describeFailure(error);
+      if (revertMessage) notify(revertMessage, "error");
+      throw error;
+    }
+  }, [notify, describeFailure]);
+
+  /** The guarded shape for writes that cannot be predicted locally. */
   const guarded = useCallback(async (fn, successMessage = null) => {
     try {
       const result = await fn();
       if (successMessage) notify(successMessage);
-      await refresh();
       return result;
     } catch (error) {
-      console.error(error);
-      const message = error?.message?.toLowerCase() || "";
-      if (message.includes("invalid_code")) notify(t.invalidCode || "That invite code was not found.", "error");
-      else if (message.includes("person_taken")) notify(t.personTaken || "That person slot is already taken.", "error");
-      else if (message.includes("already_linked")) notify(t.alreadyLinked || "This account is already linked to a kitchen.", "error");
-      else notify(error?.userMessage || t.savingFailed || "Could not save. Check your connection and try again.", "error");
+      describeFailure(error);
       throw error;
     }
-  }, [notify, refresh, t]);
+  }, [notify, describeFailure]);
 
   const setSlot = useCallback(async (day, slot, rows) => {
-    await guarded(() => api.setSlot(day, slot, rows));
-  }, [guarded]);
+    // Only rows for recipes this device actually knows can be drawn; a null id
+    // is the database's way of saying "leave this person's meal alone".
+    const drawn = (rows || []).filter(row => row && row.recipeId);
+    await mutate(
+      state => optimisticSlot(state, day, slot, drawn),
+      () => api.setSlot(day, slot, rows),
+    );
+  }, [mutate]);
 
   const setMeal = useCallback(async (day, slot, recipeId, mode = "both") => {
     const rows = mode === "split"
@@ -340,16 +472,25 @@ export function useAppData(t = {}) {
   }, [setSlot]);
 
   const moveSlot = useCallback(async (day, fromSlot, toSlot) => {
-    await guarded(() => api.moveSlot(day, fromSlot, toSlot));
-  }, [guarded]);
+    await mutate(
+      state => optimisticMove(state, day, fromSlot, toSlot),
+      () => api.moveSlot(day, fromSlot, toSlot),
+    );
+  }, [mutate]);
 
   const hideSection = useCallback(async (day, slot) => {
-    await guarded(() => api.setSectionHidden(day, slot, true));
-  }, [guarded]);
+    await mutate(
+      state => optimisticSection(state, day, slot, true),
+      () => api.setSectionHidden(day, slot, true),
+    );
+  }, [mutate]);
 
   const showSection = useCallback(async (day, slot) => {
-    await guarded(() => api.setSectionHidden(day, slot, false));
-  }, [guarded]);
+    await mutate(
+      state => optimisticSection(state, day, slot, false),
+      () => api.setSectionHidden(day, slot, false),
+    );
+  }, [mutate]);
 
   const generateIdea = useCallback(input => requestRecipeIdea({
     api,
@@ -358,20 +499,22 @@ export function useAppData(t = {}) {
   }), [data.pantry]);
 
   const applyMenu = useCallback(async (day, menu) => {
-    await guarded(() => api.applyMenu(day, menu));
-  }, [guarded]);
+    await mutate(
+      state => optimisticMenu(state, day, menu),
+      () => api.applyMenu(day, menu),
+    );
+  }, [mutate]);
 
+  // The pantry drops under the finger; the RPC records exactly what left, and
+  // the realtime echo replaces the local guess with the stored rows.
   const toggleEaten = useCallback(async (day, slot, personKey, recipe) => {
     if (!recipe) return;
     const factor = personKey === "both" ? 2 : 1;
-    try {
-      await api.toggleEaten({ day, slot, personKey, factor, recipeId: recipe.id });
-      await refresh();
-    } catch (error) {
-      console.error(error);
-      notify(t.savingFailed || "Could not update the pantry.", "error");
-    }
-  }, [refresh, notify, t.savingFailed]);
+    await mutate(
+      state => optimisticEaten(state, { day, slot, personKey, recipe, factor }),
+      () => api.toggleEaten({ day, slot, personKey, factor, recipeId: recipe.id }),
+    );
+  }, [mutate]);
 
   const setWater = useCallback((day, personKey, ml) => {
     setData(prev => {
@@ -388,7 +531,7 @@ export function useAppData(t = {}) {
   const saveMenu = useCallback(async input => {
     try {
       const saved = await api.saveMenu(input);
-      await refresh();
+      scheduleReload(["menus"]);
       return saved;
     } catch (error) {
       console.error(error);
@@ -396,15 +539,25 @@ export function useAppData(t = {}) {
       notify(t.savingFailed || "Could not save the menu.", "error");
       throw error;
     }
-  }, [refresh, notify, t.savingFailed]);
+  }, [scheduleReload, notify, t.savingFailed]);
 
   const deleteMenu = useCallback(async id => {
-    await guarded(() => api.deleteMenu(id), t.menuDeleted || "Menu deleted");
-  }, [guarded, t.menuDeleted]);
+    await mutate(
+      state => ({ ...state, menus: state.menus.filter(menu => menu.id !== id) }),
+      () => api.deleteMenu(id),
+      { successMessage: t.menuDeleted || "Menu deleted" },
+    );
+    scheduleReload(["menus"]);
+  }, [mutate, scheduleReload, t.menuDeleted]);
 
   const resetMenu = useCallback(async presetKey => {
-    await guarded(() => api.resetMenu(presetKey), t.menuResetDone || "Original menu restored");
-  }, [guarded, t.menuResetDone]);
+    await mutate(
+      state => ({ ...state, menus: state.menus.filter(menu => menu.presetKey !== presetKey) }),
+      () => api.resetMenu(presetKey),
+      { successMessage: t.menuResetDone || "Original menu restored" },
+    );
+    scheduleReload(["menus"]);
+  }, [mutate, scheduleReload, t.menuResetDone]);
 
   const analyzePhoto = useCallback(async input => {
     try {
@@ -443,38 +596,67 @@ export function useAppData(t = {}) {
     } catch (error) {
       console.error(error);
       notify(t.savingFailed || "Could not save the tick.", "error");
-      await refresh();
+      scheduleReload(["shopping_checks"]);
     }
-  }, [weekStart, notify, refresh, t.savingFailed]);
+  }, [weekStart, notify, scheduleReload, t.savingFailed]);
 
   const clearShoppingChecks = useCallback(async () => {
-    await guarded(() => api.clearShoppingChecks(weekStart));
-  }, [guarded, weekStart]);
+    await mutate(
+      state => ({ ...state, shoppingChecks: state.shoppingChecks.filter(row => row.weekStart !== weekStart) }),
+      () => api.clearShoppingChecks(weekStart),
+    );
+  }, [mutate, weekStart]);
 
   const saveLabel = useCallback(async input => {
     const saved = await api.saveLabel(input);
-    await refresh();
+    scheduleReload(["labels"]);
     return saved;
-  }, [refresh]);
+  }, [scheduleReload]);
 
   const deleteLabel = useCallback(async key => {
-    await guarded(() => api.deleteLabel(key));
-  }, [guarded]);
+    await mutate(
+      state => ({ ...state, labels: state.labels.filter(label => label.key !== key) }),
+      () => api.deleteLabel(key),
+    );
+    scheduleReload(["labels"]);
+  }, [mutate, scheduleReload]);
 
   const saveProduct = useCallback(async input => {
+    // Products are flat rows; the sheet closes on its own and the list redraws
+    // the moment the server answers. Nothing else on screen depends on them.
     const saved = await api.saveProduct(input);
-    await refresh();
+    setData(previous => ({
+      ...previous,
+      products: [...previous.products.filter(product => product.key !== saved?.key), saved].filter(Boolean),
+    }));
+    scheduleReload(["products"]);
     return saved;
-  }, [refresh]);
+  }, [scheduleReload]);
 
   const deleteProduct = useCallback(async key => {
-    await guarded(() => api.deleteProduct(key), t.productDeleted);
-  }, [guarded, t.productDeleted]);
+    await mutate(
+      state => ({ ...state, products: state.products.filter(product => product.key !== key) }),
+      () => api.deleteProduct(key),
+      { successMessage: t.productDeleted },
+    );
+    scheduleReload(["products"]);
+  }, [mutate, scheduleReload, t.productDeleted]);
 
   const saveRecipe = useCallback(async input => {
     try {
-      const saved = await api.saveRecipe(input);
-      await refresh();
+      // Draw the recipe (new or edited) at once; a forked library copy gets its
+      // real id from `merge` a moment later.
+      const draft = input?.name?.en
+        ? { ...input, isPreset: false, householdId: dataRef.current.household?.id || null }
+        : null;
+      const saved = await mutate(
+        state => (draft ? upsertRecipe(state, draft) : state),
+        () => api.saveRecipe(input),
+        { merge: upsertRecipe },
+      );
+      // Library recipes are visible to every household and are not covered by
+      // this household's realtime filter, so a light re-read keeps them honest.
+      scheduleReload(["recipes"]);
       return saved;
     } catch (error) {
       console.error(error);
@@ -482,23 +664,55 @@ export function useAppData(t = {}) {
       notify(t.savingFailed || "Could not save the recipe.", "error");
       throw error;
     }
-  }, [refresh, notify, t.savingFailed]);
+  }, [mutate, scheduleReload, notify, t.savingFailed]);
 
+  // Deleting a recipe also drops it from every future meal (the database does
+  // that with ON DELETE CASCADE), so the plan is redrawn at once and the rows
+  // are read back when the server confirms.
   const deleteRecipe = useCallback(async id => {
-    await guarded(() => api.deleteRecipe(id), t.recipeDeleted || "Recipe deleted");
-  }, [guarded, t.recipeDeleted]);
+    await mutate(
+      state => ({
+        ...state,
+        recipes: state.recipes.filter(recipe => recipe.id !== id),
+        assignments: state.assignments.filter(row => row.recipeId !== id),
+        eaten: state.eaten.filter(row => row.recipeId !== id),
+        notes: state.notes.filter(row => row.recipeId !== id),
+      }),
+      () => api.deleteRecipe(id),
+      { successMessage: t.recipeDeleted || "Recipe deleted" },
+    );
+  }, [mutate, t.recipeDeleted]);
+
+  /** Editing a library recipe forks it: the copy's id is only known afterwards. */
+  const upsertRecipe = (state, recipe) => {
+    if (!recipe?.id) return state;
+    const exists = state.recipes.some(row => row.id === recipe.id);
+    return {
+      ...state,
+      recipes: exists
+        ? state.recipes.map(row => (row.id === recipe.id ? recipe : row))
+        : [...state.recipes, recipe],
+    };
+  };
 
   const savePantryItem = useCallback(async item => {
     await guarded(() => api.savePantryItem(item), t.saved || "Pantry updated");
-  }, [guarded, t.saved]);
+    scheduleReload(["pantry"]);
+  }, [guarded, scheduleReload, t.saved]);
 
   const deletePantryItem = useCallback(async itemKey => {
-    await guarded(() => api.deletePantryItem(itemKey), t.itemDeleted || "Item removed");
-  }, [guarded, t.itemDeleted]);
+    await mutate(
+      state => ({ ...state, pantry: state.pantry.filter(item => (item.itemKey || `${item.key}|${item.unit}`) !== itemKey) }),
+      () => api.deletePantryItem(itemKey),
+      { successMessage: t.itemDeleted || "Item removed" },
+    );
+    scheduleReload(["pantry"]);
+  }, [mutate, scheduleReload, t.itemDeleted]);
 
   const stockPantry = useCallback(async items => {
     await guarded(() => api.stockPantry(items), t.addedToPantry || `${items.length} items added to the pantry`);
-  }, [guarded, t.addedToPantry]);
+    scheduleReload(["pantry"]);
+  }, [guarded, scheduleReload, t.addedToPantry]);
 
   // Renaming the kitchen or changing portions used to reload the whole kitchen
   // — twelve queries — on every tap, which is why the stepper felt laggy and
@@ -539,8 +753,12 @@ export function useAppData(t = {}) {
   }, [data.products]);
 
   const resetWeek = useCallback(async () => {
-    await guarded(() => api.resetWeek(), t.weekCleared || "Week cleared");
-  }, [guarded, t.weekCleared]);
+    await mutate(
+      optimisticReset,
+      () => api.resetWeek(),
+      { successMessage: t.weekCleared || "Week cleared" },
+    );
+  }, [mutate, t.weekCleared]);
 
   const updateDisplayName = useCallback(async displayName => {
     const updated = await api.updateProfile({ displayName });
@@ -622,6 +840,7 @@ export function useAppData(t = {}) {
     updateDisplayName,
     resetWeek,
     refresh,
+    refreshTables,
     retryConnection,
   };
 }

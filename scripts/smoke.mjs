@@ -62,6 +62,7 @@ for (const [label, check] of [
   ["Shopping", "Shopping"],
   ["Pantry", "Pantry"],
   ["Tips", "Kitchen notes"],
+  ["Recipes", "Your recipe book"],
   ["Plan", "This week"],
 ]) {
   await clickByText(label);

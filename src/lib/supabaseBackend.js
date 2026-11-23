@@ -208,9 +208,20 @@ export function createSupabaseBackend(client) {
       return data;
     },
 
-    async loadAll() {
+    /**
+     * Reads the kitchen.
+     *
+     * `tables` is optional: a write that only touched the pantry does not need
+     * thirteen queries back, and asking for one slice is the difference between
+     * a tap that feels instant and one that waits a second on a phone. A full
+     * load (no argument) keeps the original behaviour — every table, each one
+     * allowed to fail on its own.
+     */
+    async loadAll({ tables = null } = {}) {
       const hid = ctx.householdId;
       if (!hid) return null;
+      const requested = Array.isArray(tables) ? new Set(tables) : null;
+      const wants = key => !requested || requested.has(key);
 
       // One query per table, each allowed to fail on its own. A project that was
       // never upgraded (or a single blocked table) should still open the kitchen
@@ -232,14 +243,16 @@ export function createSupabaseBackend(client) {
       };
 
       const entries = await Promise.all(
-        Object.entries(queries).map(async ([table, run]) => {
-          try {
-            const result = await run();
-            return { table, data: result?.data ?? null, error: result?.error || null };
-          } catch (error) {
-            return { table, data: null, error };
-          }
-        }),
+        Object.entries(queries)
+          .filter(([table]) => wants(table))
+          .map(async ([table, run]) => {
+            try {
+              const result = await run();
+              return { table, data: result?.data ?? null, error: result?.error || null };
+            } catch (error) {
+              return { table, data: null, error };
+            }
+          }),
       );
 
       const byTable = Object.fromEntries(entries.map(entry => [entry.table, entry]));
@@ -256,7 +269,9 @@ export function createSupabaseBackend(client) {
         const own = issues.find(issue => issue.table === "household") || issues[0] || {};
         throw Object.assign(new Error(own.message || "household_unavailable"), own);
       }
-      if (!single("household")) {
+      // An empty household row only means "lost" on a full load; a slice that
+      // simply did not ask for it has nothing to say about it.
+      if (byTable.household && !single("household")) {
         throw Object.assign(new Error("household_not_found"), { kind: "not_found", table: "households" });
       }
 
@@ -265,38 +280,50 @@ export function createSupabaseBackend(client) {
       const authIssue = issues.find(issue => issue.kind === "auth");
       if (authIssue && !byTable.recipes?.data) throw Object.assign(new Error(authIssue.message), authIssue);
 
-      return {
-        household: mapHousehold(single("household")),
-        profiles: rows("profiles").map(mapProfile),
-        recipes: rows("recipes").map(mapRecipeRow),
-        assignments: rows("assignments").map(mapAssignment),
-        eaten: rows("eaten").filter(row => row.eaten).map(row => ({
+      // Only the slices that were actually read are returned; the caller merges
+      // them over what it already has.
+      const slice = {};
+      if (wants("household")) slice.household = mapHousehold(single("household"));
+      if (wants("profiles")) slice.profiles = rows("profiles").map(mapProfile);
+      if (wants("recipes")) slice.recipes = rows("recipes").map(mapRecipeRow);
+      if (wants("assignments")) slice.assignments = rows("assignments").map(mapAssignment);
+      if (wants("eaten")) {
+        slice.eaten = rows("eaten").filter(row => row.eaten).map(row => ({
           day: row.day_index,
           slot: row.slot,
           personKey: row.person_key,
           eaten: row.eaten,
           recipeId: row.recipe_id,
           applied: Array.isArray(row.applied) ? row.applied : [],
-        })),
-        water: rows("water").map(row => ({ day: row.day_index, personKey: row.person_key, ml: Number(row.ml) || 0 })),
-        notes: rows("notes").map(row => ({ recipeId: row.recipe_id, personKey: row.person_key, note: row.note })),
-        shoppingChecks: rows("checks").map(row => ({ weekStart: row.week_start, itemKey: row.item_key, checked: row.checked })),
-        pantry: rows("pantry").map(mapPantry),
-        menus: rows("menus").map(mapMenuRow),
-        hiddenSections: rows("sections").map(row => ({ day: row.day_index, slot: row.slot })),
-        labels: rows("labels").map(row => ({ key: row.key, label: row.label })),
-        products: rows("products").map(mapProduct),
-        issues,
-      };
+        }));
+      }
+      if (wants("water")) slice.water = rows("water").map(row => ({ day: row.day_index, personKey: row.person_key, ml: Number(row.ml) || 0 }));
+      if (wants("notes")) slice.notes = rows("notes").map(row => ({ recipeId: row.recipe_id, personKey: row.person_key, note: row.note }));
+      if (wants("checks")) slice.shoppingChecks = rows("checks").map(row => ({ weekStart: row.week_start, itemKey: row.item_key, checked: row.checked }));
+      if (wants("pantry")) slice.pantry = rows("pantry").map(mapPantry);
+      if (wants("menus")) slice.menus = rows("menus").map(mapMenuRow);
+      if (wants("sections")) slice.hiddenSections = rows("sections").map(row => ({ day: row.day_index, slot: row.slot }));
+      if (wants("labels")) slice.labels = rows("labels").map(row => ({ key: row.key, label: row.label }));
+      if (wants("products")) slice.products = rows("products").map(mapProduct);
+      return { ...slice, issues };
     },
 
     subscribe(callback) {
       const hid = ctx.householdId;
       if (!hid) return () => {};
       let timer;
-      const trigger = () => {
+      let changed = new Set();
+      // Realtime used to answer every event with "reload the whole kitchen".
+      // It now says which tables moved, and the hook reads only those.
+      const trigger = payload => {
+        const table = payload?.table;
+        if (table) changed.add(table);
         clearTimeout(timer);
-        timer = setTimeout(callback, 220);
+        timer = setTimeout(() => {
+          const tables = changed;
+          changed = new Set();
+          callback(tables.size ? tables : null);
+        }, 220);
       };
       const channel = client.channel(`household-${hid}`);
       const tables = ["meal_assignments", "eaten", "water", "recipe_notes", "shopping_checks", "pantry", "recipes", "menus", "day_sections", "labels", "products"];
