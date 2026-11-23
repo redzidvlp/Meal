@@ -467,8 +467,8 @@ export default function App() {
         mode={picker.mode}
         person={picker.person}
         currentRecipe={pickerCurrent}
-        recipes={app.recipes}
-        recipesById={app.recipesById}
+        recipes={app.pool}
+        recipesById={app.poolById}
         labels={app.labels}
         lang={lang}
         t={t}
@@ -481,6 +481,7 @@ export default function App() {
         onCreateMenu={openMenuEditor}
         onEditMenu={menu => openMenuEditor(menu)}
         onResetMenu={key => app.resetMenu(key).catch(() => {})}
+        removed={app.removed}
         onManageRecipes={() => {
           setLastPicker({ day: picker.day, slot: picker.slot, mode: picker.mode, person: picker.person, initialTab: picker.initialTab });
           setPicker(previous => ({ ...previous, open: false }));
@@ -501,7 +502,7 @@ export default function App() {
       <MenuEditor
         open={menuEditor.open}
         menu={menuEditor.menu}
-        recipes={app.recipes}
+        recipes={app.pool}
         lang={lang}
         t={t}
         onClose={() => setMenuEditor(previous => ({ ...previous, open: false }))}

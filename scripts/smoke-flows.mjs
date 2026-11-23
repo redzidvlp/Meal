@@ -433,6 +433,97 @@ assert(firstOpen, "the picker opens for the emptied slot");
 await click(firstOpen, 700);
 assert(document.querySelector("[data-drop-slot='breakfast'] .meal-grip"), "the slot is filled again for the rest of the run");
 
+// 5e. A bored-of-it library dish: hide it, prove it left the pool and that a
+// day menu no longer hands it back, then put it back.
+await nav("Recipes");
+// Pick a library dish whose name is unique in this kitchen: an earlier step
+// edited a library recipe, which forks a household copy under the same name.
+const seenNames = new Set(state().recipes.map(recipe => recipe.name.en));
+const libraryRow = [...document.querySelectorAll("[data-recipe-row]")]
+  .find(el => !el.querySelector("[data-delete-recipe]")
+    && !el.querySelector("[data-restore-recipe]")
+    && [...state().recipes].filter(r => r.name.en === el.querySelector(".opt-name").textContent.trim()).length === 1);
+assert(libraryRow, "a library recipe is listed in the book");
+const libraryId = libraryRow.dataset.recipeRow;
+const libraryName = libraryRow.querySelector(".opt-name").textContent.trim();
+assert(seenNames.has(libraryName), "the chosen dish is a real recipe name");
+const libraryInWeek = state().assignments.filter(row => row.recipeId === libraryId).length;
+await click(libraryRow.querySelector("[data-remove-recipe]"), 350);
+assert(/Never offer this dish again\?|Take this out of your pool\?/.test(text()), "removing a dish asks first");
+await click(confirm(), 900);
+assert(state().removed.some(row => row.recipeId === libraryId), "the choice is stored for this household only");
+assert(state().recipes.some(recipe => recipe.id === libraryId), "the shared library recipe itself is not deleted");
+assert(!state().assignments.some(row => row.recipeId === libraryId), `it left the ${libraryInWeek} planned meal(s)`);
+assert(!document.querySelector(`[data-recipe-row="${libraryId}"]`), "and it is no longer in the pool list");
+console.log(`REMOVE LIBRARY DISH: “${libraryName}” left ${libraryInWeek} planned meal(s), the row stays for everyone`);
+
+// The picker must not offer it, and a menu that contains it must not plan it.
+await nav("Plan");
+await click(button("Change"), 350);
+assert(text().includes("Choose a recipe"), "picker opened");
+const offered = [...document.querySelectorAll(".recipe-option .opt-name")].map(el => el.textContent.trim());
+assert(!offered.includes(libraryName), "the picker no longer offers the removed dish");
+await click(button("Menus", document.querySelector(".sheet")), 250);
+// Menus are built from library presets, so at least one of them still points at
+// the dish that just left the pool. That card must say so — a dropped meal
+// cannot vanish from a menu without a word.
+const droppedCards = [...document.querySelectorAll(".menu-card")]
+  .filter(card => /removed|pašalinta/i.test(card.textContent));
+assert(droppedCards.length > 0, "a menu card says how many dishes it had to drop");
+console.log(`REMOVE LIBRARY DISH: ${droppedCards.length} menu card(s) admit they skip ${libraryName}`);
+await click(document.querySelector(".sheet .close-btn"), 400);
+assert(!document.querySelector(".sheet"), "picker closed");
+
+// Apply the menu that used to contain it: the removed slot must stay empty.
+await click(button("Change"), 350);
+await click(button("Menus", document.querySelector(".sheet")), 250);
+const targetCard = [...document.querySelectorAll(".menu-card")][0];
+const applyTo = [...targetCard.querySelectorAll("button")].find(el => el.textContent.includes("Apply to"));
+await click(applyTo, 900);
+const applied = state().assignments.filter(row => row.recipeId === libraryId);
+assert(applied.length === 0, "applying a day menu does not bring the removed dish back");
+console.log("REMOVE LIBRARY DISH: menus skip it instead of secretly planning it");
+
+// Put it back.
+await nav("Recipes");
+await click(document.querySelector("[data-view-removed]"), 350);
+assert(text().includes("Removed"), "the removed list is open");
+const backRow = document.querySelector(`[data-recipe-row="${libraryId}"] [data-restore-recipe]`);
+assert(backRow, "the removed dish is listed with a way back");
+await click(backRow, 900);
+assert(!(state().removed || []).some(row => row.recipeId === libraryId), "the removal is undone");
+await click(document.querySelector("[data-view-removed]"), 350);
+await nav("Plan");
+await click(button("Change"), 350);
+const offeredAgain = [...document.querySelectorAll(".recipe-option .opt-name")].map(el => el.textContent.trim());
+assert(offeredAgain.includes(libraryName), "and it is offered again");
+await click(document.querySelector(".sheet .close-btn"), 400);
+console.log("REMOVE LIBRARY DISH: ↺ put back, and the picker offers it again");
+
+// 5f. A deleted own recipe is not lost either: the marker keeps the whole dish,
+// so ↺ rebuilds it with its ingredients — a week's shopping needs them.
+await nav("Recipes");
+await click(document.querySelector("[data-view-removed]"), 350);
+const deletedRow = document.querySelector(`[data-recipe-row="${saved.id}"]`);
+assert(deletedRow, "the deleted own recipe is still listed under 🚫 Removed");
+assert(deletedRow.textContent.includes("Smoke test bowl"), "with the name it had");
+assert(!deletedRow.textContent.includes(saved.id), "and not with its id slug instead of a name");
+const removedNames = [...document.querySelectorAll("[data-recipe-row] .opt-name")].map(el => el.textContent.trim());
+assert(new Set(removedNames).size === removedNames.length, "no dish is listed twice in 🚫 Removed");
+await click(deletedRow.querySelector("[data-restore-recipe]"), 900);
+const rebuilt = state().recipes.find(recipe => recipe.id === saved.id);
+assert(rebuilt, "↺ put the deleted recipe back in the book");
+assert(rebuilt.ingredients?.length === saved.ingredients.length, "with its ingredients, not an empty shell");
+assert(rebuilt.householdId !== null, "as your own recipe again");
+assert(!(state().removed || []).some(row => row.recipeId === saved.id), "and the marker is gone");
+await click(document.querySelector("[data-view-removed]"), 350);
+await nav("Plan");
+await click(button("Change"), 350);
+const rebuiltOffer = [...document.querySelectorAll(".recipe-option .opt-name")].map(el => el.textContent.trim());
+assert(rebuiltOffer.includes("Smoke test bowl"), "the rebuilt dish is offered by the picker again");
+await click(document.querySelector(".sheet .close-btn"), 400);
+console.log("REMOVE LIBRARY DISH: 🗑 deleted, then ↺ rebuilt with its ingredients");
+
 // 6. Non-vegetarian input is blocked client-side.
 await click(button("Change"), 300);
 await click(button("New recipe", [...document.querySelectorAll(".sheet")].at(-1)), 400);

@@ -67,6 +67,7 @@ function seedState() {
     menus: [],
     labels: [],
     products: [],
+    removed: [],
     hiddenSections: [],
     pantry,
     weekStart,
@@ -91,6 +92,7 @@ function loadState() {
     if (!Array.isArray(parsed.hiddenSections)) parsed.hiddenSections = [];
     if (!Array.isArray(parsed.labels)) parsed.labels = [];
     if (!Array.isArray(parsed.products)) parsed.products = [];
+    if (!Array.isArray(parsed.removed)) parsed.removed = [];
     return parsed;
   } catch {
     return seedState();
@@ -155,6 +157,7 @@ export function createDemoBackend() {
     pantry: state.pantry,
     labels: state.labels || [],
     products: state.products || [],
+    removed: state.removed || [],
     hiddenSections: (state.hiddenSections || []).map(row => ({ day: row.day, slot: row.slot })),
   });
 
@@ -209,6 +212,7 @@ export function createDemoBackend() {
         day_sections: "hiddenSections",
         labels: "labels",
         products: "products",
+        removed_recipes: "removed",
       };
       const slice = {};
       for (const table of tables) {
@@ -236,17 +240,50 @@ export function createDemoBackend() {
         next.id = `${recipe.id}-${Math.random().toString(36).slice(2, 6)}`;
       }
       state.recipes = [...state.recipes.filter(r => r.id !== next.id), next];
-      emit(["recipes"]);
+      // Saving a dish under an id this kitchen had taken out means it is wanted
+      // after all. (Normally the hook clears the marker as part of the same
+      // save; this keeps the two in step even if only the row is written.)
+      state.removed = (state.removed || []).filter(row => row.recipeId !== next.id);
+      emit(["recipes", "removed_recipes"]);
       return clone(next);
     },
 
     async deleteRecipe(id) {
       const target = state.recipes.find(r => r.id === id);
-      if (!target || target.householdId === null) throw new Error("Library recipes are read-only");
+      if (!target || target.householdId === null || target.isPreset) throw new Error("Library recipes are read-only");
       state.recipes = state.recipes.filter(r => r.id !== id);
       // Planned meals keep a snapshot so the plan never breaks.
       state.assignments = state.assignments.filter(row => row.recipeId !== id);
-      emit(["recipes", "meal_assignments", "eaten", "recipe_notes"]);
+      // Remember the deletion: a later seed must not quietly bring it back, and
+      // the Recipes screen keeps enough of the dish to offer "put it back". The
+      // caller usually wrote the full snapshot already; never shrink it.
+      const existing = (state.removed || []).find(row => row.recipeId === id);
+      state.removed = [...(state.removed || []).filter(row => row.recipeId !== id), {
+        recipeId: id,
+        removedAt: existing?.removedAt || new Date().toISOString(),
+        snapshot: existing?.snapshot || { name: target.name, emoji: target.emoji, slot: target.slot, kcal: target.kcal },
+      }];
+      emit(["recipes", "meal_assignments", "eaten", "recipe_notes", "removed_recipes"]);
+      return true;
+    },
+
+    async removeRecipe(id, snapshot = null) {
+      state.removed = [...(state.removed || []).filter(row => row.recipeId !== id), {
+        recipeId: id,
+        removedAt: new Date().toISOString(),
+        snapshot: snapshot || null,
+      }];
+      // Taking a dish out of the pool also empties the meals it was planned
+      // for — the confirm dialog promised exactly that, so it must be written,
+      // not just painted.
+      state.assignments = state.assignments.filter(row => row.recipeId !== id);
+      emit(["removed_recipes", "meal_assignments"]);
+      return true;
+    },
+
+    async restoreRecipe(id) {
+      state.removed = (state.removed || []).filter(row => row.recipeId !== id);
+      emit(["removed_recipes"]);
       return true;
     },
 
@@ -279,16 +316,19 @@ export function createDemoBackend() {
     },
 
     async applyMenu(day, menu) {
+      const gone = new Set((state.removed || []).map(row => row.recipeId));
+      const allowed = id => id && !gone.has(id);
       for (const slot of ["breakfast", "lunch", "snack", "dinner"]) {
         state.eaten.filter(row => row.day === day && row.slot === slot)
           .forEach(row => restoreEaten(day, slot, row.personKey));
         const entry = menu.items[slot];
         state.assignments = state.assignments.filter(row => !(row.day === day && row.slot === slot));
         if (!entry) continue;
-        if (entry.both) state.assignments.push({ day, slot, personKey: "both", recipeId: entry.both });
-        else {
-          if (entry.R) state.assignments.push({ day, slot, personKey: "R", recipeId: entry.R });
-          if (entry.I) state.assignments.push({ day, slot, personKey: "I", recipeId: entry.I });
+        if (entry.both) {
+          if (allowed(entry.both)) state.assignments.push({ day, slot, personKey: "both", recipeId: entry.both });
+        } else {
+          if (allowed(entry.R)) state.assignments.push({ day, slot, personKey: "R", recipeId: entry.R });
+          if (allowed(entry.I)) state.assignments.push({ day, slot, personKey: "I", recipeId: entry.I });
         }
       }
       state.eaten = state.eaten.filter(row => row.day !== day);

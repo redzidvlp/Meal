@@ -175,7 +175,7 @@ the <em>filename</em> as if it were SQL.</p>
 </ol>
 <blockquote>
 <p><strong>You should see:</strong> one table starting with <code>table | households | ok | —</code>. Every one of the
-12 table rows must say <strong>ok</strong> and <strong>—</strong>. Below them: <code>row count</code> rows showing your household,
+13 table rows must say <strong>ok</strong> and <strong>—</strong>. Below them: <code>row count</code> rows showing your household,
 your 2 profiles, 38 recipes, and the number of planned meals carried over (for a full week,
 26–28). The very end shows <code>project | database | postgres</code> and your number of auth users.</p>
 </blockquote>
@@ -337,22 +337,35 @@ Saved, it is in the book and in the picker immediately; there is no separate “
 <p><strong>Change a recipe.</strong> <strong>✏️</strong> on its row. The editor opens with everything already filled in and
 <strong>Save</strong> writes over the same recipe, so every meal already planned with it changes too — and
 so does the shopping list, because it is built from the recipes in the plan.</p>
-<p><strong>Take a recipe out of the pool.</strong> <strong>🗑</strong> on its row. It asks once, and it tells you what it
-will cost: <em>“Delete ‘Smoke test bowl’? It disappears from the picker, the sous-chef and from 2
-planned meal(s) this week.”</em> Confirm and the recipe is gone — from the book, from the picker,
-from the sous-chef’s suggestions, and from any day it was planned on. The shopping list
-drops its ingredients on the next visit. <strong>The recipe itself is the only thing deleted</strong>: your
-pantry numbers, your notes history and every other recipe are untouched.</p>
+<p><strong>Bored of a recipe? Take it out of the pool.</strong> Two buttons, two different promises.</p>
+<p><strong>🚫 — the polite exit, on every row.</strong> <em>“Never offer this dish again?”</em> It tells you what it
+costs <em>before</em> you decide: <em>“‘Avocado toast’ will stop appearing in the picker and the
+sous-chef, and leave the 1 planned meal(s) this week. You can put it back from 🚫 Removed at
+any time.”</em> Confirm and it is gone from the picker, the sous-chef, the plan, the day menus
+and the shopping list at once. For a <strong>📚 library dish this is the only exit</strong>, because the
+recipe belongs to everyone: nothing is deleted, only <em>your kitchen</em> stops offering it. The
+other household keeps cooking it, exactly as before.</p>
+<p><strong>🗑 — the real delete, on your own recipes only.</strong> Same warning, and then the recipe row
+itself is deleted (plus its planned meals and notes). Its ingredients leave the shopping list
+on the next visit. Your pantry numbers and every other recipe are untouched.</p>
 <blockquote>
-<p><strong>Nothing is deleted by accident.</strong> The 🗑 asks first, with the dish name in the question.
-If nothing is planned with it, the question says so instead of pretending the week changes.</p>
+<p><strong>Nothing is deleted by accident.</strong> Both buttons ask first, name the dish, and say how many
+planned meals this week they empty. If nothing is planned with it, the question says so
+instead of pretending the week changes.</p>
 </blockquote>
+<p><strong>🚫 Removed — the way back.</strong> The chip at the top of 📖 Recipes opens the list of everything
+you took out, each row still showing the dish’s real name and emoji. <strong>↺ Put back</strong> makes it
+offer itself again everywhere; the meals it used to fill stay empty, because a week you
+already changed should not rearrange itself behind your back. A <strong>deleted</strong> own recipe is
+rebuilt from a snapshot kept with the marker — same name, ingredients and method — so even
+🗑 is recoverable.</p>
 <p><strong>The 📚 library.</strong> Recipes marked <strong>📚 library</strong> are shared by everyone using the app; they
 are read-only on purpose, so nobody can delete a dish the other household still plans. They
-show a 📚 instead of a 🗑. Tap <strong>✏️</strong> on one and the editor opens with a green note: <em>“Library
-recipes are shared read-only. Saving creates your own editable copy.”</em> <strong>Save</strong> makes your
-copy — the original stays in the list for everyone, and your copy (no 📚) can be deleted
-like any other. That is the whole distinction: <strong>📚 = read-only, no 📚 = yours</strong>.</p>
+show a 📚, never a 🗑 — use <strong>🚫</strong> to stop offering one. Tap <strong>✏️</strong> on one and the editor opens
+with a green note: <em>“Library recipes are shared read-only. Saving creates your own editable
+copy.”</em> <strong>Save</strong> makes your copy — the original stays in the list for everyone, and your copy
+(no 📚) can be deleted like any other. That is the whole distinction: <strong>📚 = shared, 🚫 = out
+of your pool, no 📚 = yours, with a real 🗑</strong>.</p>
 <p><strong>From the picker.</strong> When you are choosing a meal and realise a recipe needs fixing, the
 <strong>⚙️ Manage</strong> button next to the search box jumps straight to 📖 Recipes — the picker closes
 by itself, so there is no sheet left open behind you.</p>
@@ -861,9 +874,19 @@ SQL by hand — and it only does something when <code>main</code> contains a <co
 <td>Phase 7b and 7c; redeploy both functions after changing secrets</td>
 </tr>
 <tr>
-<td>I cannot delete a recipe</td>
-<td>it is a 📚 library recipe (read-only for everyone)</td>
-<td>tap <strong>✏️</strong> to save your own copy, then delete the copy (Phase 6b)</td>
+<td>I cannot delete a 📚 recipe</td>
+<td>it is shared — the other household may still cook it</td>
+<td>use <strong>🚫</strong> instead: it leaves <em>your</em> pool and is restorable from <strong>🚫 Removed</strong> (Phase 6b)</td>
+</tr>
+<tr>
+<td>A dish I took out is not offered any more</td>
+<td>that is the point — it is in <strong>🚫 Removed</strong></td>
+<td>open <strong>🚫 Removed</strong> in 📖 Recipes and tap <strong>↺ Put back</strong></td>
+</tr>
+<tr>
+<td>A menu card says “🚫 1 removed”</td>
+<td>the menu points at a dish your kitchen hid</td>
+<td>apply it anyway (that slot stays empty), or put the dish back first (Phase 6b)</td>
 </tr>
 <tr>
 <td>A tap still feels slow on mobile data</td>
@@ -929,7 +952,7 @@ password manager; you will not need it again.</li>
 <li><strong>SQL Editor → New query</strong>, paste <strong><code>supabase/schema.sql</code></strong> → Run
 (<code>Success. No rows returned</code>).</li>
 <li>New query, paste <strong><code>supabase/seed.sql</code></strong> → Run. This adds the 38 recipes and 10 menus.</li>
-<li>New query, paste <strong><code>supabase/doctor.sql</code></strong> → Run. Twelve <code>ok</code> rows, then row counts of 0.</li>
+<li>New query, paste <strong><code>supabase/doctor.sql</code></strong> → Run. Thirteen <code>ok</code> rows, then row counts of 0.</li>
 <li>Continue at Phase 3 with the URL and anon key of this new project.</li>
 </ol>
 <blockquote>

@@ -240,6 +240,7 @@ export function createSupabaseBackend(client) {
         sections: () => client.from("day_sections").select("*").eq("household_id", hid),
         labels: () => client.from("labels").select("*").eq("household_id", hid),
         products: () => client.from("products").select("*").eq("household_id", hid),
+        removed: () => client.from("removed_recipes").select("*").eq("household_id", hid),
       };
 
       const entries = await Promise.all(
@@ -305,6 +306,13 @@ export function createSupabaseBackend(client) {
       if (wants("sections")) slice.hiddenSections = rows("sections").map(row => ({ day: row.day_index, slot: row.slot }));
       if (wants("labels")) slice.labels = rows("labels").map(row => ({ key: row.key, label: row.label }));
       if (wants("products")) slice.products = rows("products").map(mapProduct);
+      if (wants("removed")) {
+        slice.removed = rows("removed").map(row => ({
+          recipeId: row.recipe_id,
+          removedAt: row.removed_at || "",
+          snapshot: row.snapshot || null,
+        }));
+      }
       return { ...slice, issues };
     },
 
@@ -326,7 +334,7 @@ export function createSupabaseBackend(client) {
         }, 220);
       };
       const channel = client.channel(`household-${hid}`);
-      const tables = ["meal_assignments", "eaten", "water", "recipe_notes", "shopping_checks", "pantry", "recipes", "menus", "day_sections", "labels", "products"];
+      const tables = ["meal_assignments", "eaten", "water", "recipe_notes", "shopping_checks", "pantry", "recipes", "menus", "day_sections", "labels", "products", "removed_recipes"];
       for (const table of tables) {
         channel.on("postgres_changes", { event: "*", schema: "public", table, filter: `household_id=eq.${hid}` }, trigger);
       }
@@ -365,6 +373,38 @@ export function createSupabaseBackend(client) {
         .eq("id", id).eq("household_id", ctx.householdId).select("id");
       raise(error);
       if (!data?.length) throw new Error("Library recipes are read-only");
+      return true;
+    },
+
+    /**
+     * Take a dish out of this household's pool. `snapshot` is set only when the
+     * recipe is the household's own and is about to be deleted for real, so the
+     * dish can be rebuilt by "put back".
+     */
+    async removeRecipe(id, snapshot = null) {
+      const recipeId = String(id || "").slice(0, 80);
+      // The meals this dish was planned for go too: the confirm dialog promised
+      // the week would lose them, and an unticked box must not come back on the
+      // next read. (A restore does not re-plan them — it only offers the dish.)
+      const { error: planError } = await client.from("meal_assignments").delete()
+        .eq("household_id", ctx.householdId).eq("recipe_id", recipeId);
+      raise(planError);
+      const row = {
+        household_id: ctx.householdId,
+        recipe_id: recipeId,
+        removed_at: new Date().toISOString(),
+        snapshot: snapshot || null,
+      };
+      const { error } = await client.from("removed_recipes")
+        .upsert(row, { onConflict: "household_id,recipe_id" });
+      raise(error);
+      return true;
+    },
+
+    async restoreRecipe(id) {
+      const { error } = await client.from("removed_recipes").delete()
+        .eq("household_id", ctx.householdId).eq("recipe_id", String(id || "").slice(0, 80));
+      raise(error);
       return true;
     },
 

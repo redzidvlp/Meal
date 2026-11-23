@@ -83,7 +83,7 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
 
   // The list below is a different feature: scoring recipes you already own.
   const suggestions = useMemo(() => suggestRecipes({
-    recipes: app.recipes,
+    recipes: app.pool,
     plan: app.plan,
     reference: baseMeal?.recipe || null,
     target,
@@ -92,7 +92,7 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
     recentIds,
     filters: { ...filters, quick: maxMinutes > 0 && maxMinutes <= 15 },
     limit: 8,
-  }), [app.recipes, app.plan, baseMeal, target, slot, app.pantry, recentIds, filters, maxMinutes]);
+  }), [app.pool, app.plan, baseMeal, target, slot, app.pantry, recentIds, filters, maxMinutes]);
 
   const toggleFilter = key => setFilters(previous => ({ ...previous, [key]: !previous[key] }));
 
@@ -160,7 +160,7 @@ export default function SuggestionsTab({ app, lang, t, onOpenRecipe, onCreateRec
     const seed = seedRef.current;
     seedRef.current += 37;
     const excludeNames = [
-      ...app.recipes.map(recipe => recipe.name?.en).filter(Boolean),
+      ...app.pool.map(recipe => recipe.name?.en).filter(Boolean),
       ...(idea ? [idea.name?.en] : []),
     ].filter(Boolean);
     try {

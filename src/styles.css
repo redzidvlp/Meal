@@ -1070,3 +1070,8 @@ body.is-dragging-meal { cursor: grabbing; }
 }
 .back-to-picker > span:first-child { font-size: 18px; color: var(--forest); }
 .back-to-picker:active { transform: scale(.995); }
+
+/* A recipe that has been taken out of the pool still has a name and a way back. */
+.recipe-row.is-hidden-recipe { opacity: .72; background: var(--surface-soft); }
+.recipe-restore { white-space: nowrap; margin: 0 4px; flex-shrink: 0; }
+.recipe-row-remove { color: var(--amber); }
