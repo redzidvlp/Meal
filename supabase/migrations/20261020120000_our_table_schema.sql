@@ -199,6 +199,25 @@ create table if not exists public.labels (
   primary key (household_id, key)
 );
 
+-- Recipes a household has taken out of its own pool. The library rows
+-- (household_id null) are shared and read-only, so "we are bored of this" is
+-- stored here instead of deleting a dish another kitchen may still cook. The
+-- id is text with no foreign key on purpose: a library recipe that disappears
+-- from a future seed must not remove the household's memory of the choice.
+create table if not exists public.removed_recipes (
+  household_id uuid not null references public.households(id) on delete cascade,
+  recipe_id text not null check (char_length(recipe_id) between 1 and 80),
+  removed_at timestamptz not null default now(),
+  -- An own recipe is deleted for real, so the dish itself is remembered here
+  -- (name, ingredients, method) to make "put back" possible. A library dish is
+  -- only hidden and needs no copy: its row still exists.
+  snapshot jsonb,
+  primary key (household_id, recipe_id)
+);
+
+-- Projects created before the snapshot existed keep the same table.
+alter table public.removed_recipes add column if not exists snapshot jsonb;
+
 -- Products the household actually buys, with the numbers off the package:
 -- "Veganiški pjausniai kumpio stiliaus", a particular spread, a protein
 -- yoghurt. Everything is stored per 100 g/ml so a meal built around one lands
@@ -727,6 +746,8 @@ declare
   v_hid uuid := public.my_household_id();
   v_slot text;
   v_key text;
+  v_filtered jsonb := '{}'::jsonb;
+  v_rows jsonb;
 begin
   if v_hid is null then
     raise exception 'not_linked';
@@ -741,16 +762,37 @@ begin
     end if;
   end loop;
 
+  -- A day menu is a reusable suggestion, not a wish to be handed a dish the
+  -- household removed from its pool. Those slots are simply left empty.
+  for v_key, v_rows in select key, value from jsonb_each(p_items) loop
+    v_filtered := jsonb_set(
+      v_filtered,
+      array[v_key],
+      coalesce((
+        select jsonb_agg(row_value)
+          from jsonb_array_elements(
+            case when jsonb_typeof(v_rows) = 'array' then v_rows else '[]'::jsonb end
+          ) as row_value
+         where not exists (
+           select 1 from public.removed_recipes r
+            where r.household_id = v_hid
+              and r.recipe_id = row_value->>'recipe_id'
+         )
+      ), '[]'::jsonb),
+      true
+    );
+  end loop;
+
   foreach v_slot in array array['breakfast', 'lunch', 'snack', 'dinner'] loop
     perform public._set_slot_internal(
       v_hid,
       p_day,
       v_slot,
-      coalesce(p_items->v_slot, '[]'::jsonb)
+      coalesce(v_filtered->v_slot, '[]'::jsonb)
     );
   end loop;
 
-  -- Applying a menu brings back the sections it fills.
+  -- Applying a menu brings back the sections it actually fills.
   delete from public.day_sections
    where household_id = v_hid
      and day_index = p_day
@@ -1100,6 +1142,7 @@ alter table public.pantry enable row level security;
 alter table public.labels enable row level security;
 alter table public.products enable row level security;
 alter table public.day_sections enable row level security;
+alter table public.removed_recipes enable row level security;
 
 -- households: members read; members may rename / change extra portions only.
 drop policy if exists households_select on public.households;
@@ -1290,6 +1333,31 @@ create policy labels_delete on public.labels
 revoke all on public.labels from anon;
 grant select, insert, update, delete on public.labels to authenticated;
 
+-- removed_recipes (recipes this household does not want offered any more)
+drop policy if exists removed_recipes_select on public.removed_recipes;
+create policy removed_recipes_select on public.removed_recipes
+  for select to authenticated
+  using (household_id = public.my_household_id());
+
+drop policy if exists removed_recipes_insert on public.removed_recipes;
+create policy removed_recipes_insert on public.removed_recipes
+  for insert to authenticated
+  with check (household_id = public.my_household_id());
+
+drop policy if exists removed_recipes_update on public.removed_recipes;
+create policy removed_recipes_update on public.removed_recipes
+  for update to authenticated
+  using (household_id = public.my_household_id())
+  with check (household_id = public.my_household_id());
+
+drop policy if exists removed_recipes_delete on public.removed_recipes;
+create policy removed_recipes_delete on public.removed_recipes
+  for delete to authenticated
+  using (household_id = public.my_household_id());
+
+revoke all on public.removed_recipes from anon;
+grant select, insert, update, delete on public.removed_recipes to authenticated;
+
 -- products (a household's own packaging facts)
 drop policy if exists products_select on public.products;
 create policy products_select on public.products
@@ -1360,7 +1428,7 @@ begin
   foreach t in array array[
     'recipes', 'meal_assignments', 'eaten', 'water',
     'recipe_notes', 'shopping_checks', 'pantry', 'menus', 'households', 'profiles',
-    'day_sections', 'labels', 'products'
+    'day_sections', 'labels', 'products', 'removed_recipes'
   ] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);

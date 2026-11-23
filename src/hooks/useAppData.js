@@ -6,6 +6,7 @@ import { buildShoppingList } from "../engine/shopping.js";
 import { lowItems } from "../engine/pantry.js";
 import { mergeMenus } from "../lib/menus.js";
 import { createReloader, createTableBatch } from "../lib/reload.js";
+import { poolRecipes, removalRow, restorableRecipe } from "../lib/library.js";
 import {
   applySlot as optimisticSlot,
   applyMenu as optimisticMenu,
@@ -46,6 +47,7 @@ const EMPTY = {
   labels: [],
   products: [],
   hiddenSections: [],
+  removed: [],
 };
 
 /**
@@ -53,7 +55,7 @@ const EMPTY = {
  * never the whole kitchen, because the partner may have changed something else
  * while it was in flight.
  */
-const ROLLBACK_KEYS = ["household", "eaten", "assignments", "pantry", "notes", "water", "shoppingChecks", "hiddenSections", "menus", "profiles", "recipes", "labels", "products"];
+const ROLLBACK_KEYS = ["household", "eaten", "assignments", "pantry", "notes", "water", "shoppingChecks", "hiddenSections", "menus", "profiles", "recipes", "labels", "products", "removed"];
 
 function rollbackRows(before, current) {
   const patch = {};
@@ -314,9 +316,15 @@ export function useAppData(t = {}) {
     [data.recipes],
   );
 
+  // What this kitchen still wants offered. Removed dishes stay out of the
+  // picker, the sous-chef and every new plan, but the shared library row and
+  // the old week are untouched.
+  const pool = useMemo(() => poolRecipes(data.recipes, data.removed), [data.recipes, data.removed]);
+  const poolById = useMemo(() => new Map(pool.map(recipe => [recipe.id, recipe])), [pool]);
+
   const plan = useMemo(
-    () => buildPlan(data.assignments, recipesById),
-    [data.assignments, recipesById],
+    () => buildPlan(data.assignments, poolById),
+    [data.assignments, poolById],
   );
 
   const notesMap = useMemo(() => {
@@ -641,6 +649,14 @@ export function useAppData(t = {}) {
     scheduleReload(["products"]);
   }, [mutate, scheduleReload, t.productDeleted]);
 
+  /** Drop any marker that would keep a freshly saved recipe out of the pool. */
+  const unhide = (state, id) => {
+    if (!id) return state;
+    const removed = state.removed || [];
+    if (!removed.some(row => row.recipeId === id)) return state;
+    return { ...state, removed: removed.filter(row => row.recipeId !== id) };
+  };
+
   const saveRecipe = useCallback(async input => {
     try {
       // Draw the recipe (new or edited) at once; a forked library copy gets its
@@ -649,9 +665,21 @@ export function useAppData(t = {}) {
         ? { ...input, isPreset: false, householdId: dataRef.current.household?.id || null }
         : null;
       const saved = await mutate(
-        state => (draft ? upsertRecipe(state, draft) : state),
+        state => {
+          if (!draft) return state;
+          const next = upsertRecipe(state, draft);
+          return unhide(next, draft.id);
+        },
         () => api.saveRecipe(input),
-        { merge: upsertRecipe },
+        {
+          merge: (state, result) => {
+            // Saving a dish under an id this kitchen had taken out means it is
+            // wanted after all — never leave it hidden behind an old tombstone.
+            const next = upsertRecipe(state, result);
+            if (result?.id) api.restoreRecipe(result.id).catch(() => {});
+            return unhide(next, result?.id);
+          },
+        },
       );
       // Library recipes are visible to every household and are not covered by
       // this household's realtime filter, so a light re-read keeps them honest.
@@ -665,22 +693,82 @@ export function useAppData(t = {}) {
     }
   }, [mutate, scheduleReload, notify, t.savingFailed]);
 
-  // Deleting a recipe also drops it from every future meal (the database does
-  // that with ON DELETE CASCADE), so the plan is redrawn at once and the rows
-  // are read back when the server confirms.
-  const deleteRecipe = useCallback(async id => {
+  /**
+   * Taking a dish out of the pool.
+   *
+   * Two different things behind one button:
+   *   • a recipe the household owns is really deleted (its rows cascade), and a
+   *     marker is kept so the screen can still name it and put it back;
+   *   • a shared library recipe cannot be deleted — everyone else may still cook
+   *     it — so only this household's marker is written.
+   * Either way it leaves the picker, the sous-chef, the plan and the shopping
+   * list at once; `library` says which of the two happened.
+   */
+  const deleteRecipe = useCallback(async (id, { library = false } = {}) => {
+    const current = dataRef.current;
+    const target = (current.recipes || []).find(recipe => recipe.id === id)
+      || { id, isPreset: library };
+    const marker = removalRow({ ...target, id });
+    if (!marker) return;
     await mutate(
       state => ({
         ...state,
-        recipes: state.recipes.filter(recipe => recipe.id !== id),
+        // An owned recipe loses its row; a library one keeps it (it is shared)
+        // but joins the removed list, so every screen filters it out.
+        recipes: library ? state.recipes : state.recipes.filter(recipe => recipe.id !== id),
+        removed: [...(state.removed || []).filter(row => row.recipeId !== id), marker],
         assignments: state.assignments.filter(row => row.recipeId !== id),
         eaten: state.eaten.filter(row => row.recipeId !== id),
         notes: state.notes.filter(row => row.recipeId !== id),
       }),
-      () => api.deleteRecipe(id),
-      { successMessage: t.recipeDeleted || "Recipe deleted" },
+      async () => {
+        await api.removeRecipe(id, library ? null : marker.snapshot || null);
+        // The shared row stays; only an own row is really deleted. The marker
+        // (with the full snapshot) is written first, so even a failure halfway
+        // leaves the dish restorable.
+        if (!library) await api.deleteRecipe(id);
+      },
+      { successMessage: library ? (t.recipeHidden || "Removed from your pool") : (t.recipeDeleted || "Recipe deleted") },
     );
-  }, [mutate, t.recipeDeleted]);
+  }, [mutate, t.recipeHidden, t.recipeDeleted]);
+
+  /**
+   * Undo a removal: the dish is offered again everywhere at once.
+   *
+   * A library dish only needs its marker cleared. An own recipe was really
+   * deleted, so the snapshot is used to write it back — a "put back" button
+   * that merely forgot the marker would leave an empty promise on screen.
+   */
+  const restoreRecipe = useCallback(async id => {
+    const marker = (dataRef.current.removed || []).find(row => row.recipeId === id);
+    const rebuilt = marker ? restorableRecipe(marker) : null;
+    await mutate(
+      state => ({
+        ...state,
+        removed: (state.removed || []).filter(row => row.recipeId !== id),
+        recipes: rebuilt && !state.recipes.some(recipe => recipe.id === rebuilt.id)
+          ? [...state.recipes, { ...rebuilt, isPreset: false }]
+          : state.recipes,
+      }),
+      async () => {
+        if (rebuilt) {
+          try {
+            await api.saveRecipe(rebuilt);
+          } catch (error) {
+            // The copy is already in the library under this id (a retry): the
+            // point of the tap is that the dish is offered again.
+            if (!/duplicate|already exists|23505/i.test(String(error?.message || error?.code || ""))) throw error;
+          }
+        }
+        await api.restoreRecipe(id);
+      },
+      { successMessage: t.recipeRestored || "Recipe is back in your pool" },
+    );
+    // A library recipe's row never left, but a re-read of the marker list is
+    // cheap and keeps the screen honest if the same dish was hidden on the
+    // other phone while the button was pressed.
+    scheduleReload(["removed_recipes"]);
+  }, [mutate, scheduleReload, t.recipeRestored]);
 
   /** Editing a library recipe forks it: the copy's id is only known afterwards. */
   const upsertRecipe = (state, recipe) => {
@@ -775,6 +863,9 @@ export function useAppData(t = {}) {
     people,
     recipes: data.recipes,
     recipesById,
+    pool,
+    poolById,
+    removed: data.removed || [],
     hiddenMap,
     sectionHidden,
     assignments: data.assignments,
@@ -832,6 +923,7 @@ export function useAppData(t = {}) {
     resetMenu,
     analyzePhoto,
     deleteRecipe,
+    restoreRecipe,
     savePantryItem,
     deletePantryItem,
     stockPantry,

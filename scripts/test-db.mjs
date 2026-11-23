@@ -174,6 +174,77 @@ await scenario("old project: one-paste upgrade keeps logins and the week", async
   await db.close();
 });
 
+await scenario("a household can remove a library recipe without touching anyone else's", async () => {
+  const db = await freshDatabase();
+  await db.exec(readSql("schema.sql"));
+  await db.exec(readSql("seed.sql"));
+
+  // Act as the signed-in member of the household.
+  await db.exec(`
+    create or replace function auth.uid() returns uuid language sql stable as $$ select '${REGITA}'::uuid $$;
+    insert into auth.users (id, email) values ('${REGITA}', 'regita@example.com');
+    insert into public.households (id, name, invite_code) values ('${HOUSEHOLD}', 'Mūsų virtuvė', 'TEST01');
+    insert into public.profiles (id, household_id, person_key, display_name)
+      values ('${REGITA}', '${HOUSEHOLD}', 'R', 'Regita');
+  `);
+
+  const library = (await db.query(
+    "select id from public.recipes where household_id is null order by id limit 1",
+  )).rows[0].id;
+
+  // Removing it is a per-household tombstone, not a delete of the shared row.
+  await db.exec(`insert into public.removed_recipes (household_id, recipe_id) values ('${HOUSEHOLD}', '${library}');`);
+  assert.equal(await count(db, "removed_recipes"), 1, "the household remembers its choice");
+  const stillThere = await one(db, `select count(*)::int as n from public.recipes where id = '${library}'`);
+  assert.equal(Number(stillThere.n), 1, "the shared library row is untouched for the other household");
+
+  // And the choice can be undone.
+  await db.exec(`delete from public.removed_recipes where household_id = '${HOUSEHOLD}' and recipe_id = '${library}';`);
+  assert.equal(await count(db, "removed_recipes"), 0, "putting it back clears the tombstone");
+
+  // A day menu must not hand back a dish that was removed.
+  await db.exec(`insert into public.removed_recipes (household_id, recipe_id) values ('${HOUSEHOLD}', '${library}');`);
+  await db.exec(`select public.apply_day_menu(0, '{"breakfast": [{"person_key": "both", "recipe_id": "${library}"}]}'::jsonb);`);
+  assert.equal(await count(db, "meal_assignments"), 0, "applying a menu skips a removed recipe instead of failing");
+  await db.exec(`delete from public.removed_recipes where household_id = '${HOUSEHOLD}';`);
+  await db.exec(`select public.apply_day_menu(0, '{"breakfast": [{"person_key": "both", "recipe_id": "${library}"}]}'::jsonb);`);
+  assert.equal(await count(db, "meal_assignments"), 1, "and applies it normally once it is back");
+
+  // An own recipe is deleted for real, so the marker carries the dish itself.
+  // The order the app writes is marker first, row second: a failure between the
+  // two must still leave a dish that can be put back.
+  await db.exec(`delete from public.meal_assignments;`);
+  const own = "test-own-recipe";
+  const snapshot = JSON.stringify({
+    name: { en: "Own bowl", lt: "Savas dubenėlis" },
+    emoji: "🥣",
+    slot: "lunch",
+    kcal: 420,
+    ingredients: [{ key: "natural-tofu", en: "Natural tofu", lt: "Natūralus tofu", amount: 100, unit: "g" }],
+  });
+  await db.exec(`
+    insert into public.recipes (id, household_id, name_en, name_lt, slot, kcal, ingredients)
+      values ('${own}', '${HOUSEHOLD}', 'Own bowl', 'Savas dubenėlis', 'lunch', 420,
+              '[{"key":"natural-tofu","en":"Natural tofu","lt":"Natūralus tofu","amount":100,"unit":"g"}]'::jsonb);
+    insert into public.removed_recipes (household_id, recipe_id, snapshot)
+      values ('${HOUSEHOLD}', '${own}', '${snapshot.replace(/'/g, "''")}'::jsonb);
+  `);
+  const kept = await one(db, `select snapshot->>'emoji' as emoji from public.removed_recipes where recipe_id = '${own}'`);
+  assert.equal(kept.emoji, "🥣", "the marker keeps the deleted dish, not just its id");
+  await db.exec(`delete from public.recipes where id = '${own}'`);
+  assert.equal(
+    (await one(db, `select count(*)::int as n from public.removed_recipes where recipe_id = '${own}'`)).n,
+    1,
+    "deleting the row does not erase the memory of it",
+  );
+
+  // An unknown recipe id is still a valid marker: a library dish may disappear
+  // from a future seed and the household's choice must survive that.
+  await db.exec(`insert into public.removed_recipes (household_id, recipe_id) values ('${HOUSEHOLD}', 'library-dish-from-an-old-seed');`);
+  assert.equal(await count(db, "removed_recipes"), 2, "a marker needs no matching recipe row");
+  await db.close();
+});
+
 await scenario("old project without households, without display names", async () => {
   const db = await freshDatabase();
   await seedOldApp(db, { withHouseholds: false, withNames: false });

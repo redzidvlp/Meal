@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { C, SLOT_META, SLOTS } from "../theme.js";
 import { fmtNum, interpolate } from "../lib/format.js";
 import { menuTotals } from "../lib/menus.js";
+import { menuRemovedCount, menuWithoutRemoved } from "../lib/library.js";
 import { customTag, tagLabel, tagsInUse } from "../lib/labels.js";
 import { sanitizeSearch } from "../lib/validate.js";
 import { Chip, EmptyState, Segmented, Sheet } from "./ui.jsx";
 
 export default function RecipePicker({
   open, onClose, day, slot, mode, person, currentRecipe, recipes, recipesById, menus = [], labels = [], lang, t, people = {}, initialTab = "recipes",
-  onSelect, onApplyMenu, onCreateNew, onCreateMenu, onEditMenu, onResetMenu, onManageRecipes,
+  onSelect, onApplyMenu, onCreateNew, onCreateMenu, onEditMenu, onResetMenu, onManageRecipes, removed = [],
 }) {
   const [tab, setTab] = useState(initialTab);
   const [applyDay, setApplyDay] = useState(day ?? 0);
@@ -181,7 +182,11 @@ export default function RecipePicker({
             </div>
           </div>
 
-          {menus.map(menu => {
+          {menus.map(originalMenu => {
+            // A menu is a suggestion, not a wish: dishes this household removed
+            // are skipped, and the card says how many so nothing vanishes quietly.
+            const menu = menuWithoutRemoved(originalMenu, removed);
+            const dropped = menuRemovedCount(originalMenu, removed);
             const totals = menuTotals(menu, recipesById);
             return (
               <div key={menu.id} className="card card-pad menu-card">
@@ -193,6 +198,7 @@ export default function RecipePicker({
                   <div className="row" style={{ gap: 4 }}>
                     {menu.diff && <Chip as="span" tone="amber">✂️ {t.menuDiffNote}</Chip>}
                     {menu.overridden && <span className="chip sage static">✏️ {t.menuEdit}</span>}
+                    {dropped > 0 && <Chip as="span" tone="amber">🚫 {interpolate(t.menuRemovedNote, { n: dropped })}</Chip>}
                   </div>
                 </div>
                 <div className="stack" style={{ gap: 5, marginBottom: 10 }}>

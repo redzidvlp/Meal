@@ -97,7 +97,7 @@ the *filename* as if it were SQL.
 3. Scroll to the **last result table**.
 
 > **You should see:** one table starting with `table | households | ok | —`. Every one of the
-> 12 table rows must say **ok** and **—**. Below them: `row count` rows showing your household,
+> 13 table rows must say **ok** and **—**. Below them: `row count` rows showing your household,
 > your 2 profiles, 38 recipes, and the number of planned meals carried over (for a full week,
 > 26–28). The very end shows `project | database | postgres` and your number of auth users.
 
@@ -250,22 +250,38 @@ Saved, it is in the book and in the picker immediately; there is no separate “
 **Save** writes over the same recipe, so every meal already planned with it changes too — and
 so does the shopping list, because it is built from the recipes in the plan.
 
-**Take a recipe out of the pool.** **🗑** on its row. It asks once, and it tells you what it
-will cost: *“Delete ‘Smoke test bowl’? It disappears from the picker, the sous-chef and from 2
-planned meal(s) this week.”* Confirm and the recipe is gone — from the book, from the picker,
-from the sous-chef’s suggestions, and from any day it was planned on. The shopping list
-drops its ingredients on the next visit. **The recipe itself is the only thing deleted**: your
-pantry numbers, your notes history and every other recipe are untouched.
+**Bored of a recipe? Take it out of the pool.** Two buttons, two different promises.
 
-> **Nothing is deleted by accident.** The 🗑 asks first, with the dish name in the question.
-> If nothing is planned with it, the question says so instead of pretending the week changes.
+**🚫 — the polite exit, on every row.** *“Never offer this dish again?”* It tells you what it
+costs *before* you decide: *“‘Avocado toast’ will stop appearing in the picker and the
+sous-chef, and leave the 1 planned meal(s) this week. You can put it back from 🚫 Removed at
+any time.”* Confirm and it is gone from the picker, the sous-chef, the plan, the day menus
+and the shopping list at once. For a **📚 library dish this is the only exit**, because the
+recipe belongs to everyone: nothing is deleted, only *your kitchen* stops offering it. The
+other household keeps cooking it, exactly as before.
+
+**🗑 — the real delete, on your own recipes only.** Same warning, and then the recipe row
+itself is deleted (plus its planned meals and notes). Its ingredients leave the shopping list
+on the next visit. Your pantry numbers and every other recipe are untouched.
+
+> **Nothing is deleted by accident.** Both buttons ask first, name the dish, and say how many
+> planned meals this week they empty. If nothing is planned with it, the question says so
+> instead of pretending the week changes.
+
+**🚫 Removed — the way back.** The chip at the top of 📖 Recipes opens the list of everything
+you took out, each row still showing the dish’s real name and emoji. **↺ Put back** makes it
+offer itself again everywhere; the meals it used to fill stay empty, because a week you
+already changed should not rearrange itself behind your back. A **deleted** own recipe is
+rebuilt from a snapshot kept with the marker — same name, ingredients and method — so even
+🗑 is recoverable.
 
 **The 📚 library.** Recipes marked **📚 library** are shared by everyone using the app; they
 are read-only on purpose, so nobody can delete a dish the other household still plans. They
-show a 📚 instead of a 🗑. Tap **✏️** on one and the editor opens with a green note: *“Library
-recipes are shared read-only. Saving creates your own editable copy.”* **Save** makes your
-copy — the original stays in the list for everyone, and your copy (no 📚) can be deleted
-like any other. That is the whole distinction: **📚 = read-only, no 📚 = yours**.
+show a 📚, never a 🗑 — use **🚫** to stop offering one. Tap **✏️** on one and the editor opens
+with a green note: *“Library recipes are shared read-only. Saving creates your own editable
+copy.”* **Save** makes your copy — the original stays in the list for everyone, and your copy
+(no 📚) can be deleted like any other. That is the whole distinction: **📚 = shared, 🚫 = out
+of your pool, no 📚 = yours, with a real 🗑**.
 
 **From the picker.** When you are choosing a meal and realise a recipe needs fixing, the
 **⚙️ Manage** button next to the search box jumps straight to 📖 Recipes — the picker closes
@@ -691,7 +707,9 @@ The app names the failure instead of saying “refresh to retry”. Match the ti
 | `MISSING TABLE` in Phase 2’s last table | Paste cut short, or an older run stopped halfway | Run the same file again — it is idempotent |
 | “Account created. Confirm your email.” and no email | Confirmation is on / free email limit | Phase 3b: turn Confirm email off, sign in again |
 | Generate shows **Offline idea engine** | AI key or function missing | Phase 7b and 7c; redeploy both functions after changing secrets |
-| I cannot delete a recipe | it is a 📚 library recipe (read-only for everyone) | tap **✏️** to save your own copy, then delete the copy (Phase 6b) |
+| I cannot delete a 📚 recipe | it is shared — the other household may still cook it | use **🚫** instead: it leaves *your* pool and is restorable from **🚫 Removed** (Phase 6b) |
+| A dish I took out is not offered any more | that is the point — it is in **🚫 Removed** | open **🚫 Removed** in 📖 Recipes and tap **↺ Put back** |
+| A menu card says “🚫 1 removed” | the menu points at a dish your kitchen hid | apply it anyway (that slot stays empty), or put the dish back first (Phase 6b) |
 | A tap still feels slow on mobile data | the write is waiting for the network, not the screen | the screen is already updated; if it takes longer than ~2 s the connection is the cause — nothing is lost, the save retries on the next visit |
 
 When asking for help, send: the connection screen with **Details** open, the result of
@@ -723,7 +741,7 @@ Only if Phase 1 found nothing. Everything else in this guide is unchanged.
 2. **SQL Editor → New query**, paste **`supabase/schema.sql`** → Run
    (`Success. No rows returned`).
 3. New query, paste **`supabase/seed.sql`** → Run. This adds the 38 recipes and 10 menus.
-4. New query, paste **`supabase/doctor.sql`** → Run. Twelve `ok` rows, then row counts of 0.
+4. New query, paste **`supabase/doctor.sql`** → Run. Thirteen `ok` rows, then row counts of 0.
 5. Continue at Phase 3 with the URL and anon key of this new project.
 
 > Do **not** run `upgrade-from-legacy.sql` on an empty project. It is only for a project that

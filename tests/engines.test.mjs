@@ -19,6 +19,10 @@ import { PRODUCT_USES, parseNutritionLabel, productFact, sanitizeProduct } from 
 import { registerProductFacts, factFor } from "../src/data/ingredientFacts.js";
 import { createReloader, createTableBatch } from "../src/lib/reload.js";
 import { applySlot, applyMenu, applyMove, applySectionHidden, applyEaten, applyResetWeek } from "../src/lib/optimistic.js";
+import {
+  removedIds, isRemoved, poolRecipes, menuWithoutRemoved, menuRemovedCount,
+  removalRow, removedRecipeView, removedOwnRecipes, restorableRecipe,
+} from "../src/lib/library.js";
 
 const makeRecipe = (overrides = {}) => ({
   id: "test-a",
@@ -1551,4 +1555,76 @@ test("a reload batch widens to the whole kitchen when a table is unknown", () =>
 
   batch.add([]);
   assert.equal(batch.take(), null, "an empty batch is a safe full read, never a crash");
+});
+
+
+// ── "We are bored of these" ─────────────────────────────────────────────────
+test("a removed dish leaves the pool but stays in the library for everyone", () => {
+  const library = [makeRecipe({ id: "lib-a", isPreset: true }), makeRecipe({ id: "lib-b", isPreset: true })];
+  const own = makeRecipe({ id: "own-a" });
+  const removed = removalRow(library[0]);
+  assert.deepEqual(removedIds([removed]), new Set(["lib-a"]));
+  assert.equal(isRemoved("lib-a", [removed]), true);
+  assert.equal(isRemoved(library[1], [removed]), false);
+
+  const pool = poolRecipes([...library, own], [removed]);
+  assert.deepEqual(pool.map(recipe => recipe.id), ["lib-b", "own-a"], "only the removed dish leaves the pool");
+  assert.equal(library.length, 2, "the shared rows themselves are untouched");
+  assert.equal(removed.snapshot, undefined, "a library dish needs no snapshot: its row still exists");
+});
+
+test("poolRecipes tolerates the raw database shape and bad rows", () => {
+  const pool = poolRecipes([makeRecipe({ id: "a" }), null, { name: { en: "no id" } }], [{ recipe_id: "a" }]);
+  assert.deepEqual(pool.map(recipe => recipe.id), [], "a raw removed_recipes row hides the same id");
+  assert.deepEqual(poolRecipes([], undefined), [], "missing markers are an empty set, not a crash");
+});
+
+test("a day menu drops removed dishes and counts what it dropped", () => {
+  const menu = {
+    id: "m1",
+    items: {
+      breakfast: { both: "lib-a" },
+      lunch: { R: "own-a", I: "lib-b" },
+      snack: { both: "lib-b" },
+    },
+  };
+  const removed = [removalRow({ id: "lib-a", isPreset: true })];
+  const pruned = menuWithoutRemoved(menu, removed);
+  assert.deepEqual(pruned.items.breakfast, undefined, "a slot whose only dish was removed disappears");
+  assert.deepEqual(pruned.items.lunch, { R: "own-a", I: "lib-b" }, "the other person's meal is kept");
+  assert.deepEqual(pruned.items.snack, { both: "lib-b" });
+  assert.equal(menu.items.breakfast.both, "lib-a", "the saved menu itself is not rewritten");
+
+  const removedBoth = [removalRow({ id: "lib-b", isPreset: true })];
+  assert.equal(menuRemovedCount(menu, removedBoth), 3, "a shared meal counts two people, snacks one");
+  assert.equal(menuRemovedCount(menu, []), 0, "nothing removed, nothing to warn about");
+});
+
+test("an own recipe is remembered whole, so 'put back' can rebuild it", () => {
+  const recipe = makeRecipe({ id: "own-a" });
+  const marker = removalRow(recipe);
+  const rebuilt = restorableRecipe(marker);
+  assert.ok(rebuilt, "the marker can rebuild the dish");
+  assert.deepEqual(rebuilt.name, recipe.name);
+  assert.deepEqual(rebuilt.ingredients, recipe.ingredients, "ingredients survive, so shopping works again");
+  assert.equal(rebuilt.kcal, recipe.kcal);
+  assert.deepEqual(rebuilt.method, recipe.method);
+  assert.equal(rebuilt.isPreset, undefined, "a rebuilt dish is saved as the household's own");
+
+  const view = removedRecipeView(marker);
+  assert.equal(view.name.en, "Test bowl", "the list can still name it");
+  assert.equal(view.kcal, 500);
+  assert.equal(view.restorable, true);
+  assert.deepEqual(removedOwnRecipes([marker]).map(row => row.id), ["own-a"]);
+  assert.deepEqual(removedOwnRecipes([removalRow({ id: "lib-a", isPreset: true })]), [],
+    "a hidden library dish is drawn from its own row, never from its id slug");
+});
+
+test("an old label-only marker still lists the dish but does not invent it", () => {
+  const old = { recipeId: "own-old", snapshot: { name: { en: "Old soup" }, emoji: "🍲", slot: "lunch", kcal: 300 } };
+  const view = removedRecipeView(old);
+  assert.equal(view.name.en, "Old soup");
+  assert.equal(view.restorable, false, "no ingredients means it cannot be rebuilt");
+  assert.equal(restorableRecipe(old), null, "the caller clears the marker instead of saving an empty dish");
+  assert.equal(restorableRecipe({ recipeId: "x", snapshot: null }), null);
 });
